@@ -1,0 +1,26 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.stefan.smartvoice'
+    compileSdk 37
+
+    defaultConfig {
+        applicationId 'com.stefan.smartvoice'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.0.1'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation files('libs/google-engine-deps.jar')
+    implementation files('libs/client-sdk-embedded-1.52.0.aar')
+}

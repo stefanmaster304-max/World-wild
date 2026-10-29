@@ -21,3 +21,7 @@ I take the ownership of my work seriously. Unauthorized appropriation, misleadin
 If these rules are violated, I reserve the right to report the misuse, request appropriate corrective action, and pursue any remedies available under applicable law.
 Respect the work, credit the creator, and be transparent about your contributions. These principles are essential to maintaining a fair and respectful development community.
 Thank you for visiting my repository and respecting the work shared here.
+
+## Smart Voice
+
+The Android Smart Voice source, build configuration, Unicode emoji tables, Microsoft/Google sample voice archives, and the current debug APK are in [`SmartVoice/`](SmartVoice/README.md).

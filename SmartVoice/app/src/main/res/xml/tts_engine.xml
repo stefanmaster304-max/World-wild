@@ -1,0 +1,5 @@
+<tts-engine xmlns:android="http://schemas.android.com/apk/res/android">
+    <voices>
+        <voice android:name="Smart Voice imported voices" />
+    </voices>
+</tts-engine>
