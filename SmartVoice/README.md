@@ -14,17 +14,16 @@ Smart Voice is an Android text-to-speech engine for screen-reader users. Version
 - Copy/share actions on package, download, and synthesis error dialogs so diagnostic details can be sent to the developer.
 - The full TTS request path reports unexpected Java/JNI linkage errors through Android's synthesis callback. On Android 11+, the next launch can show and copy the OS trace from a previous Java or native process crash.
 
-The importer checks the ZIP structure before registering data. Microsoft packages require their descriptor, model directory, `.APM` model, and `.INI` metadata. Google packages require a descriptor and the selected model's `pipeline.pb` and `backend_pipeline.textproto`. AccessMind Vocalizer packages are parsed from their XML `.hdr` metadata and `.dat` model files. ZIP path traversal, oversized archives, invalid descriptors, missing models, and unknown engines are rejected with an explanation.
+The importer checks ZIP structure before registering data. Microsoft packages require their descriptor, model directory, `.APM` model, and `.INI` metadata. Microsoft SDK voice names and model licenses are read from separate lines in the package parameter. Vocalizer is restricted to Access Mind archives whose `.hdr` and `.dat` files appear in the expected `speech/ve` and `speech/components` layout. MultiTTS Vocalizer ZIP packages and Google voice packages are rejected. ZIP path traversal, oversized archives, invalid descriptors, missing models, and unknown engines are rejected with an explanation.
 
 ## Engine and package status
 
-- **Microsoft Embedded Speech:** MultiTTS-format offline model packages are recognized by the Embedded Speech adapter. Microsoft neural cloud voices are not enabled.
-- **Google Local TTS:** MultiTTS-format local packages are recognized by the local Google adapter. The bundled Google native runtime is ARM64 only.
-- **Vocalizer:** The importer recognizes MultiTTS and AccessMind `.dat`/`.hdr` packages, but playback is disabled. The Vocalizer library recovered from MultiTTS checks its host app license/signature and returns `JNI_ERR` in Smart Voice. A Vocalizer SDK/runtime authorized for Smart Voice is required; the voice data cannot fix this. See [Vocalizer format research](docs/VOCALIZER_FORMATS.md).
+- **Microsoft Embedded Speech:** Microsoft packages are recognized by the Embedded Speech adapter. The embedded SDK voice ID is taken from the package's `param` voice-name field rather than its package/model code. Microsoft neural cloud voices are not enabled.
+- **Vocalizer:** Only Access Mind `.dat`/`.hdr` packages are recognized. MultiTTS Vocalizer ZIPs and previously registered non-Access-Mind voices are excluded. The new reference APK contains ARM64/ARMv7 Code Factory Vocalizer libraries and a license service, but its malformed ZIP entries prevented runtime validation and the repository contains no authorization to redistribute or use those libraries in Smart Voice. Playback remains disabled until an authorized runtime for Smart Voice is available. Access Mind model operating-point IDs are retained internally while the chooser displays Low, Medium, High, or Premium quality labels. See [Vocalizer format research](docs/VOCALIZER_FORMATS.md).
 
 After the first successful import, Smart Voice automatically selects a voice if there is no valid current selection. The home screen then shows that voice, its locale and engine, and the control to choose another voice. The preview requests the exact selected voice from Smart Voice's TTS service; it does not intentionally fall back to the phone's default engine.
 
-Google Local TTS requires an ARM64 Android device. On other ABIs, imports for that native engine are rejected with an architecture error. Microsoft uses the ABIs supplied by its packaged SDK.
+Microsoft uses the ABIs supplied by its packaged SDK. Google speech synthesis support, its native adapter, dependency JAR, and Smart Voice sample packages have been removed; imported Google records are ignored and Google ZIPs are rejected.
 
 The APK contains engine code and native libraries only; no voice models or voice ZIPs are embedded. Imported/downloaded model files are stored in the app's private data directory. The AccessMind catalog contains voice download links, but the linked models are not a free-standing Android engine. The vendor currently describes its Runa TTS product as Windows/NVDA software, with local voice operation after installation and activation. Smart Voice does not bypass or replace that licensing/activation system.
 
@@ -40,13 +39,13 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. The che
 
 ## Validation
 
-The APK was compiled from this source. TTS discovery is declared for Android's engine list, and the in-app preview explicitly requests the Smart Voice package and selected imported voice. Unexpected Java/JNI linkage errors are recorded; Android 11+ process-exit traces are surfaced on the next launch after a crash. I installed Android emulator images, but this x86_64 host cannot run the ARM64 image needed by Google, and the software x86_64 emulator could not be controlled because ADB requires a home-directory path that is read-only in this environment. Engine listing and actual playback still need verification on a device. A successful build does not confirm runtime playback, and a fatal native signal cannot be intercepted by Java while it occurs.
+The APK is compiled from this source. TTS discovery is declared for Android's engine list, and the in-app preview explicitly requests the Smart Voice package and selected imported voice. Unexpected Java/JNI linkage errors are recorded; Android 11+ process-exit traces are surfaced on the next launch after a crash. Engine listing and actual playback still need verification on a device. A successful build does not confirm runtime playback, and a fatal native signal cannot be intercepted by Java while it occurs.
 
 ## Project files
 
 - `app/src/main/java/` — application UI, importer, Android TTS service, and synthesis adapters.
 - `app/src/main/assets/emoji/` — Unicode CLDR annotation data and its license.
-- `data/voice-packages/` — example Microsoft and Google ZIPs used for local development.
+- `data/voice-packages/` — example Microsoft ZIPs used for local development.
 - `releases/` — installable debug APK.
 - `CHANGELOG.md` — changes and fixes by version.
 

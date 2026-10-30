@@ -22,6 +22,5 @@ android {
 }
 
 dependencies {
-    implementation files('libs/google-engine-deps.jar')
     implementation files('libs/client-sdk-embedded-1.52.0.aar')
 }

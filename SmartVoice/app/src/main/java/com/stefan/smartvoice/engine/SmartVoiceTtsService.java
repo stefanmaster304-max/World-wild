@@ -35,8 +35,6 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
     private SpeechSynthesizer activeSynthesizer;
     private EmbeddedSpeechConfig activeConfig;
     private String activeVoiceId = "";
-    private GoogleLocalEngine activeGoogle;
-    private String activeGoogleVoiceId = "";
     private VocalizerRuntime activeVocalizer;
     private String activeVocalizerVoiceId = "";
 
@@ -97,7 +95,6 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
             if (activeSynthesizer != null) {
                 try { activeSynthesizer.StopSpeakingAsync(); } catch (Exception ignored) { }
             }
-            if (activeGoogle != null) activeGoogle.cancel();
             if (activeVocalizer != null) activeVocalizer.stop();
         }
     }
@@ -124,10 +121,6 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
         if (voice == null) {
             recordError("No imported Smart Voice voice matched this Android TTS request.", null);
             callback.error(TextToSpeech.ERROR);
-            return;
-        }
-        if ("google".equals(voice.engine)) {
-            speakGoogle(voice, normalizeText(request.getText().toString(), voice), request, callback);
             return;
         }
         if ("vocalizer".equals(voice.engine)) {
@@ -216,28 +209,6 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
         }
     }
 
-    private void speakGoogle(VoiceEntry voice, String text, SynthesisRequest request, SynthesisCallback callback) {
-        try {
-            GoogleLocalEngine google;
-            synchronized (lock) {
-                if (activeGoogle == null || !voice.id.equals(activeGoogleVoiceId)) {
-                    if (activeGoogle != null) activeGoogle.close();
-                    activeGoogle = new GoogleLocalEngine(this, voice.code, voice.gender, voice.dataPath);
-                    activeGoogleVoiceId = voice.id;
-                    activeGoogle.initialize();
-                }
-                google = activeGoogle;
-            }
-            SharedPreferences settings = getSharedPreferences("smart_voice_settings", MODE_PRIVATE);
-            int rate = Math.max(10, Math.min(500, request.getSpeechRate() * settings.getInt("rate", 100) / 100));
-            int pitch = Math.max(10, Math.min(500, request.getPitch() * settings.getInt("pitch", 100) / 100));
-            google.speak(text, callback, rate, pitch, settings.getInt("volume", 100));
-        } catch (Exception e) {
-            recordError("Google local synthesis failed for " + voice.name + ": " + e, e);
-            callback.error(TextToSpeech.ERROR);
-        }
-    }
-
     private void speakVocalizer(VoiceEntry voice, String text, SynthesisRequest request, SynthesisCallback callback) {
         try {
             VocalizerRuntime runtime;
@@ -284,7 +255,9 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
             File root = new File(voice.dataPath);
             if (!root.isDirectory()) throw new IllegalStateException("Imported Microsoft model folder is missing");
             EmbeddedSpeechConfig config = EmbeddedSpeechConfig.fromPath(root.getAbsolutePath());
-            config.setSpeechSynthesisVoice(voice.code, license);
+            String sdkVoiceName = voice.engineVoiceName == null || voice.engineVoiceName.isEmpty()
+                    ? voice.code : voice.engineVoiceName;
+            config.setSpeechSynthesisVoice(sdkVoiceName, license);
             config.setSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Raw24Khz16BitMonoPcm);
             SpeechSynthesizer synthesizer = new SpeechSynthesizer(config, null);
             activeConfig = config;
@@ -345,7 +318,6 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
     @Override public void onDestroy() {
         synchronized (lock) {
             releaseActive();
-            if (activeGoogle != null) { activeGoogle.close(); activeGoogle = null; activeGoogleVoiceId = ""; }
             if (activeVocalizer != null) { activeVocalizer.close(); activeVocalizer = null; activeVocalizerVoiceId = ""; }
         }
         super.onDestroy();

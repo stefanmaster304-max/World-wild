@@ -580,7 +580,8 @@ public final class MainActivity extends Activity {
         if (voices.isEmpty()) { new AlertDialog.Builder(this).setMessage(tr("no_voices")).setPositiveButton(tr("ok"), null).show(); return; }
         String[] labels = new String[voices.size()];
         for (int i = 0; i < voices.size(); i++) {
-            VoiceEntry v = voices.get(i); String variant = v.variant == null || v.variant.isEmpty() ? "" : " · " + v.variant;
+            VoiceEntry v = voices.get(i); String variant = displayVoiceVariant(v);
+            variant = variant.isEmpty() ? "" : " · " + variant;
             labels[i] = v.name + " — " + displayLocale(v) + " · " + engineName(v.engine) + variant;
         }
         new AlertDialog.Builder(this).setTitle(tr("select_voice")).setItems(labels, (dialog, which) -> { select(voices.get(which)); show("home"); }).show();
@@ -590,6 +591,19 @@ public final class MainActivity extends Activity {
         selectedVoiceId = voice.id;
         store.setSelectedVoiceId(voice.id);
         if (ttsReady) applySelectedVoice(true);
+    }
+
+    private String displayVoiceVariant(VoiceEntry voice) {
+        if (voice.variant == null || voice.variant.isEmpty()) return "";
+        if (!"vocalizer".equals(voice.engine)) return voice.variant;
+        String language = prefs.getString("ui_language", "en");
+        switch (voice.variant.toLowerCase(Locale.ROOT)) {
+            case "low": return language.equals("pt") ? "Baixa" : language.equals("es") ? "Baja" : "Low";
+            case "medium": return language.equals("pt") ? "Média" : language.equals("es") ? "Media" : "Medium";
+            case "high": return language.equals("pt") ? "Alta" : language.equals("es") ? "Alta" : "High";
+            case "premium": return language.equals("pt") ? "Premium" : language.equals("es") ? "Premium" : "Premium";
+            default: return voice.variant;
+        }
     }
 
     private void speakSample() {
@@ -669,13 +683,13 @@ public final class MainActivity extends Activity {
 
     private void refresh() { }
     private VoiceEntry selectedVoice() { for (VoiceEntry voice : store.list()) if (voice.id.equals(selectedVoiceId)) return voice; return null; }
-    private String engineName(String engine) { return "microsoft".equals(engine) ? "Microsoft" : "google".equals(engine) ? "Google" : "vocalizer".equals(engine) ? "Vocalizer" : engine; }
+    private String engineName(String engine) { return "microsoft".equals(engine) ? "Microsoft" : "vocalizer".equals(engine) ? "Vocalizer" : engine; }
 
     private String tr(String key) {
         String lang = prefs == null ? "en" : prefs.getString("ui_language", "en");
         String[][] values = {
                 {"welcome_text", "Smart Voice is an Android speech engine for accessible reading. Import compatible offline voice packages and use voices from supported speech engines.", "O Smart Voice é um mecanismo de fala para Android e acessibilidade. Importe pacotes offline compatíveis e use vozes dos mecanismos disponíveis.", "Smart Voice es un motor de voz para Android y accesibilidad. Importa paquetes sin conexión compatibles y usa voces de los motores disponibles."},
-                {"welcome_engines", "Integrated engines: Microsoft Embedded Speech and Google Local TTS. Vocalizer playback requires a runtime licensed for Smart Voice; the MultiTTS library currently available rejects this app. Voice models are not bundled in the app.", "Motores integrados: Microsoft Embedded Speech e Google Local TTS. A reprodução do Vocalizer requer um runtime licenciado para o Smart Voice; a biblioteca disponível do MultiTTS rejeita este aplicativo. Os modelos de voz não vêm embutidos no aplicativo.", "Motores integrados: Microsoft Embedded Speech y Google Local TTS. La reproducción de Vocalizer requiere un runtime con licencia para Smart Voice; la biblioteca disponible de MultiTTS rechaza esta aplicación. Los modelos de voz no vienen incluidos en la aplicación."},
+                {"welcome_engines", "Integrated engines: Microsoft Embedded Speech. Vocalizer voice downloads are available from Access Mind; playback requires a runtime licensed for Smart Voice. Voice models are not bundled in the app.", "Motores integrados: Microsoft Embedded Speech. Os downloads de vozes Vocalizer estão disponíveis no Access Mind; a reprodução requer um runtime licenciado para o Smart Voice. Os modelos de voz não vêm embutidos no aplicativo.", "Motores integrados: Microsoft Embedded Speech. Las descargas de voces Vocalizer están disponibles en Access Mind; la reproducción requiere un runtime con licencia para Smart Voice. Los modelos de voz no vienen incluidos en la aplicación."},
                 {"version", "Version", "Versão", "Versión"}, {"developer", "Developer", "Desenvolvedor", "Desarrollador"},
                 {"done", "Done", "Concluído", "Hecho"}, {"import_package", "Import voice package (.zip)", "Importar pacote de voz (.zip)", "Importar paquete de voz (.zip)"},
                 {"download_online", "Download voices online", "Baixar vozes pela internet", "Descargar voces en línea"},

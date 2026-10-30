@@ -58,9 +58,18 @@ public final class VoiceStore {
                 v.code = o.optString("code");
                 v.locale = o.optString("locale");
                 v.variant = o.optString("variant");
+                v.source = o.optString("source");
+                v.operatingPoint = o.optString("operatingPoint");
+                v.engineVoiceName = o.optString("engineVoiceName");
                 v.dataPath = o.optString("dataPath");
                 v.engineParam = licenseVault.readSecret(v.id);
                 v.gender = o.optInt("gender", -1);
+                // Older registry entries came from MultiTTS Vocalizer ZIPs. They
+                // are deliberately hidden now: only packages obtained from the
+                // Access Mind catalog are supported for this engine.
+                if ("vocalizer".equals(v.engine) && !"accessmind".equals(v.source)) continue;
+                if ("google".equals(v.engine)) continue;
+                if ("microsoft".equals(v.engine)) normalizeMicrosoftParameters(v, v.engineParam);
                 if (!v.id.isEmpty() && new File(v.dataPath).isDirectory()) result.add(v);
             }
         } catch (Exception ignored) {
@@ -137,12 +146,11 @@ public final class VoiceStore {
             if (parsed.isEmpty()) {
                 String declared = descriptor == null ? "" : declaredEngine(descriptor);
                 if (!declared.isEmpty()) throw new IllegalArgumentException("Engine not integrated yet: " + declared);
-                throw new IllegalArgumentException("This ZIP is not a supported Microsoft, Google, or Vocalizer voice package. It needs a valid config.yaml/engines.yaml descriptor or AccessMind Vocalizer .dat and .hdr files.");
+                throw new IllegalArgumentException("This ZIP is not a supported Microsoft or Access Mind Vocalizer package. Access Mind packages must contain matching .dat and .hdr files under <language>/speech/components and <language>/speech/ve.");
             }
             for (VoiceEntry voice : parsed) {
                 requireRuntimeAbi(voice.engine);
                 File voiceRoot = findVoiceFolder(descriptorRoot, voice.engine, voice.locale, voice.code);
-                if (voiceRoot == null && voice.engine.equals("google")) voiceRoot = descriptorRoot;
                 if (voiceRoot == null && voice.engine.equals("microsoft")) {
                     throw new IllegalArgumentException("Microsoft voice folder is missing for " + voice.name);
                 }
@@ -155,9 +163,6 @@ public final class VoiceStore {
                 }
                 if (voice.engine.equals("microsoft") && !hasMicrosoftModel(voiceRoot)) {
                     throw new IllegalArgumentException("Microsoft package is missing the per-voice .APM model and .INI metadata for " + voice.name);
-                }
-                if (voice.engine.equals("google") && !hasGoogleModel(voiceRoot)) {
-                    throw new IllegalArgumentException("Google package is missing pipeline.pb or backend_pipeline.textproto for " + voice.name);
                 }
                 voice.dataPath = (voiceRoot == null ? descriptorRoot : voiceRoot).getAbsolutePath();
             }
@@ -179,7 +184,7 @@ public final class VoiceStore {
     }
 
     private static void requireRuntimeAbi(String engine) {
-        if ("google".equals(engine) || "vocalizer".equals(engine)) {
+        if ("vocalizer".equals(engine)) {
             boolean arm64 = false;
             for (String abi : Build.SUPPORTED_ABIS) if ("arm64-v8a".equalsIgnoreCase(abi)) arm64 = true;
             if (!arm64) throw new IllegalArgumentException("Engine is not available on this device architecture: " + engine + " requires ARM64 Android libraries.");
@@ -218,7 +223,13 @@ public final class VoiceStore {
             else if (engines.toLowerCase(Locale.ROOT).contains("code: google")) engine = "google";
             else if (engines.toLowerCase(Locale.ROOT).contains("code: vocalizer")) engine = "vocalizer";
         }
-        if (!engine.equals("microsoft") && !engine.equals("google") && !engine.equals("vocalizer")) return new ArrayList<>();
+        if (engine.equals("vocalizer")) {
+            throw new IllegalArgumentException("MultiTTS Vocalizer ZIP packages are no longer supported. Download Vocalizer voices from Access Mind Server.");
+        }
+        if (engine.equals("google")) {
+            throw new IllegalArgumentException("Google voice packages are no longer supported by Smart Voice.");
+        }
+        if (!engine.equals("microsoft")) return new ArrayList<>();
 
         ArrayList<VoiceEntry> voices = new ArrayList<>();
         String[] lines = yaml.split("\\R", -1);
@@ -228,7 +239,11 @@ public final class VoiceStore {
             String line = lines[index];
             String t = line.trim();
             if (t.startsWith("- ")) {
-                if (name != null && code != null && locale != null) voices.add(makeVoice(packageId, engine, name, code, locale, gender, engineParam));
+                if (name != null && code != null && locale != null) {
+                    VoiceEntry voice = makeVoice(packageId, engine, name, code, locale, gender, engineParam);
+                    normalizeMicrosoftParameters(voice, engineParam);
+                    voices.add(voice);
+                }
                 name = code = locale = null;
                 engineParam = "";
                 gender = -1;
@@ -257,8 +272,38 @@ public final class VoiceStore {
                 try { gender = Integer.parseInt(scalar(t.substring(7))); } catch (Exception ignored) { gender = -1; }
             }
         }
-        if (name != null && code != null && locale != null) voices.add(makeVoice(packageId, engine, name, code, locale, gender, engineParam));
+        if (name != null && code != null && locale != null) {
+            VoiceEntry voice = makeVoice(packageId, engine, name, code, locale, gender, engineParam);
+            normalizeMicrosoftParameters(voice, engineParam);
+            voices.add(voice);
+        }
         return voices;
+    }
+
+    /**
+     * MultiTTS stores the SDK voice name and model license as separate lines
+     * inside `param`. The package code (e.g. pt-BR-Maria-Apollo) is only the
+     * model directory/registry ID and is not the Embedded Speech voice name.
+     */
+    private static void normalizeMicrosoftParameters(VoiceEntry voice, String rawParam) {
+        if (voice == null || !"microsoft".equals(voice.engine)) return;
+        String raw = rawParam == null ? "" : rawParam.trim();
+        if (raw.isEmpty()) {
+            if (voice.engineVoiceName == null || voice.engineVoiceName.isEmpty()) voice.engineVoiceName = voice.code;
+            return;
+        }
+        String[] fields = raw.split("\\R", -1);
+        if (fields.length == 1 && raw.startsWith("Key:")) {
+            if (voice.engineVoiceName == null || voice.engineVoiceName.isEmpty()) voice.engineVoiceName = voice.code;
+            voice.engineParam = raw;
+            return;
+        }
+        String sdkName = fields.length > 0 ? fields[0].trim() : "";
+        String license = fields.length > 1 ? fields[1].trim() : "";
+        if (!sdkName.isEmpty()) voice.engineVoiceName = sdkName;
+        else if (voice.engineVoiceName == null || voice.engineVoiceName.isEmpty()) voice.engineVoiceName = voice.code;
+        if (!license.isEmpty() && license.length() <= 300 && !license.startsWith("Key:")) license = "Key:" + license;
+        if (!license.isEmpty()) voice.engineParam = license;
     }
 
     private static String declaredEngine(File descriptor) {
@@ -280,12 +325,6 @@ public final class VoiceStore {
         return apm && ini;
     }
 
-    private static boolean hasGoogleModel(File root) {
-        return root != null && root.isDirectory()
-                && new File(root, "pipeline.pb").isFile()
-                && new File(root, "backend_pipeline.textproto").isFile();
-    }
-
     /**
      * AccessMind's public Vocalizer downloads omit MultiTTS's YAML descriptor:
      * each ZIP has a locale tree with one model .dat and one XML .hdr file.
@@ -296,6 +335,7 @@ public final class VoiceStore {
         ArrayList<File> headers = new ArrayList<>();
         collectFiles(root, ".hdr", headers);
         for (File header : headers) {
+            if (!isAccessMindHeader(header)) continue;
             String xml = readSibling(header.getParentFile(), header.getName());
             String speaker = xmlTag(xml, "voice");
             String locale = xmlTag(xml, "langietf");
@@ -305,7 +345,9 @@ public final class VoiceStore {
             File modelRoot = findAccessMindModelRoot(root, header);
             if (modelRoot == null) continue;
             VoiceEntry v = makeVoice(packageId, "vocalizer", speaker, speaker, locale, "female".equalsIgnoreCase(xmlTag(xml, "gender")) ? 0 : 1, "");
-            v.variant = quality;
+            v.variant = normalizeAccessMindQuality(quality);
+            v.source = "accessmind";
+            v.operatingPoint = quality.trim().toLowerCase(Locale.ROOT).replace('_', '-');
             v.dataPath = modelRoot.getAbsolutePath();
             voices.add(v);
         }
@@ -344,6 +386,30 @@ public final class VoiceStore {
             }
         }
         return null;
+    }
+
+    private static boolean isAccessMindHeader(File header) {
+        File ve = header.getParentFile();
+        File speech = ve == null ? null : ve.getParentFile();
+        if (ve == null || speech == null || !"ve".equalsIgnoreCase(ve.getName())
+                || !"speech".equalsIgnoreCase(speech.getName())) return false;
+        File components = new File(speech, "components");
+        if (!components.isDirectory()) return false;
+        File[] models = components.listFiles((d, name) -> name.toLowerCase(Locale.ROOT).endsWith(".dat"));
+        return models != null && models.length > 0;
+    }
+
+    private static String normalizeAccessMindQuality(String operatingPoint) {
+        String value = operatingPoint == null ? "" : operatingPoint.trim().toLowerCase(Locale.ROOT)
+                .replace('-', '_').replace(' ', '_');
+        if (value.startsWith("embedded_")) value = value.substring("embedded_".length());
+        switch (value) {
+            case "compact": return "low";
+            case "pro": return "medium";
+            case "high": return "high";
+            case "premium": return "premium";
+            default: return value;
+        }
     }
 
     private static boolean hasVocalizerModel(File root) {
@@ -418,30 +484,18 @@ public final class VoiceStore {
 
     private File findVoiceFolder(File root, String engine, String locale, String code) {
         String norm = code.toLowerCase(Locale.ROOT);
-        String shortSpeaker = norm.contains("-x-") ? norm.substring(norm.lastIndexOf("-x-") + 3) : norm;
         File engineRoot = new File(root, engine);
         if (!engineRoot.isDirectory()) return null;
         ArrayList<File> queue = new ArrayList<>();
-        ArrayList<File> candidates = new ArrayList<>();
         queue.add(engineRoot);
         for (int i = 0; i < queue.size(); i++) {
             File d = queue.get(i);
             if (d.getName().equalsIgnoreCase(norm) || d.getName().toLowerCase(Locale.ROOT).contains(norm)) return d;
             File[] children = d.listFiles();
             if (children == null) continue;
-            for (File child : children) {
-                if (!child.isDirectory()) continue;
-                if (new File(child, "pipeline.pb").isFile() && new File(child, "backend_pipeline.textproto").isFile()) candidates.add(child);
-                else queue.add(child);
-            }
+            for (File child : children) if (child.isDirectory()) queue.add(child);
         }
-        candidates.sort((a, b) -> a.getAbsolutePath().compareToIgnoreCase(b.getAbsolutePath()));
-        for (File candidate : candidates) {
-            String backend = readSibling(candidate, "backend_pipeline.textproto");
-            if (backend.matches("(?s).*speaker\\s*:\\s*\\\"" + Pattern.quote(shortSpeaker) + "\\\".*")) return candidate;
-        }
-        // Some Google voice packs have one shared model for all IDs in that locale.
-        return candidates.size() == 1 ? candidates.get(0) : null;
+        return null;
     }
 
     private static String readSibling(File root, String name) {
@@ -474,7 +528,9 @@ public final class VoiceStore {
             JSONObject o = new JSONObject();
             o.put("id", v.id); o.put("packageId", v.packageId); o.put("engine", v.engine);
             o.put("name", v.name); o.put("code", v.code); o.put("locale", v.locale);
-            o.put("variant", v.variant); o.put("dataPath", v.dataPath); o.put("gender", v.gender);
+            o.put("engineVoiceName", v.engineVoiceName);
+            o.put("variant", v.variant); o.put("source", v.source); o.put("operatingPoint", v.operatingPoint);
+            o.put("dataPath", v.dataPath); o.put("gender", v.gender);
             arr.put(o);
         }
         prefs.edit().putString(KEY_VOICES, arr.toString()).apply();

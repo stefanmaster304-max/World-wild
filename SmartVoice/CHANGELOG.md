@@ -1,5 +1,21 @@
 # Smart Voice change log
 
+## 0.0.1 — engine selection update — 2026-10-30
+
+- Removed Google TTS synthesis from the app: deleted its native adapter, JNI library, dependency JAR, and Smart Voice sample ZIPs. Google package imports are rejected and old Google registry entries are hidden.
+- Fixed Microsoft voice selection to use the SDK voice name stored in the first line of MultiTTS `param` (for example, `Microsoft Maria`) instead of the package/model ID (`pt-BR-Maria-Apollo`). The license on the next line is now separated and normalized to the `Key:` form used by the reference adapter.
+- Persisted the SDK voice name separately so existing Microsoft package registrations can be upgraded from their stored parameter block.
+- Updated the welcome text and README to list the currently supported synthesis engine accurately.
+- The reported Maria error is consistent with sending the package ID as the SDK voice name. A fresh build is required to verify the corrected name and license on the device.
+
+## 0.0.1 — Access Mind Vocalizer follow-up — 2026-10-30
+
+- Extracted the newly added Code Factory Vocalizer Voices APK for static analysis. It contains ARM64 and ARMv7 `libNuanceVocalizer.so`, `libsecure.so`, `libsp.so`, and `libc++_shared.so`, plus a catalog with compact, pro, high, and premium operating points.
+- The APK's `AndroidManifest.xml` and primary `classes.dex` fail ZIP CRC validation; its native libraries and catalog could be extracted, but it is not a reliable install/runtime test artifact. Static inspection confirms the operating-point metadata and native engine path, not end-to-end loading of Access Mind downloads.
+- Restricted Vocalizer imports to the Access Mind `speech/ve` and `speech/components` package structure. Legacy MultiTTS Vocalizer descriptor ZIPs are rejected, and previously registered Vocalizer voices without Access Mind provenance are hidden.
+- Stored the Access Mind origin and native operating-point identifier separately from the user-facing quality. Vocalizer voice labels now show localized Low/Medium/High/Premium instead of internal strings such as `embedded_compact`.
+- Kept playback disabled because the reference APK integrates its own license service and does not provide Smart Voice redistribution/use authorization; no app identity or license checks are bypassed.
+
 ## 0.0.1 — speech-engine follow-up — 2026-10-30
 
 - Google speech parameters now use the normalized rate and pitch scaling found in the MultiTTS adapter instead of sending out-of-range values. The composer now has a bounded wait, reports terminal states, and streams PCM in callback-sized chunks so a stalled synthesis returns a diagnostic instead of waiting forever.
