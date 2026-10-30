@@ -454,7 +454,13 @@ public final class MainActivity extends Activity {
             count.setText(tr("catalog_results") + " " + visible.size() + "/" + entries.size());
         };
         AdapterView.OnItemSelectedListener filterChanged = new AdapterView.OnItemSelectedListener() {
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) { apply.run(); }
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                // The selected value replaces the generic accessibility label;
+                // leaving "All languages" attached made TalkBack announce both
+                // the default label and the selected language.
+                parent.setContentDescription(String.valueOf(parent.getSelectedItem()));
+                apply.run();
+            }
             public void onNothingSelected(AdapterView<?> parent) { }
         };
         language.setOnItemSelectedListener(filterChanged);
@@ -669,7 +675,7 @@ public final class MainActivity extends Activity {
         String lang = prefs == null ? "en" : prefs.getString("ui_language", "en");
         String[][] values = {
                 {"welcome_text", "Smart Voice is an Android speech engine for accessible reading. Import compatible offline voice packages and use voices from supported speech engines.", "O Smart Voice é um mecanismo de fala para Android e acessibilidade. Importe pacotes offline compatíveis e use vozes dos mecanismos disponíveis.", "Smart Voice es un motor de voz para Android y accesibilidad. Importa paquetes sin conexión compatibles y usa voces de los motores disponibles."},
-                {"welcome_engines", "Integrated engines: Microsoft Embedded Speech, Google Local TTS, and Vocalizer. Import compatible MultiTTS voice packages for Microsoft and Google; Vocalizer accepts supported MultiTTS packages and AccessMind Server downloads. Voice models are not bundled in the app.", "Motores integrados: Microsoft Embedded Speech, Google Local TTS e Vocalizer. Importe pacotes MultiTTS compatíveis com Microsoft e Google; o Vocalizer aceita pacotes MultiTTS compatíveis e downloads do Access Mind Server. Os modelos de voz não vêm embutidos no aplicativo.", "Motores integrados: Microsoft Embedded Speech, Google Local TTS y Vocalizer. Importa paquetes MultiTTS compatibles con Microsoft y Google; Vocalizer acepta paquetes MultiTTS compatibles y descargas de Access Mind Server. Los modelos de voz no vienen incluidos en la aplicación."},
+                {"welcome_engines", "Integrated engines: Microsoft Embedded Speech and Google Local TTS. Vocalizer playback requires a runtime licensed for Smart Voice; the MultiTTS library currently available rejects this app. Voice models are not bundled in the app.", "Motores integrados: Microsoft Embedded Speech e Google Local TTS. A reprodução do Vocalizer requer um runtime licenciado para o Smart Voice; a biblioteca disponível do MultiTTS rejeita este aplicativo. Os modelos de voz não vêm embutidos no aplicativo.", "Motores integrados: Microsoft Embedded Speech y Google Local TTS. La reproducción de Vocalizer requiere un runtime con licencia para Smart Voice; la biblioteca disponible de MultiTTS rechaza esta aplicación. Los modelos de voz no vienen incluidos en la aplicación."},
                 {"version", "Version", "Versão", "Versión"}, {"developer", "Developer", "Desenvolvedor", "Desarrollador"},
                 {"done", "Done", "Concluído", "Hecho"}, {"import_package", "Import voice package (.zip)", "Importar pacote de voz (.zip)", "Importar paquete de voz (.zip)"},
                 {"download_online", "Download voices online", "Baixar vozes pela internet", "Descargar voces en línea"},

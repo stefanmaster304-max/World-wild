@@ -20,11 +20,11 @@ The importer checks the ZIP structure before registering data. Microsoft package
 
 - **Microsoft Embedded Speech:** MultiTTS-format offline model packages are recognized by the Embedded Speech adapter. Microsoft neural cloud voices are not enabled.
 - **Google Local TTS:** MultiTTS-format local packages are recognized by the local Google adapter. The bundled Google native runtime is ARM64 only.
-- **Vocalizer:** The app includes the ARM64 Vocalizer JNI library and its runtime bridge. Its importer accepts supported MultiTTS packages and AccessMind Server `.dat`/`.hdr` packages. Imported files are normalized for the runtime. See [Vocalizer format research](docs/VOCALIZER_FORMATS.md).
+- **Vocalizer:** The importer recognizes MultiTTS and AccessMind `.dat`/`.hdr` packages, but playback is disabled. The Vocalizer library recovered from MultiTTS checks its host app license/signature and returns `JNI_ERR` in Smart Voice. A Vocalizer SDK/runtime authorized for Smart Voice is required; the voice data cannot fix this. See [Vocalizer format research](docs/VOCALIZER_FORMATS.md).
 
 After the first successful import, Smart Voice automatically selects a voice if there is no valid current selection. The home screen then shows that voice, its locale and engine, and the control to choose another voice. The preview requests the exact selected voice from Smart Voice's TTS service; it does not intentionally fall back to the phone's default engine.
 
-Google Local TTS and Vocalizer require an ARM64 Android device. On other ABIs, imports for those native engines are rejected with an architecture error. Microsoft uses the ABIs supplied by its packaged SDK.
+Google Local TTS requires an ARM64 Android device. On other ABIs, imports for that native engine are rejected with an architecture error. Microsoft uses the ABIs supplied by its packaged SDK.
 
 The APK contains engine code and native libraries only; no voice models or voice ZIPs are embedded. Imported/downloaded model files are stored in the app's private data directory. The AccessMind catalog contains voice download links, but the linked models are not a free-standing Android engine. The vendor currently describes its Runa TTS product as Windows/NVDA software, with local voice operation after installation and activation. Smart Voice does not bypass or replace that licensing/activation system.
 
@@ -40,7 +40,7 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. The che
 
 ## Validation
 
-The APK was compiled from this source. TTS discovery is declared for Android's engine list, and the in-app preview explicitly requests the Smart Voice package and selected imported voice. Unexpected Java/JNI linkage errors are recorded; Android 11+ process-exit traces are surfaced on the next launch after a crash. I installed Android emulator images, but this x86_64 host cannot run the ARM64 image needed by Google/Vocalizer, and the software x86_64 emulator could not be controlled because ADB requires a home-directory path that is read-only in this environment. Engine listing and actual playback still need verification on a device. A successful build does not confirm runtime playback, and a fatal native signal cannot be intercepted by Java while it occurs.
+The APK was compiled from this source. TTS discovery is declared for Android's engine list, and the in-app preview explicitly requests the Smart Voice package and selected imported voice. Unexpected Java/JNI linkage errors are recorded; Android 11+ process-exit traces are surfaced on the next launch after a crash. I installed Android emulator images, but this x86_64 host cannot run the ARM64 image needed by Google, and the software x86_64 emulator could not be controlled because ADB requires a home-directory path that is read-only in this environment. Engine listing and actual playback still need verification on a device. A successful build does not confirm runtime playback, and a fatal native signal cannot be intercepted by Java while it occurs.
 
 ## Project files
 

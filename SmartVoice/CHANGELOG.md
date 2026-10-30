@@ -1,5 +1,13 @@
 # Smart Voice change log
 
+## 0.0.1 — speech-engine follow-up — 2026-10-30
+
+- Google speech parameters now use the normalized rate and pitch scaling found in the MultiTTS adapter instead of sending out-of-range values. The composer now has a bounded wait, reports terminal states, and streams PCM in callback-sized chunks so a stalled synthesis returns a diagnostic instead of waiting forever.
+- Microsoft synthesis cancellation now records the SDK's reason, error code, and error details instead of returning only Android error `-1`.
+- Vocalizer preview no longer calls the MultiTTS native library that rejected Smart Voice with `JNI_ERR`. That binary checks its licensed host identity; playback requires a Vocalizer runtime authorized for Smart Voice. The importer remains able to recognize the package formats, but does not claim they can synthesize with this library.
+- Catalog filter accessibility labels now follow the selected item, preventing TalkBack from continuing to announce “All languages” after a language is chosen.
+- Corrected the welcome screen, README, and Vocalizer format notes to describe the actual runtime restriction.
+
 ## 0.0.1 — 2026-10-30
 
 ### Engine and import reliability fixes

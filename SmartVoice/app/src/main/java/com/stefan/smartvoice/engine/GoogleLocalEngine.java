@@ -5,6 +5,7 @@ import android.media.AudioFormat;
 import android.os.ParcelFileDescriptor;
 import android.speech.tts.SynthesisCallback;
 import android.speech.tts.TextToSpeech;
+import android.os.SystemClock;
 
 import com.google.android.apps.speech.tts.googletts.audio.AndroidDecoder;
 import com.google.android.apps.speech.tts.googletts.local.greco3.AndroidComposerImpl;
@@ -95,25 +96,49 @@ public final class GoogleLocalEngine implements AutoCloseable {
         initialize();
         cancelled = false;
         callback.start(24000, AudioFormat.ENCODING_PCM_16BIT, 1);
-        Markup$MarkupMessage markup = markup(text, 38.0f * ratePercent / 100.0f, 10.0f * pitchPercent / 100.0f);
+        // Match the scaling used by MultiTTS. The Google pipeline expects a
+        // normalized rate and pitch; sending values such as 38 and 10 can leave
+        // the composer running without ever producing audio.
+        float configuredRate = 50.0f * ratePercent / 100.0f;
+        float rate = configuredRate * configuredRate * 0.00035f + 0.5f;
+        float pitch = (pitchPercent / 100.0f) * 0.1f;
+        Markup$MarkupMessage markup = markup(text, rate, pitch);
         Session$SessionMessage session = session(voiceId, gender);
         if (!composer.c(markup, session)) {
-            callback.error(TextToSpeech.ERROR);
-            return;
+            throw new IllegalStateException("Google local composer rejected the utterance session");
         }
+        long timeoutMs = Math.max(30_000L, Math.min(180_000L, (text == null ? 0 : text.length()) * 1_000L));
+        long deadline = SystemClock.elapsedRealtime() + timeoutMs;
+        boolean receivedAudio = false;
         while (!cancelled) {
             a state = composer.f();
             if (state != a.d) {
-                if (state == a.c) callback.done();
-                else callback.error(TextToSpeech.ERROR);
-                return;
+                if (state == a.c) {
+                    callback.done();
+                    return;
+                }
+                throw new IllegalStateException("Google local composer ended in state " + state);
+            }
+            if (SystemClock.elapsedRealtime() >= deadline) {
+                composer.g();
+                throw new IllegalStateException("Google local synthesis timed out after " + timeoutMs
+                        + " ms; audio received=" + receivedAudio + "; composer state=" + state);
             }
             if (composer.e()) {
                 byte[] pcm = composer.a();
+                if (pcm == null) throw new IllegalStateException("Google local composer returned a null PCM buffer");
                 scalePcm16(pcm, volumePercent);
-                if (pcm.length > 0 && callback.audioAvailable(pcm, 0, pcm.length) != TextToSpeech.SUCCESS) {
-                    cancel();
-                    return;
+                int maxChunk = Math.max(2, callback.getMaxBufferSize());
+                for (int offset = 0; offset < pcm.length; ) {
+                    int length = Math.min(maxChunk, pcm.length - offset);
+                    length &= ~1;
+                    if (length == 0) break;
+                    if (callback.audioAvailable(pcm, offset, length) != TextToSpeech.SUCCESS) {
+                        cancel();
+                        return;
+                    }
+                    receivedAudio = true;
+                    offset += length;
                 }
             } else {
                 Thread.sleep(2L);

@@ -11,6 +11,7 @@ import android.speech.tts.TextToSpeechService;
 import android.speech.tts.Voice;
 
 import com.microsoft.cognitiveservices.speech.AudioDataStream;
+import com.microsoft.cognitiveservices.speech.SpeechSynthesisCancellationDetails;
 import com.microsoft.cognitiveservices.speech.EmbeddedSpeechConfig;
 import com.microsoft.cognitiveservices.speech.ResultReason;
 import com.microsoft.cognitiveservices.speech.SpeechSynthesisOutputFormat;
@@ -153,6 +154,20 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
             String ssml = "<speak version=\"1.0\" xml:lang=\"" + xml(voice.locale) + "\"><prosody rate=\"" + rate + "%\" pitch=\"" + pitch + "%\">" + xml(normalizeText(request.getText().toString(), voice)) + "</prosody></speak>";
             SpeechSynthesisResult result = synthesizer.SpeakSsml(ssml);
             if (result.getReason() != ResultReason.SynthesizingAudioCompleted) {
+                String diagnostic = "Microsoft Embedded Speech returned " + result.getReason();
+                try {
+                    SpeechSynthesisCancellationDetails cancellation = SpeechSynthesisCancellationDetails.fromResult(result);
+                    try {
+                        diagnostic += "; reason=" + cancellation.getReason()
+                                + "; code=" + cancellation.getErrorCode()
+                                + "; details=" + cancellation.getErrorDetails();
+                    } finally {
+                        cancellation.close();
+                    }
+                } catch (Exception detailsError) {
+                    diagnostic += "; cancellation details unavailable: " + detailsError;
+                }
+                recordError("Microsoft synthesis failed for " + voice.name + ": " + diagnostic, null);
                 result.close();
                 callback.error(TextToSpeech.ERROR);
                 return;
