@@ -1,0 +1,138 @@
+string[] map, zones;
+bool playwall;
+const int Left=1;
+const int Right=2;
+const int Backward=3;
+const int Forward=4;
+const int Up=5;
+const int Down=6;
+void draw_map(string name)
+{
+if (name=="main")
+{
+maxx=250;
+maxy=250;
+spawn_platform(0,250,0,250,0,0,"concrete2");
+spawn_source(0,250,0,150,0,250,"citybirds.ogg");
+spawn_zone(0,250,0,100,0,250,"Concrete");
+spawn_platform(0,250,101,140,0,0,"grass2");
+spawn_zone(0,300,101,140,0,250,"Grass");
+spawn_platform(50,70,110,130,0,0,"mud");
+spawn_platform(55,65,115,125,0,0,"swimming");
+spawn_platform(50,55,109,124,20,20,"bridge");
+spawn_staircase(50,55,109,109,0,20,"metal");
+spawn_zone(50,55,109,109,0,20,"Stairs to bridge");
+spawn_zone(50,55,110,124,20,40,"Bridge");
+spawn_zone(50,70,110,130,0,250,"A gently flowing river");
+spawn_source(50,70,110,130,0,10,"river.ogg");
+spawn_platform(0,250,151,230,0,0,"swamp");
+spawn_source(0,250,151,230,0,250,"swamp.ogg");
+spawn_zone(0,250,151,230,0,250,"A swamp");
+}
+mapname=name;
+}
+void spawn_platform(int minx, int maxx, int miny, int maxy, int minz, int maxz, string type)
+{
+map.insert_last(minx+":"+maxx+":"+miny+":"+maxy+":"+minz+":"+maxz+":"+type);
+}
+void spawn_zone(int mx, int mx2, int my, int my2, int mz, int mz2, string zonetype)
+{
+zones.insert_last(mx+":"+mx2+":"+my+":"+my2+":"+mz+":"+mz2+":"+zonetype);
+}
+void playstep()
+{
+if (string_contains(gmt(), "wall",1)>-1)
+{
+if (playwall==false)
+{
+p.play_stationary(gmt()+".ogg",false);
+playwall=true;
+}
+bounce();
+}
+else
+{
+p.play_stationary(""+gmt()+"step"+random(1,5)+".ogg",false);
+playwall=false;
+}
+}
+string gmt()
+{
+return get_tile_at(me.x,me.y, me.z);
+}
+string get_tile_at(int x, int y, int z)
+{
+string final;
+for(uint i=0; i<map.length(); i++)
+{
+string[] parsed=string_split(map[i], ":", false);
+if (parsed.length()>=7)
+{
+int minx=string_to_number(parsed[0]);
+int maxx=string_to_number(parsed[1]);
+int miny=string_to_number(parsed[2]);
+int maxy=string_to_number(parsed[3]);
+int minz=string_to_number(parsed[4]);
+int maxz=string_to_number(parsed[5]);
+if (minx>x)
+{
+continue;
+}
+if (miny>y)
+{
+continue;
+}
+if (minx<=x and maxx>=x and miny<=y and maxy>=y and minz<=z and maxz>=z)
+{
+final=parsed[6];
+}
+}
+}
+return final;
+}
+string get_zone_at(int x, int y, int z)
+{
+string final;
+if (zones.length()>=100000 or zones.length()<=0 or zones.length()==0)
+return "";
+for(uint i=zones.length()-1; i>=0; i--)
+{
+if (i>=zones.length())
+return "";
+string[] parsed=string_split(zones[i], ":", false);
+if(parsed.length()>=7)
+{
+int minx=string_to_number(parsed[0]);
+int maxx=string_to_number(parsed[1]);
+int miny=string_to_number(parsed[2]);
+int maxy=string_to_number(parsed[3]);
+int minz=string_to_number(parsed[4]);
+int maxz=string_to_number(parsed[5]);
+if(minx<=x and maxx>=x and miny<=y and maxy>=y and minz<=z and maxz>=z)
+{
+final=parsed[6];
+return final;
+}
+}
+}
+return final;
+}
+void bounce()
+{
+if (facing==Left)
+{
+me.x+=1;
+}
+else if (facing==Right)
+{
+me.x-=1;
+}
+else if (facing==Forward)
+{
+me.y-=1;
+}
+else if (facing==Backward)
+{
+me.y+=1;
+}
+}

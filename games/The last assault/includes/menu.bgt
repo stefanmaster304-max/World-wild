@@ -1,0 +1,72 @@
+dynamic_menu_pro m;
+void setupmenu(bool music=false)
+{
+m.reset(false);
+m.enable_up_and_down=true;
+m.enable_home_and_end=true;
+m.enable_first_letter_navigation=true;
+if (music==true)
+{
+m.add_music("menumusic.ogg");
+m.music_added=true;
+}
+else
+{
+m.add_music("");
+m.music_added=false;
+}
+}
+void mainmenu()
+{
+setupmenu(true);
+m.add_item_tts("Play","play");
+m.add_item_tts("Help","help");
+m.add_item_tts("Exit","exit");
+int mres=m.run("Main menu",true);
+string menuitem=m.get_item_name(mres);
+if (menuitem=="play")
+{
+m.fade_music(20);
+play("start");
+draw_map("main");
+game();
+}
+else if (menuitem=="help")
+{
+helpmenu();
+}
+else
+{
+m.fade_music(20);
+exit();
+}
+}
+void helpmenu()
+{
+m.reset(false);
+file f;
+f.open("readme.txt","rb");
+string[] stuff=string_split(f.read(),"\r\n",true);
+f.close();
+for(uint i=0; i<stuff.length(); i++)
+{
+m.add_item_tts(stuff[i],stuff[i],false);
+}
+int mres=m.run("Use the arrow keys to read the help. Presss enter or escape to go back to the main menu.",true);
+mainmenu();
+}
+int menuquestion(string q)
+{
+setupmenu(false);
+m.add_item_tts("Yes");
+m.add_item_tts("No");
+int mres=m.run(q,true);
+if (mres==1)
+{
+return 1;
+}
+else
+{
+return 2;
+}
+}

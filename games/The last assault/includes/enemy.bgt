@@ -1,0 +1,105 @@
+enemy@ [] enemies(0);
+timer espawntimer;
+sound enemyr;
+class enemy
+{
+int x, y, z;
+int wdamage;
+string w;
+string[] weapons={"fists","handgun"};
+int hp;
+int emovetime=random(185,400);
+int type=random(1,3);
+int wrange;
+int wtime;
+timer etimer, shoottimer;
+enemy(int ex, int ey, int ez)
+{
+x=ex;
+y=ey;
+z=ez;
+hp=random(20,50);
+w=weapons[random(0,weapons.length()-1)];
+if (w=="fists")
+{
+wdamage=4;
+wrange=5;
+wtime=240;
+}
+else if (w=="handgun")
+{
+wdamage=12;
+wrange=10;
+wtime=400;
+}
+p.play_3d("enemyspawn.ogg",me.x,me.y,me.z,x,y,z,false);
+}
+}
+void enemyloop()
+{
+for(uint i=0; i<enemies.length(); i++)
+{
+if (enemies[i].hp<=0)
+{
+if(me.x<=enemies[i].x+35 and me.x>=enemies[i].x-35 and me.y>=enemies[i].y-35 and me.y<=enemies[i].y+35)
+p.play_3d("e"+enemies[i].type+"death.ogg",me.x,me.y,me.z,enemies[i].x,enemies[i].y,enemies[i].z,false);
+else
+play("edeath");
+spawn_bodyfall(enemies[i].x,enemies[i].y,enemies[i].z,2500);
+xp+=random(10,30);
+enemies.remove_at(i);
+break;
+}
+if (me.x>enemies[i].x-enemies[i].wrange and me.x<enemies[i].x+enemies[i].wrange and me.y==enemies[i].y and enemies[i].shoottimer.elapsed>=enemies[i].wtime)
+{
+enemies[i].shoottimer.restart();
+p.play_3d(enemies[i].w+".ogg",me.x,me.y,me.z,enemies[i].x,enemies[i].y,enemies[i].z,false);
+p.play_stationary(enemies[i].w+"hit"+random(1,3)+".ogg",false);
+health-=enemies[i].wdamage;
+}
+if (enemies[i].etimer.elapsed>=enemies[i].emovetime)
+{
+enemies[i].etimer.restart();
+p.play_3d(get_tile_at(enemies[i].x,enemies[i].y,enemies[i].z)+"step"+random(1,5)+".ogg",me.x,me.y,me.z,enemies[i].x,enemies[i].y,enemies[i].z,false);
+if (enemies[i].x<me.x)
+{
+enemies[i].x++;
+}
+if (enemies[i].x>me.x)
+{
+enemies[i].x--;
+}
+if (enemies[i].y>me.y)
+{
+enemies[i].y--;
+}
+if (enemies[i].y<me.y)
+{
+enemies[i].y++;
+}
+if (enemies[i].x==me.x)
+{
+enemies[i].x=me.x;
+}
+if (enemies[i].y==me.y)
+{
+enemies[i].y=me.y;
+}
+}
+}
+if (espawntimer.elapsed>=10000 and enemies.length<5)
+{
+espawntimer.restart();
+spawn_enemy(random(0,maxx),random(0,maxy),0);
+}
+}
+void spawn_enemy(int ex, int ey, int ez)
+{
+enemy e1(ex,ey,ez);
+enemies.insert_last(e1);
+}
+void killenemies()
+{
+enemies.resize(0);
+}
+

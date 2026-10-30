@@ -1,0 +1,94 @@
+int abletojump2;
+staircase@[] staircases;
+bool onstaircase;
+class staircase
+{
+bool abletojump;
+int minx, maxx, miny, maxy, minz, maxz;
+string tile;
+int staircasesound;
+staircase(int cx, int cx2, int fminy,int fmaxy,int sminz, int smaxz, string playsound)
+{
+minx=cx;
+maxx=cx2;
+miny=fminy;
+maxy=fmaxy;
+minz=sminz;
+maxz=smaxz;
+tile=playsound;
+spawn_platform(minx,maxx,miny,maxy,minz,maxz,tile);
+}
+}
+void staircasecheckloop()
+{
+for (uint i=0; i<staircases.length(); i++)
+{
+if (me.x>=staircases[i].minx&&me.x<=staircases[i].maxx&&me.y>=staircases[i].miny&&me.y<=staircases[i].maxy and me.z>=staircases[i].minz and me.z<=staircases[i].maxz)
+{
+onstaircase=true;
+if (me.z==staircases[i].maxz)staircases[i].abletojump=true;
+else staircases[i].abletojump=false;
+}
+else
+{
+onstaircase=false;
+staircases[i].abletojump=true;
+}
+if (key_down(KEY_PRIOR))
+{
+if (onstaircase==true&&movetimer.elapsed>=movetime&&me.z<staircases[i].maxz)
+{
+movetimer.restart();
+me.z+=1;
+play(staircases[i].tile+"step"+random(1,5));
+}
+}
+if (key_down(KEY_NEXT))
+{
+if (onstaircase==true&&movetimer.elapsed>=movetime&&me.z>staircases[i].minz)
+{
+movetimer.restart();
+me.z-=1;
+play(staircases[i].tile+"step"+random(1,5));
+}
+}
+}
+}
+void spawn_staircase(int fminx, int fmaxx, int fminy, int fmaxy, int fminz, int fmaxz, string stile)
+{
+staircase staircase1(fminx,fmaxx,fminy, fmaxy,fminz,fmaxz,stile);
+staircases.insert_last(staircase1);
+}
+void destroy_all_staircases()
+{
+staircases.resize(0);
+}
+void sjumpcheck()
+{
+if (staircases.length()<=0)abletojump2=1;
+else
+{
+for (uint i=0; i<staircases.length(); i++)
+{
+if (staircases[i].abletojump==false)
+{
+abletojump2=0;
+break;
+}
+else if (staircases[i].abletojump==true||onstaircase==false)
+{
+abletojump2+=1;
+}
+else if (i>=staircases.length()-1&&staircases.length()>0&&staircases[i].abletojump==true)
+{
+abletojump2=1;
+break;
+}
+else if (i>=staircases.length()-1&&staircases.length()>0&&staircases[i].abletojump==false)
+{
+abletojump2=0;
+break;
+}
+}
+}
+}
