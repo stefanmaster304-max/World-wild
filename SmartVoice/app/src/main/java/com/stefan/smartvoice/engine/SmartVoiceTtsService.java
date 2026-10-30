@@ -2,6 +2,7 @@ package com.stefan.smartvoice.engine;
 
 import android.media.AudioFormat;
 import android.os.Bundle;
+import android.util.Log;
 import android.content.SharedPreferences;
 import android.speech.tts.SynthesisCallback;
 import android.speech.tts.SynthesisRequest;
@@ -102,10 +103,12 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
 
     @Override protected void onSynthesizeText(SynthesisRequest request, SynthesisCallback callback) {
         stopped = false;
+        getSharedPreferences("smart_voice_settings", MODE_PRIVATE).edit().remove("last_tts_error").apply();
         String requestedId = request.getVoiceName();
         VoiceEntry voice = findVoice(requestedId);
         if (voice == null) voice = findVoice(new VoiceStore(this).selectedVoiceId());
         if (voice == null) {
+            recordError("No imported Smart Voice voice matched this Android TTS request.", null);
             callback.error(TextToSpeech.ERROR);
             return;
         }
@@ -117,13 +120,14 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
             speakVocalizer(voice, normalizeText(request.getText().toString(), voice), request, callback);
             return;
         }
-        if (!"microsoft".equals(voice.engine)) { callback.error(TextToSpeech.ERROR); return; }
+        if (!"microsoft".equals(voice.engine)) { recordError("No synthesis adapter is registered for engine '" + voice.engine + "'.", null); callback.error(TextToSpeech.ERROR); return; }
         // MultiTTS voice ZIPs carry the Microsoft engine parameter alongside each
         // voice. Use that imported value as-is; the encrypted user setting is only
         // a fallback for compatible Embedded Speech packages that omit it.
         String license = voice.engineParam == null || voice.engineParam.isEmpty()
                 ? new VoiceStore(this).microsoftModelLicense() : voice.engineParam;
         if (license.isEmpty()) {
+            recordError("The imported Microsoft voice package does not contain the model license required by Embedded Speech.", null);
             callback.error(TextToSpeech.ERROR);
             return;
         }
@@ -155,6 +159,7 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
             }
             callback.done();
         } catch (Exception e) {
+            recordError("Microsoft synthesis failed for " + voice.name + ": " + e, e);
             callback.error(TextToSpeech.ERROR);
         }
     }
@@ -176,6 +181,7 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
             int pitch = Math.max(10, Math.min(500, request.getPitch() * settings.getInt("pitch", 100) / 100));
             google.speak(text, callback, rate, pitch, settings.getInt("volume", 100));
         } catch (Exception e) {
+            recordError("Google local synthesis failed for " + voice.name + ": " + e, e);
             callback.error(TextToSpeech.ERROR);
         }
     }
@@ -208,8 +214,15 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
             });
             if (stopped) callback.error(TextToSpeech.ERROR); else callback.done();
         } catch (Exception e) {
+            recordError("Vocalizer synthesis failed for " + voice.name + ": " + e, e);
             callback.error(TextToSpeech.ERROR);
         }
+    }
+
+    private void recordError(String message, Throwable error) {
+        String details = error == null ? message : message + "\n" + Log.getStackTraceString(error);
+        Log.e("SmartVoiceTTS", message, error);
+        getSharedPreferences("smart_voice_settings", MODE_PRIVATE).edit().putString("last_tts_error", details).apply();
     }
 
     private SpeechSynthesizer getOrCreateMicrosoftSynthesizer(VoiceEntry voice, String license) throws Exception {

@@ -2,6 +2,15 @@
 
 ## 0.0.1 — 2026-10-30
 
+### Engine and import reliability fixes
+
+- Added the required `DEFAULT` service category and engine settings metadata so Android can discover Smart Voice as a TTS service.
+- Removed the preview's repeated engine switch. The test now verifies it is bound to Smart Voice, selects the exact voice exposed by the service, and refuses to speak through another system engine if initialization or voice selection fails.
+- Recorded synthesis exceptions and added copy/share actions to error dialogs.
+- Added the Access Mind Server chooser and searchable catalog with language, gender, and quality filters; voice rows use the server's published metadata.
+- Added download progress/cancellation, followed by the normal secure extraction and package validation path, and a completion message after successful import.
+- Added an ARM64 compatibility check for the Google and Vocalizer native runtimes. The APK bundles engine libraries only; user voice models remain external imports/downloads.
+
 ### Added
 
 - Initial Smart Voice Android app foundation, version `0.0.1`, with welcome flow and English, Portuguese, and Spanish interface text.

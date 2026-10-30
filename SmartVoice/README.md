@@ -10,7 +10,8 @@ Smart Voice is an Android text-to-speech engine for screen-reader users. Version
 - Emoji names from bundled Unicode CLDR annotation tables. The selected voice's locale is used; English annotations seed the table so individual missing translations fall back to English.
 - User dictionary with add, edit, delete, clear, TXT/CFG import, and TXT export, all grouped on the dictionary screen.
 - System text-to-speech settings shortcut, interface-language selection, and a Telegram contact button for [@damomgamer](https://t.me/damomgamer).
-- An online voice catalog backed by AccessMind's public `voices.json` endpoint. Selecting an entry downloads its ZIP from the AccessMind file host and sends it through the same validator used by local imports. Downloads require internet access; speech generation remains offline after an engine and compatible voice data are installed.
+- An online voice catalog with an **Access Mind Server** source, voice/language search, and language, gender, and quality filters. The list shows the server's voice, language code, gender, package variant, quality, and size. Selecting a row downloads and imports that ZIP through the same validator used by local imports, with progress and cancellation.
+- Copy/share actions on package, download, and synthesis error dialogs so diagnostic details can be sent to the developer.
 
 The importer checks the ZIP structure before registering data. Microsoft packages require their descriptor, model directory, `.APM` model, and `.INI` metadata. Google packages require a descriptor and the selected model's `pipeline.pb` and `backend_pipeline.textproto`. AccessMind Vocalizer packages are parsed from their XML `.hdr` metadata and `.dat` model files. ZIP path traversal, oversized archives, invalid descriptors, missing models, and unknown engines are rejected with an explanation.
 
@@ -20,7 +21,7 @@ The importer checks the ZIP structure before registering data. Microsoft package
 - **Google local:** MultiTTS-format local model packages are recognized by the local Google adapter. The bundled native runtime is ARM64 only.
 - **Vocalizer / Cerence:** The app includes the ARM64 Vocalizer JNI library and a Java runtime bridge recovered from the MultiTTS APK. Its importer reads MultiTTS `config.yaml` packages and AccessMind `.dat`/`.hdr` packages, then arranges AccessMind's split model files for the runtime. Synthesis is wired into the Android TTS service. Compilation confirms that the integration builds; a physical ARM64 device test is still needed to confirm model loading and audible output for each package family. The MultiTTS runtime library is ARM64 only. See [Vocalizer format research](docs/VOCALIZER_FORMATS.md).
 
-AccessMind's catalog contains voice download links, but the linked voice models are not a free-standing Android engine. The vendor currently describes its Runa TTS product as Windows/NVDA software, with local voice operation after installation and activation. Smart Voice does not bypass or replace that licensing/activation system.
+The APK contains engine code and native libraries only; no voice models or voice ZIPs are embedded. Imported/downloaded model files are stored in the app's private data directory. The AccessMind catalog contains voice download links, but the linked models are not a free-standing Android engine. The vendor currently describes its Runa TTS product as Windows/NVDA software, with local voice operation after installation and activation. Smart Voice does not bypass or replace that licensing/activation system.
 
 ## Build
 
@@ -34,7 +35,7 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. The che
 
 ## Validation
 
-The APK was compiled from this source. There is no connected Android device in this workspace, so Vocalizer model loading/audio output and Android's external ZIP chooser still need an on-device check. A successful build does not confirm runtime playback.
+The APK was compiled from this source. TTS discovery is declared for Android's engine list, and the in-app preview explicitly binds to the Smart Voice package and selected imported voice. There is no connected Android device in this workspace, so listing in a particular vendor's settings screen, Vocalizer model playback, and external ZIP chooser behavior still need an on-device check. A successful build does not confirm runtime playback.
 
 ## Project files
 

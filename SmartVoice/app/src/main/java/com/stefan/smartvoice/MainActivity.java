@@ -4,6 +4,9 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.Intent;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -17,8 +20,12 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ArrayAdapter;
+import android.widget.AdapterView;
+import android.widget.ListView;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -31,6 +38,8 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -46,9 +55,10 @@ public final class MainActivity extends Activity {
     private VoiceStore store;
     private android.content.SharedPreferences prefs;
     private TextToSpeech tts;
-    private TextView selected;
     private EditText sample;
     private String selectedVoiceId = "", screen = "home";
+    private boolean ttsReady;
+    private String ttsInitError = "";
     private ProgressDialog importDialog;
     private AtomicBoolean cancelImport;
     private String handledIncomingUri = "";
@@ -58,7 +68,30 @@ public final class MainActivity extends Activity {
         store = new VoiceStore(this);
         prefs = getSharedPreferences("smart_voice_settings", MODE_PRIVATE);
         selectedVoiceId = store.selectedVoiceId();
-        tts = new TextToSpeech(this, result -> { if (result == TextToSpeech.SUCCESS) configureTts(); }, getPackageName());
+        tts = new TextToSpeech(this, result -> runOnUiThread(() -> {
+            ttsReady = result == TextToSpeech.SUCCESS
+                    && getPackageName().equals(tts == null ? "" : tts.getDefaultEngine());
+            if (!ttsReady) {
+                ttsInitError = result == TextToSpeech.SUCCESS
+                        ? "Android connected a different speech engine than Smart Voice."
+                        : "Android could not bind Smart Voice as a text-to-speech engine (code " + result + ").";
+                return;
+            }
+            applySelectedVoice(false);
+        }), getPackageName());
+        tts.setOnUtteranceProgressListener(new android.speech.tts.UtteranceProgressListener() {
+            @Override public void onStart(String utteranceId) { }
+            @Override public void onDone(String utteranceId) { }
+            @Override public void onError(String utteranceId) { onError(utteranceId, TextToSpeech.ERROR); }
+            @Override public void onError(String utteranceId, int errorCode) {
+                if (!"smartvoice-test".equals(utteranceId)) return;
+                String detail = prefs.getString("last_tts_error", "");
+                String error = detail.isEmpty()
+                        ? "Smart Voice synthesis failed (Android error " + errorCode + ")."
+                        : detail;
+                runOnUiThread(() -> showImportError(error));
+            }
+        });
         show(prefs.getBoolean("welcome_completed", false) ? "home" : "welcome");
         handleIncomingIntent(getIntent());
     }
@@ -77,14 +110,35 @@ public final class MainActivity extends Activity {
         importPackage(intent.getData());
     }
 
-    private void configureTts() {
-        tts.setEngineByPackageName(getPackageName());
-        // Smart Voice applies its own controls inside the service. Keep this
-        // preview client neutral to avoid applying the multipliers twice.
+    private boolean applySelectedVoice(boolean showError) {
+        if (tts == null || !ttsReady) return false;
+        if (!getPackageName().equals(tts.getDefaultEngine())) {
+            ttsReady = false;
+            ttsInitError = "Android connected a different speech engine than Smart Voice.";
+            if (showError) showImportError(ttsInitError);
+            return false;
+        }
+        VoiceEntry entry = selectedVoice();
+        if (entry == null) return false;
+        android.speech.tts.Voice androidVoice = null;
+        for (android.speech.tts.Voice candidate : tts.getVoices()) {
+            if (entry.id.equals(candidate.getName())) { androidVoice = candidate; break; }
+        }
+        if (androidVoice == null) {
+            String message = "Smart Voice does not currently expose the selected voice to Android: " + entry.name;
+            if (showError) showImportError(message);
+            return false;
+        }
+        int result = tts.setVoice(androidVoice);
+        if (result != TextToSpeech.SUCCESS) {
+            String message = "Android rejected the selected Smart Voice voice: " + entry.name + " (code " + result + ").";
+            if (showError) showImportError(message);
+            return false;
+        }
+        prefs.edit().remove("last_tts_error").apply();
         tts.setSpeechRate(1.0f);
         tts.setPitch(1.0f);
-        VoiceEntry voice = selectedVoice();
-        if (voice != null) tts.setVoice(new android.speech.tts.Voice(voice.id, voice.toLocale(), 400, 400, false, Collections.emptySet()));
+        return true;
     }
 
     private void show(String target) {
@@ -115,7 +169,7 @@ public final class MainActivity extends Activity {
     private void home(LinearLayout root) {
         label(root, tr("version") + " 0.0.1 · " + tr("developer") + " Stefan", 14);
         button(root, tr("import_package"), this::choosePackage);
-        button(root, tr("download_online"), this::showOnlineVoices);
+        button(root, tr("download_online"), this::chooseOnlineServer);
         button(root, tr("select_voice"), this::chooseVoice);
         sample = new EditText(this);
         sample.setHint(tr("sample_hint")); sample.setMinLines(2); sample.setText(tr("sample_text"));
@@ -167,7 +221,7 @@ public final class MainActivity extends Activity {
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar bar, int value, boolean fromUser) {
                 int actual = min + value * step; title.setText(tr(labelKey) + ": " + actual + suffix);
-                if (fromUser) { prefs.edit().putInt(prefKey, actual).apply(); if (tts != null) configureTts(); }
+        if (fromUser) prefs.edit().putInt(prefKey, actual).apply();
             }
             public void onStartTrackingTouch(SeekBar b) { }
             public void onStopTrackingTouch(SeekBar b) { }
@@ -201,6 +255,10 @@ public final class MainActivity extends Activity {
     }
 
     private void importPackage(Uri uri) {
+        importPackage(uri, "", null);
+    }
+
+    private void importPackage(Uri uri, String successMessage, File temporaryDownload) {
         cancelImport = new AtomicBoolean(false);
         importDialog = new ProgressDialog(this); importDialog.setTitle(tr("importing")); importDialog.setMessage(tr("please_wait"));
         importDialog.setProgressStyle(ProgressDialog.STYLE_SPINNER); importDialog.setCancelable(false);
@@ -211,12 +269,17 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     if (importDialog != null) importDialog.dismiss();
                     if (!imported.isEmpty() && selectedVoiceId.isEmpty()) select(imported.get(0));
-                    Toast.makeText(this, tr("imported") + " " + imported.size(), Toast.LENGTH_LONG).show(); show("home");
+                    if (temporaryDownload != null) temporaryDownload.delete();
+                    if (successMessage.isEmpty()) Toast.makeText(this, tr("imported") + " " + imported.size(), Toast.LENGTH_LONG).show();
+                    else new AlertDialog.Builder(this).setTitle(tr("download_success")).setMessage(successMessage)
+                            .setPositiveButton(tr("close"), null).show();
+                    show("home");
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     if (importDialog != null) importDialog.dismiss();
-                    showImportError(safeMessage(e));
+                    if (temporaryDownload != null) temporaryDownload.delete();
+                    if (!(e instanceof java.util.concurrent.CancellationException)) showImportError(errorLog(e));
                 });
             }
         }, "voice-package-import").start();
@@ -228,7 +291,30 @@ public final class MainActivity extends Activity {
         if (message.toLowerCase(Locale.ROOT).contains("engine not integrated") || message.toLowerCase(Locale.ROOT).contains("engine is not available")) {
             title = tr("engine_unavailable");
         }
-        new AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton(tr("ok"), null).show();
+        new AlertDialog.Builder(this).setTitle(title).setMessage(message)
+                .setNegativeButton(tr("copy_error"), (dialog, which) -> copyError(message))
+                .setNeutralButton(tr("send_error"), (dialog, which) -> sendError(message))
+                .setPositiveButton(tr("close"), null).show();
+    }
+
+    private void copyError(String message) {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText("Smart Voice error", message));
+        Toast.makeText(this, tr("error_copied"), Toast.LENGTH_SHORT).show();
+    }
+
+    private void sendError(String message) {
+        Intent share = new Intent(Intent.ACTION_SEND);
+        share.setType("text/plain");
+        share.putExtra(Intent.EXTRA_TEXT, "Smart Voice error:\n" + message + "\n\nDeveloper: https://t.me/damomgamer");
+        try { startActivity(Intent.createChooser(share, tr("send_error"))); }
+        catch (Exception e) { copyError(message); }
+    }
+
+    private void chooseOnlineServer() {
+        new AlertDialog.Builder(this).setTitle(tr("download_online"))
+                .setItems(new String[]{"Access Mind Server"}, (dialog, which) -> showOnlineVoices())
+                .setNegativeButton(tr("cancel"), null).show();
     }
 
     private void showOnlineVoices() {
@@ -245,21 +331,107 @@ public final class MainActivity extends Activity {
                     data = new JSONArray(json.toString());
                 } finally { connection.disconnect(); }
                 ArrayList<JSONObject> entries = new ArrayList<>();
-                ArrayList<String> labels = new ArrayList<>();
                 for (int i = 0; i < data.length(); i++) {
                     JSONObject item = data.optJSONObject(i); if (item == null || item.optString("download_url").isEmpty()) continue;
                     entries.add(item);
-                    labels.add(item.optString("voice_name") + " · " + item.optString("language") + " · " + item.optString("quality") + " · " + formatBytes(item.optLong("size_in_bytes")));
                 }
                 runOnUiThread(() -> {
                     progress.dismiss();
                     if (entries.isEmpty()) { showImportError(tr("catalog_empty")); return; }
-                    new AlertDialog.Builder(this).setTitle(tr("online_catalog")).setItems(labels.toArray(new String[0]), (d, which) -> downloadOnlineVoice(entries.get(which))).setNegativeButton(tr("cancel"), null).show();
+                    showAccessMindVoiceBrowser(entries);
                 });
             } catch (Exception e) {
-                runOnUiThread(() -> { progress.dismiss(); showImportError(tr("catalog_failed") + "\n" + safeMessage(e)); });
+                runOnUiThread(() -> { progress.dismiss(); showImportError(tr("catalog_failed") + "\n" + errorLog(e)); });
             }
         }, "online-voice-catalog").start();
+    }
+
+    private void showAccessMindVoiceBrowser(List<JSONObject> entries) {
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(12), dp(8), dp(12), dp(8));
+        EditText search = new EditText(this);
+        search.setSingleLine(true);
+        search.setHint(tr("search_voice"));
+        content.addView(search, matchWrap());
+        Spinner language = addCatalogFilter(content, tr("all_languages"), catalogValues(entries, "language"));
+        Spinner gender = addCatalogFilter(content, tr("all_genders"), catalogValues(entries, "gender"));
+        Spinner quality = addCatalogFilter(content, tr("all_qualities"), catalogValues(entries, "quality"));
+        TextView count = label(content, "", 14);
+        ListView list = new ListView(this);
+        content.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(340)));
+        ArrayList<JSONObject> visible = new ArrayList<>();
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, new ArrayList<>());
+        list.setAdapter(adapter);
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Access Mind Server")
+                .setView(content).setNegativeButton(tr("cancel"), null).create();
+        Runnable apply = () -> {
+            String query = search.getText().toString().trim().toLowerCase(Locale.ROOT);
+            String lang = String.valueOf(language.getSelectedItem());
+            String sex = String.valueOf(gender.getSelectedItem());
+            String q = String.valueOf(quality.getSelectedItem());
+            visible.clear(); adapter.clear();
+            for (JSONObject voice : entries) {
+                String haystack = (voice.optString("voice_name") + " " + voice.optString("language") + " "
+                        + voice.optString("lang_code") + " " + voice.optString("voice_type") + " "
+                        + voice.optString("quality")).toLowerCase(Locale.ROOT);
+                if (!query.isEmpty() && !haystack.contains(query)) continue;
+                if (!tr("all_languages").equals(lang) && !lang.equals(voice.optString("language"))) continue;
+                if (!tr("all_genders").equals(sex) && !sex.equals(voice.optString("gender"))) continue;
+                if (!tr("all_qualities").equals(q) && !q.equals(voice.optString("quality"))) continue;
+                visible.add(voice); adapter.add(formatAccessMindVoice(voice));
+            }
+            count.setText(tr("catalog_results") + " " + visible.size() + "/" + entries.size());
+        };
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int start, int before, int count) { }
+            public void onTextChanged(CharSequence s, int start, int before, int count) { apply.run(); }
+            public void afterTextChanged(android.text.Editable editable) { }
+        });
+        AdapterView.OnItemSelectedListener filterChanged = new AdapterView.OnItemSelectedListener() {
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) { apply.run(); }
+            public void onNothingSelected(AdapterView<?> parent) { }
+        };
+        language.setOnItemSelectedListener(filterChanged);
+        gender.setOnItemSelectedListener(filterChanged);
+        quality.setOnItemSelectedListener(filterChanged);
+        list.setOnItemClickListener((parent, view, position, id) -> {
+            JSONObject selected = visible.get(position);
+            dialog.dismiss();
+            downloadOnlineVoice(selected);
+        });
+        apply.run();
+        dialog.show();
+    }
+
+    private Spinner addCatalogFilter(LinearLayout parent, String allLabel, List<String> values) {
+        ArrayList<String> labels = new ArrayList<>(); labels.add(allLabel); labels.addAll(values);
+        Spinner spinner = new Spinner(this);
+        spinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, labels));
+        spinner.setContentDescription(allLabel);
+        parent.addView(spinner, matchWrap());
+        return spinner;
+    }
+
+    private List<String> catalogValues(List<JSONObject> entries, String key) {
+        java.util.TreeSet<String> values = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        for (JSONObject entry : entries) { String value = entry.optString(key).trim(); if (!value.isEmpty()) values.add(value); }
+        return new ArrayList<>(values);
+    }
+
+    private String formatAccessMindVoice(JSONObject voice) {
+        StringBuilder label = new StringBuilder(voice.optString("voice_name"));
+        appendDetail(label, voice.optString("language"));
+        appendDetail(label, voice.optString("lang_code"));
+        appendDetail(label, voice.optString("gender"));
+        appendDetail(label, voice.optString("voice_type"));
+        appendDetail(label, voice.optString("quality"));
+        appendDetail(label, formatBytes(voice.optLong("size_in_bytes")));
+        return label.toString();
+    }
+
+    private static void appendDetail(StringBuilder label, String detail) {
+        if (detail != null && !detail.trim().isEmpty()) label.append(" · ").append(detail.trim());
     }
 
     private void downloadOnlineVoice(JSONObject voice) {
@@ -268,8 +440,8 @@ public final class MainActivity extends Activity {
             showImportError(tr("catalog_invalid_link")); return;
         }
         ProgressDialog progress = new ProgressDialog(this);
-        progress.setTitle(tr("downloading_voice")); progress.setMessage(voice.optString("voice_name"));
-        progress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL); progress.setIndeterminate(true); progress.setCancelable(false);
+        progress.setTitle(tr("downloading_voice")); progress.setMessage(formatAccessMindVoice(voice));
+        progress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL); progress.setIndeterminate(true); progress.setMax(100); progress.setCancelable(false);
         cancelImport = new AtomicBoolean(false);
         progress.setButton(ProgressDialog.BUTTON_NEGATIVE, tr("cancel"), (d, w) -> cancelImport.set(true));
         progress.show();
@@ -290,12 +462,15 @@ public final class MainActivity extends Activity {
                         }
                     }
                 } finally { connection.disconnect(); }
+                if (cancelImport.get()) throw new java.util.concurrent.CancellationException(tr("download_cancelled"));
                 File file = downloaded;
-                runOnUiThread(() -> { progress.dismiss(); importPackage(Uri.fromFile(file)); });
+                runOnUiThread(() -> { progress.dismiss(); importPackage(Uri.fromFile(file), formatAccessMindVoice(voice), file); });
             } catch (Exception e) {
                 if (downloaded != null) //noinspection ResultOfMethodCallIgnored
                     downloaded.delete();
-                runOnUiThread(() -> { progress.dismiss(); showImportError(safeMessage(e)); });
+                if (!(e instanceof java.util.concurrent.CancellationException)) {
+                    runOnUiThread(() -> { progress.dismiss(); showImportError(tr("download_failed") + "\n" + errorLog(e)); });
+                } else runOnUiThread(progress::dismiss);
             }
         }, "online-voice-download").start();
     }
@@ -324,13 +499,21 @@ public final class MainActivity extends Activity {
     }
 
     private void select(VoiceEntry voice) {
-        selectedVoiceId = voice.id; store.setSelectedVoiceId(voice.id); if (tts != null) configureTts();
+        selectedVoiceId = voice.id;
+        store.setSelectedVoiceId(voice.id);
+        if (ttsReady) applySelectedVoice(true);
     }
 
     private void speakSample() {
         if (selectedVoice() == null) { Toast.makeText(this, tr("no_voices"), Toast.LENGTH_SHORT).show(); return; }
-        if (tts == null) { Toast.makeText(this, tr("tts_starting"), Toast.LENGTH_SHORT).show(); return; }
-        tts.speak(sample.getText().toString(), TextToSpeech.QUEUE_FLUSH, null, "smartvoice-test");
+        if (tts == null || !ttsReady) {
+            showImportError(ttsInitError.isEmpty() ? tr("tts_starting") : ttsInitError);
+            return;
+        }
+        if (!applySelectedVoice(true)) return;
+        prefs.edit().remove("last_tts_error").apply();
+        int result = tts.speak(sample.getText().toString(), TextToSpeech.QUEUE_FLUSH, null, "smartvoice-test");
+        if (result != TextToSpeech.SUCCESS) showImportError("Smart Voice rejected the test utterance (Android error " + result + ").");
     }
 
     private void chooseLanguage() {
@@ -409,6 +592,17 @@ public final class MainActivity extends Activity {
                 {"done", "Done", "Concluído", "Hecho"}, {"import_package", "Import voice package (.zip)", "Importar pacote de voz (.zip)", "Importar paquete de voz (.zip)"},
                 {"download_online", "Download voices online", "Baixar vozes pela internet", "Descargar voces en línea"},
                 {"online_catalog", "Online voice catalog", "Catálogo de vozes online", "Catálogo de voces en línea"},
+                {"search_voice", "Search voice or language", "Buscar voz ou idioma", "Buscar voz o idioma"},
+                {"all_languages", "All languages", "Todos os idiomas", "Todos los idiomas"},
+                {"all_genders", "All genders", "Todos os gêneros", "Todos los géneros"},
+                {"all_qualities", "All qualities", "Todas as qualidades", "Todas las calidades"},
+                {"catalog_results", "Results:", "Resultados:", "Resultados:"},
+                {"download_success", "Voice downloaded successfully", "Voz baixada com êxito", "Voz descargada correctamente"},
+                {"download_failed", "Voice download failed.", "Falha ao baixar a voz.", "No se pudo descargar la voz."},
+                {"copy_error", "Copy error", "Copiar erro", "Copiar error"},
+                {"send_error", "Send error", "Enviar erro", "Enviar error"},
+                {"error_copied", "Error copied to clipboard", "Erro copiado para a área de transferência", "Error copiado al portapapeles"},
+                {"close", "Close", "Fechar", "Cerrar"},
                 {"loading_catalog", "Loading the AccessMind voice catalog…", "Carregando o catálogo de vozes AccessMind…", "Cargando el catálogo de voces de AccessMind…"},
                 {"downloading_voice", "Downloading voice package…", "Baixando pacote de voz…", "Descargando paquete de voz…"},
                 {"download_cancelled", "Voice download cancelled", "Download da voz cancelado", "Descarga de voz cancelada"},
@@ -450,6 +644,12 @@ public final class MainActivity extends Activity {
     private int dp(int value) { return (int) (value * getResources().getDisplayMetrics().density + 0.5f); }
     private LinearLayout.LayoutParams matchWrap() { return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); }
     private static String safeMessage(Exception e) { return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(); }
+
+    private static String errorLog(Exception e) {
+        StringWriter log = new StringWriter();
+        e.printStackTrace(new PrintWriter(log));
+        return log.toString();
+    }
 
     @Override protected void onDestroy() { if (tts != null) { tts.stop(); tts.shutdown(); } super.onDestroy(); }
 }

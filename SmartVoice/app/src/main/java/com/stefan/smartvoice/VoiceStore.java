@@ -1,6 +1,7 @@
 package com.stefan.smartvoice;
 
 import android.content.Context;
+import android.os.Build;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.util.JsonReader;
@@ -139,6 +140,7 @@ public final class VoiceStore {
                 throw new IllegalArgumentException("This ZIP is not a supported Microsoft, Google, or Vocalizer voice package. It needs a valid config.yaml/engines.yaml descriptor or AccessMind Vocalizer .dat and .hdr files.");
             }
             for (VoiceEntry voice : parsed) {
+                requireRuntimeAbi(voice.engine);
                 File voiceRoot = findVoiceFolder(descriptorRoot, voice.engine, voice.locale, voice.code);
                 if (voiceRoot == null && voice.engine.equals("google")) voiceRoot = descriptorRoot;
                 if (voiceRoot == null && voice.engine.equals("microsoft")) {
@@ -173,6 +175,14 @@ public final class VoiceStore {
         } catch (Exception e) {
             deleteTree(staging);
             throw e;
+        }
+    }
+
+    private static void requireRuntimeAbi(String engine) {
+        if ("google".equals(engine) || "vocalizer".equals(engine)) {
+            boolean arm64 = false;
+            for (String abi : Build.SUPPORTED_ABIS) if ("arm64-v8a".equalsIgnoreCase(abi)) arm64 = true;
+            if (!arm64) throw new IllegalArgumentException("Engine is not available on this device architecture: " + engine + " requires ARM64 Android libraries.");
         }
     }
 
