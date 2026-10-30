@@ -6,6 +6,8 @@ import android.app.ProgressDialog;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
 import android.view.Gravity;
@@ -24,8 +26,13 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -35,15 +42,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class MainActivity extends Activity {
     private static final int PICK_PACKAGE = 100, PICK_DICTIONARY = 101, EXPORT_DICTIONARY = 102;
+    private static final String ACCESSMIND_VOICES_URL = "https://accessmind.io/voices.json";
     private VoiceStore store;
     private android.content.SharedPreferences prefs;
     private TextToSpeech tts;
-    private TextView selected, status;
+    private TextView selected;
     private EditText sample;
     private String selectedVoiceId = "", screen = "home";
     private ProgressDialog importDialog;
     private AtomicBoolean cancelImport;
-    private List<VoiceEntry> dictionaryVoices = Collections.emptyList();
+    private String handledIncomingUri = "";
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -52,6 +60,21 @@ public final class MainActivity extends Activity {
         selectedVoiceId = store.selectedVoiceId();
         tts = new TextToSpeech(this, result -> { if (result == TextToSpeech.SUCCESS) configureTts(); }, getPackageName());
         show(prefs.getBoolean("welcome_completed", false) ? "home" : "welcome");
+        handleIncomingIntent(getIntent());
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIncomingIntent(intent);
+    }
+
+    private void handleIncomingIntent(Intent intent) {
+        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction()) || intent.getData() == null) return;
+        String key = intent.getData().toString();
+        if (key.equals(handledIncomingUri)) return;
+        handledIncomingUri = key;
+        importPackage(intent.getData());
     }
 
     private void configureTts() {
@@ -92,7 +115,7 @@ public final class MainActivity extends Activity {
     private void home(LinearLayout root) {
         label(root, tr("version") + " 0.0.1 · " + tr("developer") + " Stefan", 14);
         button(root, tr("import_package"), this::choosePackage);
-        selected = label(root, "", 18);
+        button(root, tr("download_online"), this::showOnlineVoices);
         button(root, tr("select_voice"), this::chooseVoice);
         sample = new EditText(this);
         sample.setHint(tr("sample_hint")); sample.setMinLines(2); sample.setText(tr("sample_text"));
@@ -108,16 +131,12 @@ public final class MainActivity extends Activity {
         emoji.setOnCheckedChangeListener((v, checked) -> prefs.edit().putBoolean("read_emojis", checked).apply()); root.addView(emoji, matchWrap());
         button(root, tr("dictionary"), () -> show("dictionary"));
         button(root, tr("settings"), () -> show("settings"));
-        status = label(root, "", 14); refresh();
     }
 
     private void settings(LinearLayout root) {
         button(root, tr("interface_language"), this::chooseLanguage);
         button(root, tr("system_tts_settings"), () -> openSystemSettings("android.settings.TTS_SETTINGS"));
-        button(root, tr("accessibility_settings"), () -> openSystemSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS));
-        button(root, tr("dictionary_import"), () -> pickFile(PICK_DICTIONARY, "text/*"));
-        button(root, tr("dictionary_export"), () -> pickFile(EXPORT_DICTIONARY, "text/plain"));
-        button(root, tr("dictionary_clear"), this::clearDictionary);
+        button(root, tr("contact_developer"), this::contactDeveloper);
         button(root, tr("back"), () -> show("home"));
         label(root, "Smart Voice 0.0.1 · Stefan", 14);
     }
@@ -137,6 +156,7 @@ public final class MainActivity extends Activity {
         }
         button(root, tr("dictionary_import"), () -> pickFile(PICK_DICTIONARY, "text/*"));
         button(root, tr("dictionary_export"), () -> pickFile(EXPORT_DICTIONARY, "text/plain"));
+        button(root, tr("dictionary_clear"), this::clearDictionary);
         button(root, tr("back"), () -> show("home"));
     }
 
@@ -196,16 +216,105 @@ public final class MainActivity extends Activity {
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     if (importDialog != null) importDialog.dismiss();
-                    Toast.makeText(this, safeMessage(e), Toast.LENGTH_LONG).show();
+                    showImportError(safeMessage(e));
                 });
             }
         }, "voice-package-import").start();
     }
 
+    private void showImportError(String details) {
+        String message = details == null ? "" : details;
+        String title = tr("package_invalid");
+        if (message.toLowerCase(Locale.ROOT).contains("engine not integrated") || message.toLowerCase(Locale.ROOT).contains("engine is not available")) {
+            title = tr("engine_unavailable");
+        }
+        new AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton(tr("ok"), null).show();
+    }
+
+    private void showOnlineVoices() {
+        ProgressDialog progress = new ProgressDialog(this);
+        progress.setTitle(tr("online_catalog")); progress.setMessage(tr("loading_catalog")); progress.setCancelable(false); progress.show();
+        new Thread(() -> {
+            try {
+                HttpURLConnection connection = (HttpURLConnection) new URL(ACCESSMIND_VOICES_URL).openConnection();
+                connection.setConnectTimeout(15000); connection.setReadTimeout(20000); connection.setRequestProperty("Accept", "application/json");
+                JSONArray data;
+                try (InputStreamReader reader = new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8)) {
+                    StringBuilder json = new StringBuilder(); char[] buffer = new char[8192]; int n;
+                    while ((n = reader.read(buffer)) >= 0) json.append(buffer, 0, n);
+                    data = new JSONArray(json.toString());
+                } finally { connection.disconnect(); }
+                ArrayList<JSONObject> entries = new ArrayList<>();
+                ArrayList<String> labels = new ArrayList<>();
+                for (int i = 0; i < data.length(); i++) {
+                    JSONObject item = data.optJSONObject(i); if (item == null || item.optString("download_url").isEmpty()) continue;
+                    entries.add(item);
+                    labels.add(item.optString("voice_name") + " · " + item.optString("language") + " · " + item.optString("quality") + " · " + formatBytes(item.optLong("size_in_bytes")));
+                }
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    if (entries.isEmpty()) { showImportError(tr("catalog_empty")); return; }
+                    new AlertDialog.Builder(this).setTitle(tr("online_catalog")).setItems(labels.toArray(new String[0]), (d, which) -> downloadOnlineVoice(entries.get(which))).setNegativeButton(tr("cancel"), null).show();
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> { progress.dismiss(); showImportError(tr("catalog_failed") + "\n" + safeMessage(e)); });
+            }
+        }, "online-voice-catalog").start();
+    }
+
+    private void downloadOnlineVoice(JSONObject voice) {
+        String url = voice.optString("download_url", "");
+        if (!url.startsWith("https://files.accessmind.io/ve-voices/")) {
+            showImportError(tr("catalog_invalid_link")); return;
+        }
+        ProgressDialog progress = new ProgressDialog(this);
+        progress.setTitle(tr("downloading_voice")); progress.setMessage(voice.optString("voice_name"));
+        progress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL); progress.setIndeterminate(true); progress.setCancelable(false);
+        cancelImport = new AtomicBoolean(false);
+        progress.setButton(ProgressDialog.BUTTON_NEGATIVE, tr("cancel"), (d, w) -> cancelImport.set(true));
+        progress.show();
+        new Thread(() -> {
+            File downloaded = null;
+            try {
+                HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+                connection.setConnectTimeout(15000); connection.setReadTimeout(30000);
+                int length = connection.getContentLength();
+                try (InputStream in = connection.getInputStream()) {
+                    downloaded = File.createTempFile("accessmind-voice-", ".zip", getCacheDir());
+                    try (FileOutputStream out = new FileOutputStream(downloaded)) {
+                        byte[] buffer = new byte[64 * 1024]; long done = 0; int n;
+                        while ((n = in.read(buffer)) != -1) {
+                            if (cancelImport.get()) throw new java.util.concurrent.CancellationException(tr("download_cancelled"));
+                            done += n; out.write(buffer, 0, n);
+                            if (length > 0) { int pct = (int) Math.min(100, done * 100 / length); runOnUiThread(() -> { progress.setIndeterminate(false); progress.setProgress(pct); }); }
+                        }
+                    }
+                } finally { connection.disconnect(); }
+                File file = downloaded;
+                runOnUiThread(() -> { progress.dismiss(); importPackage(Uri.fromFile(file)); });
+            } catch (Exception e) {
+                if (downloaded != null) //noinspection ResultOfMethodCallIgnored
+                    downloaded.delete();
+                runOnUiThread(() -> { progress.dismiss(); showImportError(safeMessage(e)); });
+            }
+        }, "online-voice-download").start();
+    }
+
+    private static String formatBytes(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format(Locale.ROOT, "%.1f KB", bytes / 1024.0);
+        return String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0));
+    }
+
+    private void contactDeveloper() {
+        Intent telegram = new Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/damomgamer"));
+        try { startActivity(telegram); }
+        catch (Exception e) { Toast.makeText(this, tr("settings_unavailable"), Toast.LENGTH_SHORT).show(); }
+    }
+
     private void chooseVoice() {
         List<VoiceEntry> voices = store.list();
         if (voices.isEmpty()) { new AlertDialog.Builder(this).setMessage(tr("no_voices")).setPositiveButton(tr("ok"), null).show(); return; }
-        dictionaryVoices = voices;
         String[] labels = new String[voices.size()];
         for (int i = 0; i < voices.size(); i++) {
             VoiceEntry v = voices.get(i); String variant = v.variant == null || v.variant.isEmpty() ? "" : " · " + v.variant;
@@ -215,7 +324,7 @@ public final class MainActivity extends Activity {
     }
 
     private void select(VoiceEntry voice) {
-        selectedVoiceId = voice.id; store.setSelectedVoiceId(voice.id); if (tts != null) configureTts(); refresh();
+        selectedVoiceId = voice.id; store.setSelectedVoiceId(voice.id); if (tts != null) configureTts();
     }
 
     private void speakSample() {
@@ -264,7 +373,12 @@ public final class MainActivity extends Activity {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(getContentResolver().openInputStream(uri), StandardCharsets.UTF_8))) {
             JSONArray items = readDictionary(); String line;
             while ((line = reader.readLine()) != null) {
-                int sep = line.indexOf('='); if (sep < 1) continue;
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith(";")) continue;
+                int sep = line.indexOf('=');
+                if (sep < 1) sep = line.indexOf('\t');
+                if (sep < 1) sep = line.indexOf(':');
+                if (sep < 1) continue;
                 JSONObject item = new JSONObject(); item.put("word", line.substring(0, sep).trim()); item.put("pronunciation", line.substring(sep + 1).trim()); items.put(item);
             }
             saveDictionary(items); Toast.makeText(this, tr("dictionary_imported"), Toast.LENGTH_LONG).show(); show(screen);
@@ -282,13 +396,9 @@ public final class MainActivity extends Activity {
     private JSONArray readDictionary() { try { return new JSONArray(prefs.getString("dictionary", "[]")); } catch (Exception e) { return new JSONArray(); } }
     private void saveDictionary(JSONArray value) { prefs.edit().putString("dictionary", value.toString()).apply(); }
 
-    private void refresh() {
-        VoiceEntry current = selectedVoice();
-        if (selected != null) selected.setText(current == null ? tr("no_voice_selected") : tr("using") + " " + engineName(current.engine) + " · " + current.name + " · " + current.locale);
-        if (status != null) status.setText(tr("voices_imported") + ": " + store.list().size());
-    }
+    private void refresh() { }
     private VoiceEntry selectedVoice() { for (VoiceEntry voice : store.list()) if (voice.id.equals(selectedVoiceId)) return voice; return null; }
-    private String engineName(String engine) { return "microsoft".equals(engine) ? "Microsoft" : "google".equals(engine) ? "Google" : engine; }
+    private String engineName(String engine) { return "microsoft".equals(engine) ? "Microsoft" : "google".equals(engine) ? "Google" : "vocalizer".equals(engine) ? "Vocalizer" : engine; }
 
     private String tr(String key) {
         String lang = prefs == null ? "en" : prefs.getString("ui_language", "en");
@@ -297,6 +407,17 @@ public final class MainActivity extends Activity {
                 {"welcome_engines", "Microsoft and Google are the first integrated engines. More offline engines may be added over time. To suggest an engine, contact the developer with its technical details and compatible voice packages.", "Microsoft e Google são os primeiros motores integrados. Outros motores offline poderão ser adicionados. Para sugerir um motor, envie ao desenvolvedor os detalhes técnicos e pacotes de voz compatíveis.", "Microsoft y Google son los primeros motores integrados. Se podrán añadir otros motores sin conexión. Para sugerir uno, envía al desarrollador los detalles técnicos y paquetes de voz compatibles."},
                 {"version", "Version", "Versão", "Versión"}, {"developer", "Developer", "Desenvolvedor", "Desarrollador"},
                 {"done", "Done", "Concluído", "Hecho"}, {"import_package", "Import voice package (.zip)", "Importar pacote de voz (.zip)", "Importar paquete de voz (.zip)"},
+                {"download_online", "Download voices online", "Baixar vozes pela internet", "Descargar voces en línea"},
+                {"online_catalog", "Online voice catalog", "Catálogo de vozes online", "Catálogo de voces en línea"},
+                {"loading_catalog", "Loading the AccessMind voice catalog…", "Carregando o catálogo de vozes AccessMind…", "Cargando el catálogo de voces de AccessMind…"},
+                {"downloading_voice", "Downloading voice package…", "Baixando pacote de voz…", "Descargando paquete de voz…"},
+                {"download_cancelled", "Voice download cancelled", "Download da voz cancelado", "Descarga de voz cancelada"},
+                {"catalog_empty", "The online catalog did not provide any downloadable voices.", "O catálogo online não forneceu vozes para baixar.", "El catálogo en línea no proporcionó voces descargables."},
+                {"catalog_failed", "Could not load the online voice catalog.", "Não foi possível carregar o catálogo de vozes online.", "No se pudo cargar el catálogo de voces en línea."},
+                {"catalog_invalid_link", "The catalog returned a download outside the AccessMind voice domain.", "O catálogo retornou um link fora do domínio de vozes AccessMind.", "El catálogo devolvió un enlace fuera del dominio de voces de AccessMind."},
+                {"package_invalid", "Voice package not compatible", "Pacote de voz incompatível", "Paquete de voz incompatible"},
+                {"engine_unavailable", "Voice engine not available", "Motor de voz indisponível", "Motor de voz no disponible"},
+                {"contact_developer", "Contact the developer", "Entrar em contato com o desenvolvedor", "Contactar al desarrollador"},
                 {"select_voice", "Select voice", "Selecionar voz", "Seleccionar voz"}, {"sample_hint", "Text to test the voice", "Texto para testar a voz", "Texto para probar la voz"},
                 {"sample_text", "Hello. This is a Smart Voice speech test.", "Olá. Este é um teste de fala do Smart Voice.", "Hola. Esta es una prueba de voz de Smart Voice."},
                 {"speak_test", "Play test", "Ouvir teste", "Reproducir prueba"}, {"speech_controls", "Speech controls", "Controles de fala", "Controles de voz"},
@@ -305,7 +426,6 @@ public final class MainActivity extends Activity {
                 {"read_emojis", "Read emojis", "Ler emojis", "Leer emojis"}, {"dictionary", "User dictionary", "Dicionário do usuário", "Diccionario del usuario"},
                 {"settings", "Settings", "Configurações", "Configuración"}, {"interface_language", "Interface language", "Idioma da interface", "Idioma de la interfaz"},
                 {"system_tts_settings", "Open system speech settings", "Abrir configurações de fala do sistema", "Abrir ajustes de voz del sistema"},
-                {"accessibility_settings", "Open accessibility settings", "Abrir configurações de acessibilidade", "Abrir ajustes de accesibilidad"},
                 {"dictionary_import", "Import dictionary (TXT/CFG)", "Importar dicionário (TXT/CFG)", "Importar diccionario (TXT/CFG)"},
                 {"dictionary_export", "Export dictionary", "Exportar dicionário", "Exportar diccionario"}, {"dictionary_clear", "Delete dictionary", "Apagar dicionário", "Borrar diccionario"},
                 {"dictionary_add", "Add word", "Adicionar palavra", "Añadir palabra"}, {"dictionary_empty", "No words in the dictionary yet.", "Ainda não há palavras no dicionário.", "El diccionario aún está vacío."},

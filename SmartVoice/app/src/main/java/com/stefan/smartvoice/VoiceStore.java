@@ -121,15 +121,41 @@ public final class VoiceStore {
             if (count == 0) throw new IllegalArgumentException("The selected ZIP is empty or invalid");
 
             File descriptor = findDescriptor(staging);
-            if (descriptor == null) throw new IllegalArgumentException("This ZIP does not contain a supported Smart Voice voice descriptor");
-            List<VoiceEntry> parsed = parseDescriptor(descriptor, packageId);
-            if (parsed.isEmpty()) throw new IllegalArgumentException("The package contains no readable voice entries");
-            File descriptorRoot = descriptor.getParentFile();
+            List<VoiceEntry> parsed;
+            File descriptorRoot;
+            boolean accessMindLayout;
+            if (descriptor != null) {
+                accessMindLayout = false;
+                descriptorRoot = descriptor.getParentFile();
+                parsed = parseDescriptor(descriptor, packageId);
+            } else {
+                accessMindLayout = true;
+                descriptorRoot = staging;
+                parsed = parseAccessMindVoice(staging, packageId);
+            }
+            if (parsed.isEmpty()) {
+                String declared = descriptor == null ? "" : declaredEngine(descriptor);
+                if (!declared.isEmpty()) throw new IllegalArgumentException("Engine not integrated yet: " + declared);
+                throw new IllegalArgumentException("This ZIP is not a supported Microsoft, Google, or Vocalizer voice package. It needs a valid config.yaml/engines.yaml descriptor or AccessMind Vocalizer .dat and .hdr files.");
+            }
             for (VoiceEntry voice : parsed) {
                 File voiceRoot = findVoiceFolder(descriptorRoot, voice.engine, voice.locale, voice.code);
                 if (voiceRoot == null && voice.engine.equals("google")) voiceRoot = descriptorRoot;
                 if (voiceRoot == null && voice.engine.equals("microsoft")) {
                     throw new IllegalArgumentException("Microsoft voice folder is missing for " + voice.name);
+                }
+                if (voice.engine.equals("vocalizer")) {
+                    if (accessMindLayout) voiceRoot = prepareAccessMindRuntimeFolder(staging, voice);
+                    if (!hasVocalizerModel(voiceRoot == null ? descriptorRoot : voiceRoot)) {
+                        voiceRoot = findVocalizerModelRoot(staging, voice.code);
+                    }
+                    if (voiceRoot == null) throw new IllegalArgumentException("Vocalizer package is missing its .dat model or .hdr voice descriptor for " + voice.name);
+                }
+                if (voice.engine.equals("microsoft") && !hasMicrosoftModel(voiceRoot)) {
+                    throw new IllegalArgumentException("Microsoft package is missing the per-voice .APM model and .INI metadata for " + voice.name);
+                }
+                if (voice.engine.equals("google") && !hasGoogleModel(voiceRoot)) {
+                    throw new IllegalArgumentException("Google package is missing pipeline.pb or backend_pipeline.textproto for " + voice.name);
                 }
                 voice.dataPath = (voiceRoot == null ? descriptorRoot : voiceRoot).getAbsolutePath();
             }
@@ -176,12 +202,13 @@ public final class VoiceStore {
         Matcher engineMatcher = Pattern.compile("(?m)^([A-Za-z0-9_-]+):\\s*$").matcher(yaml);
         String engine = "";
         if (engineMatcher.find()) engine = engineMatcher.group(1).toLowerCase(Locale.ROOT);
-        if (!engine.equals("microsoft") && !engine.equals("google")) {
+        if (!engine.equals("microsoft") && !engine.equals("google") && !engine.equals("vocalizer")) {
             String engines = readSibling(file.getParentFile(), "engines.yaml");
             if (engines.toLowerCase(Locale.ROOT).contains("code: microsoft")) engine = "microsoft";
             else if (engines.toLowerCase(Locale.ROOT).contains("code: google")) engine = "google";
+            else if (engines.toLowerCase(Locale.ROOT).contains("code: vocalizer")) engine = "vocalizer";
         }
-        if (!engine.equals("microsoft") && !engine.equals("google")) return new ArrayList<>();
+        if (!engine.equals("microsoft") && !engine.equals("google") && !engine.equals("vocalizer")) return new ArrayList<>();
 
         ArrayList<VoiceEntry> voices = new ArrayList<>();
         String[] lines = yaml.split("\\R", -1);
@@ -222,6 +249,145 @@ public final class VoiceStore {
         }
         if (name != null && code != null && locale != null) voices.add(makeVoice(packageId, engine, name, code, locale, gender, engineParam));
         return voices;
+    }
+
+    private static String declaredEngine(File descriptor) {
+        try {
+            String yaml = readSibling(descriptor.getParentFile(), descriptor.getName()).toLowerCase(Locale.ROOT);
+            Matcher key = Pattern.compile("(?m)^([a-z0-9_-]+):\\s*$").matcher(yaml);
+            if (key.find()) return key.group(1);
+            String engines = readSibling(descriptor.getParentFile(), "engines.yaml").toLowerCase(Locale.ROOT);
+            Matcher code = Pattern.compile("(?m)^\\s*-?\\s*code:\\s*['\"]?([a-z0-9_-]+)").matcher(engines);
+            return code.find() ? code.group(1) : "";
+        } catch (Exception ignored) { return ""; }
+    }
+
+    private static boolean hasMicrosoftModel(File root) {
+        if (root == null || !root.isDirectory()) return false;
+        boolean apm = false, ini = false;
+        ArrayList<File> files = new ArrayList<>(); collectFiles(root, ".apm", files); apm = !files.isEmpty();
+        files.clear(); collectFiles(root, ".ini", files); ini = !files.isEmpty();
+        return apm && ini;
+    }
+
+    private static boolean hasGoogleModel(File root) {
+        return root != null && root.isDirectory()
+                && new File(root, "pipeline.pb").isFile()
+                && new File(root, "backend_pipeline.textproto").isFile();
+    }
+
+    /**
+     * AccessMind's public Vocalizer downloads omit MultiTTS's YAML descriptor:
+     * each ZIP has a locale tree with one model .dat and one XML .hdr file.
+     * The header itself supplies the voice name, locale, model quality and rate.
+     */
+    private List<VoiceEntry> parseAccessMindVoice(File root, String packageId) throws Exception {
+        ArrayList<VoiceEntry> voices = new ArrayList<>();
+        ArrayList<File> headers = new ArrayList<>();
+        collectFiles(root, ".hdr", headers);
+        for (File header : headers) {
+            String xml = readSibling(header.getParentFile(), header.getName());
+            String speaker = xmlTag(xml, "voice");
+            String locale = xmlTag(xml, "langietf");
+            String quality = xmlTag(xml, "voiceoperatingpoint");
+            String code = xmlTag(xml, "langcode");
+            if (speaker.isEmpty() || locale.isEmpty() || quality.isEmpty()) continue;
+            File modelRoot = findAccessMindModelRoot(root, header);
+            if (modelRoot == null) continue;
+            VoiceEntry v = makeVoice(packageId, "vocalizer", speaker, speaker, locale, "female".equalsIgnoreCase(xmlTag(xml, "gender")) ? 0 : 1, "");
+            v.variant = quality;
+            v.dataPath = modelRoot.getAbsolutePath();
+            voices.add(v);
+        }
+        return voices;
+    }
+
+    private static String xmlTag(String xml, String tag) {
+        Matcher m = Pattern.compile("(?is)<" + Pattern.quote(tag) + ">\\s*([^<]+?)\\s*</" + Pattern.quote(tag) + ">").matcher(xml);
+        return m.find() ? m.group(1).trim() : "";
+    }
+
+    private static void collectFiles(File dir, String suffix, List<File> result) {
+        File[] children = dir.listFiles();
+        if (children == null) return;
+        for (File child : children) {
+            if (child.isDirectory()) collectFiles(child, suffix, result);
+            else if (child.getName().toLowerCase(Locale.ROOT).endsWith(suffix)) result.add(child);
+        }
+    }
+
+    private static File findAccessMindModelRoot(File root, File header) {
+        File folder = header.getParentFile();
+        File[] siblings = folder == null ? null : folder.listFiles();
+        if (siblings != null) {
+            for (File sibling : siblings) if (sibling.isFile() && sibling.getName().toLowerCase(Locale.ROOT).endsWith(".dat")) return folder;
+        }
+        // AccessMind's catalog layout puts the model under speech/components and
+        // its header under speech/ve. The shared speech folder is the runtime root.
+        File ve = header.getParentFile();
+        File speech = ve == null ? null : ve.getParentFile();
+        if (speech != null && "ve".equalsIgnoreCase(ve.getName())) {
+            File components = new File(speech, "components");
+            if (components.isDirectory()) {
+                File[] models = components.listFiles((d, name) -> name.toLowerCase(Locale.ROOT).endsWith(".dat"));
+                if (models != null && models.length > 0) return speech;
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasVocalizerModel(File root) {
+        if (root == null || !root.isDirectory()) return false;
+        ArrayList<File> files = new ArrayList<>();
+        collectFiles(root, ".hdr", files);
+        if (files.isEmpty()) return false;
+        return findAccessMindModelRoot(root, files.get(0)) != null || hasSiblingModel(files.get(0));
+    }
+
+    private static boolean hasSiblingModel(File header) {
+        File[] siblings = header.getParentFile() == null ? null : header.getParentFile().listFiles();
+        if (siblings == null) return false;
+        for (File f : siblings) if (f.isFile() && f.getName().toLowerCase(Locale.ROOT).endsWith(".dat")) return true;
+        return false;
+    }
+
+    private static File findVocalizerModelRoot(File root, String code) {
+        ArrayList<File> headers = new ArrayList<>();
+        collectFiles(root, ".hdr", headers);
+        for (File header : headers) {
+            String xml = readSibling(header.getParentFile(), header.getName());
+            if (xmlTag(xml, "voice").equalsIgnoreCase(code)) return findAccessMindModelRoot(root, header);
+        }
+        return headers.isEmpty() ? null : findAccessMindModelRoot(root, headers.get(0));
+    }
+
+    /** Places AccessMind's split .dat/.hdr files beside each other as the embedded runtime expects. */
+    private static File prepareAccessMindRuntimeFolder(File root, VoiceEntry voice) throws Exception {
+        ArrayList<File> headers = new ArrayList<>(), models = new ArrayList<>();
+        collectFiles(root, ".hdr", headers); collectFiles(root, ".dat", models);
+        File header = null;
+        for (File candidate : headers) {
+            String xml = readSibling(candidate.getParentFile(), candidate.getName());
+            if (xmlTag(xml, "voice").equalsIgnoreCase(voice.name)) { header = candidate; break; }
+        }
+        if (header == null) throw new IllegalArgumentException("AccessMind package is missing the Vocalizer .hdr file for " + voice.name);
+        File model = null;
+        for (File candidate : models) {
+            if (candidate.getName().toLowerCase(Locale.ROOT).contains(voice.name.toLowerCase(Locale.ROOT))) { model = candidate; break; }
+        }
+        if (model == null && models.size() == 1) model = models.get(0);
+        if (model == null) throw new IllegalArgumentException("AccessMind package is missing a matching Vocalizer .dat model for " + voice.name);
+        File target = new File(root, "vocalizer/" + voice.code.replaceAll("[^A-Za-z0-9._-]", "_"));
+        if (!target.isDirectory() && !target.mkdirs()) throw new IllegalStateException("Could not prepare the AccessMind voice directory");
+        try (InputStream in = new java.io.FileInputStream(header);
+             FileOutputStream out = new FileOutputStream(new File(target, header.getName()))) {
+            byte[] buffer = new byte[32 * 1024]; int n; while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+        }
+        try (InputStream in = new java.io.FileInputStream(model);
+             FileOutputStream out = new FileOutputStream(new File(target, model.getName()))) {
+            byte[] buffer = new byte[64 * 1024]; int n; while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+        }
+        return target;
     }
 
     private VoiceEntry makeVoice(String packageId, String engine, String name, String code, String locale, int gender, String engineParam) {

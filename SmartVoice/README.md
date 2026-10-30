@@ -1,31 +1,47 @@
-# Smart Voice Android 0.0.1
+# Smart Voice for Android
 
-This repository now contains the native Android application module (`app/`). The interface includes a first-run welcome screen, voice ZIP import with cancellation, voice selection, speech volume/pitch/rate sliders, emoji toggle, editable user dictionary with TXT/CFG import and TXT export, and interface-language selection in English, Portuguese, and Spanish. When emoji reading is enabled, offline CLDR emoji names are selected using the current voice's language. The APK includes the CLDR annotation locales published in the bundled data; locale-specific tables overlay their base-language table, and missing locales fall back to English. Regional indicator flags are spoken using a localized Android country name. The Unicode CLDR data and license are in `app/src/main/assets/emoji/`. It exposes an Android `TextToSpeechService`, stores imported packages privately, and has synthesis adapters for locally supplied Google models and Microsoft's Embedded Speech SDK.
+Smart Voice is an Android text-to-speech engine for screen-reader users. Version `0.0.1` is written in Java and targets Android 8.0 (API 26) or newer. Stefan is the developer.
+
+## Included application features
+
+- Welcome screen and interface translations in English, Portuguese, and Spanish.
+- Import compatible ZIP files from the app, or open a `.zip` in a file manager and choose Smart Voice. The app receives the URI through Android's `ACTION_VIEW` intent and opens the cancellable import flow.
+- Voice selection, preview speech, and independent volume, pitch, and rate controls.
+- Emoji names from bundled Unicode CLDR annotation tables. The selected voice's locale is used; English annotations seed the table so individual missing translations fall back to English.
+- User dictionary with add, edit, delete, clear, TXT/CFG import, and TXT export, all grouped on the dictionary screen.
+- System text-to-speech settings shortcut, interface-language selection, and a Telegram contact button for [@damomgamer](https://t.me/damomgamer).
+- An online voice catalog backed by AccessMind's public `voices.json` endpoint. Selecting an entry downloads its ZIP from the AccessMind file host and sends it through the same validator used by local imports. Downloads require internet access; speech generation remains offline after an engine and compatible voice data are installed.
+
+The importer checks the ZIP structure before registering data. Microsoft packages require their descriptor, model directory, `.APM` model, and `.INI` metadata. Google packages require a descriptor and the selected model's `pipeline.pb` and `backend_pipeline.textproto`. AccessMind Vocalizer packages are parsed from their XML `.hdr` metadata and `.dat` model files. ZIP path traversal, oversized archives, invalid descriptors, missing models, and unknown engines are rejected with an explanation.
+
+## Engine and package status
+
+- **Microsoft Embedded Speech:** MultiTTS-format offline model packages are recognized by the existing adapter. Microsoft neural cloud voices are not enabled.
+- **Google local:** MultiTTS-format local model packages are recognized by the local Google adapter. The bundled native runtime is ARM64 only.
+- **Vocalizer / Cerence:** The app includes the ARM64 Vocalizer JNI library and a Java runtime bridge recovered from the MultiTTS APK. Its importer reads MultiTTS `config.yaml` packages and AccessMind `.dat`/`.hdr` packages, then arranges AccessMind's split model files for the runtime. Synthesis is wired into the Android TTS service. Compilation confirms that the integration builds; a physical ARM64 device test is still needed to confirm model loading and audible output for each package family. The MultiTTS runtime library is ARM64 only. See [Vocalizer format research](docs/VOCALIZER_FORMATS.md).
+
+AccessMind's catalog contains voice download links, but the linked voice models are not a free-standing Android engine. The vendor currently describes its Runa TTS product as Windows/NVDA software, with local voice operation after installation and activation. Smart Voice does not bypass or replace that licensing/activation system.
 
 ## Build
 
-The Android project uses Gradle, Java 17, Android Gradle Plugin 8.7.3, `minSdk 26` (Android 8.0), and `targetSdk 35`. Build a debug APK with:
+The project uses Gradle 8.9, Android Gradle Plugin 8.7.3, Java 17, `minSdk 26`, and `targetSdk 35`.
 
 ```sh
 gradle --no-daemon assembleDebug
 ```
 
-The resulting APK is `app/build/outputs/apk/debug/app-debug.apk`. A copy of the current installable debug build is in `releases/SmartVoice-0.0.1-debug.apk`.
+The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. The checked-in release copy is `releases/SmartVoice-0.0.1-debug.apk`.
 
-## Current engine support
+## Validation
 
-- **Google local models:** the importer recognizes the Google `config.yaml` layout in this repository's Google ZIPs and resolves model folders by voice ID/speaker. Synthesis is wired to the local Android engine classes and the ARM64 JNI runtime recovered from the repository's MultiTTS APK. It performs local synthesis and does not intentionally call an online service. The current bundled Google native runtime is ARM64 only. Runtime compatibility still needs confirmation on a physical ARM64 Android device; a successful APK build alone does not prove synthesis works.
-- **Microsoft offline voices:** the imported Microsoft descriptor provides each voice's model folder and engine parameter. The adapter follows MultiTTS's offline path using `EmbeddedSpeechConfig.fromPath` plus `setSpeechSynthesisVoice`; cloud synthesis is excluded. The SDK accepts the imported per-voice parameter as provided by that package. Actual playback still needs a physical-device check with these exact voice archives; successful compilation cannot prove the local Microsoft runtime accepts every archive.
-- **Microsoft neural voices:** not enabled. There is no offline Android neural model package/runtime in the repository that can be used to synthesize them. No online fallback is used.
+The APK was compiled from this source. There is no connected Android device in this workspace, so Vocalizer model loading/audio output and Android's external ZIP chooser still need an on-device check. A successful build does not confirm runtime playback.
 
-An optional Microsoft model license value is encrypted with Android Keystore AES-GCM before storage. Package-provided engine parameters remain part of the imported voice package and are passed to the offline SDK adapter as MultiTTS does.
+## Project files
 
-## Import package format
+- `app/src/main/java/` — application UI, importer, Android TTS service, and synthesis adapters.
+- `app/src/main/assets/emoji/` — Unicode CLDR annotation data and its license.
+- `data/voice-packages/` — example Microsoft and Google ZIPs used for local development.
+- `releases/` — installable debug APK.
+- `CHANGELOG.md` — changes and fixes by version.
 
-This does **not** mean every arbitrary voice ZIP can be imported. The importer accepts Microsoft and Google archives that use the MultiTTS-style `config.yaml` descriptor. Microsoft voice entries must identify their model folder and include the engine parameter expected by the offline adapter. Google packages must include the engine descriptor plus each voice's local model files (`pipeline.pb` and `backend_pipeline.textproto`); the bundled native Google runtime currently supports ARM64 only. The sample supported-engine packages are in `data/voice-packages/`. ZIPs are extracted to app-private storage; path traversal, more than 100,000 entries, and expanded data over 3 GiB are rejected.
-
-Packages from other sources may need a matching descriptor/layout adaptation. Package import/listing is distinct from synthesis: real voice playback still needs verification on a device for each engine and package family. The Windows OneCore format is not a universal Android format, so do not assume a random OneCore folder or ZIP is compatible solely because it contains OneCore voice files.
-
-## Validation status
-
-A real Gradle debug APK build has been produced in this workspace. There is no connected Android device or emulator here, so package import, service registration in system settings, and actual audio output have not yet been exercised on-device. In particular, Google's extracted native runtime has only ARM64 support in the provided APK and needs a device check.
+See [CHANGELOG.md](CHANGELOG.md) for this release's work.

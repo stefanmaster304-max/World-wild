@@ -35,6 +35,8 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
     private String activeVoiceId = "";
     private GoogleLocalEngine activeGoogle;
     private String activeGoogleVoiceId = "";
+    private VocalizerRuntime activeVocalizer;
+    private String activeVocalizerVoiceId = "";
 
     @Override public int onIsLanguageAvailable(String language, String country, String variant) {
         Locale requested = new Locale(language == null ? "" : language, country == null ? "" : country, variant == null ? "" : variant);
@@ -94,6 +96,7 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
                 try { activeSynthesizer.StopSpeakingAsync(); } catch (Exception ignored) { }
             }
             if (activeGoogle != null) activeGoogle.cancel();
+            if (activeVocalizer != null) activeVocalizer.stop();
         }
     }
 
@@ -108,6 +111,10 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
         }
         if ("google".equals(voice.engine)) {
             speakGoogle(voice, normalizeText(request.getText().toString(), voice), request, callback);
+            return;
+        }
+        if ("vocalizer".equals(voice.engine)) {
+            speakVocalizer(voice, normalizeText(request.getText().toString(), voice), request, callback);
             return;
         }
         if (!"microsoft".equals(voice.engine)) { callback.error(TextToSpeech.ERROR); return; }
@@ -168,6 +175,38 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
             int rate = Math.max(10, Math.min(500, request.getSpeechRate() * settings.getInt("rate", 100) / 100));
             int pitch = Math.max(10, Math.min(500, request.getPitch() * settings.getInt("pitch", 100) / 100));
             google.speak(text, callback, rate, pitch, settings.getInt("volume", 100));
+        } catch (Exception e) {
+            callback.error(TextToSpeech.ERROR);
+        }
+    }
+
+    private void speakVocalizer(VoiceEntry voice, String text, SynthesisRequest request, SynthesisCallback callback) {
+        try {
+            VocalizerRuntime runtime;
+            synchronized (lock) {
+                if (activeVocalizer == null || !voice.id.equals(activeVocalizerVoiceId)) {
+                    if (activeVocalizer != null) activeVocalizer.close();
+                    activeVocalizer = new VocalizerRuntime();
+                    activeVocalizerVoiceId = voice.id;
+                }
+                runtime = activeVocalizer;
+            }
+            SharedPreferences settings = getSharedPreferences("smart_voice_settings", MODE_PRIVATE);
+            float rate = Math.max(0.5f, Math.min(2.0f,
+                    (request.getSpeechRate() / 100.0f) * (settings.getInt("rate", 100) / 100.0f)));
+            float pitch = Math.max(0.5f, Math.min(2.0f,
+                    (request.getPitch() / 100.0f) * (settings.getInt("pitch", 100) / 100.0f)));
+            callback.start(22050, AudioFormat.ENCODING_PCM_16BIT, 1);
+            runtime.speak(voice, text, rate, pitch, settings.getInt("volume", 100), samples -> {
+                if (stopped) return false;
+                byte[] pcm = new byte[samples.length * 2];
+                for (int i = 0; i < samples.length; i++) {
+                    pcm[i * 2] = (byte) (samples[i] & 0xff);
+                    pcm[i * 2 + 1] = (byte) (samples[i] >>> 8);
+                }
+                return callback.audioAvailable(pcm, 0, pcm.length) == TextToSpeech.SUCCESS;
+            });
+            if (stopped) callback.error(TextToSpeech.ERROR); else callback.done();
         } catch (Exception e) {
             callback.error(TextToSpeech.ERROR);
         }
@@ -242,6 +281,7 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
         synchronized (lock) {
             releaseActive();
             if (activeGoogle != null) { activeGoogle.close(); activeGoogle = null; activeGoogleVoiceId = ""; }
+            if (activeVocalizer != null) { activeVocalizer.close(); activeVocalizer = null; activeVocalizerVoiceId = ""; }
         }
         super.onDestroy();
     }

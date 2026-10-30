@@ -133,7 +133,12 @@ public final class EmojiTable {
         if (!locale.getCountry().isEmpty()) candidates.add(language + "-" + locale.getCountry());
         String exact = locale.toLanguageTag();
         if (!exact.equals(language)) candidates.add(exact);
+        // Seed with English first, then overlay the selected voice language.
+        // This gives per-emoji fallback when a locale table exists but lacks a
+        // particular Unicode annotation, instead of falling back only when the
+        // entire locale file is missing.
         boolean loadedAny = false;
+        if (!"en".equals(language)) loadedAny |= addAnnotations(context, root, "en");
         for (String candidate : candidates) {
             if (candidate.isEmpty() || !hasAsset(context, candidate + ".json")) continue;
             loadedAny |= addAnnotations(context, root, candidate);
