@@ -21,6 +21,4 @@ android {
     }
 }
 
-dependencies {
-    implementation files('libs/client-sdk-embedded-1.52.0.aar')
-}
+dependencies { }
