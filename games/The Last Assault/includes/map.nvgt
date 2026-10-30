@@ -8,6 +8,15 @@ const int Up=5;
 const int Down=6;
 void draw_map(string name)
 {
+// Recria os dados do mapa ao entrar nele. Isso evita que uma nova partida
+// reutilize áreas, fontes sonoras ou escadas deixadas por uma partida anterior.
+map.resize(0);
+zones.resize(0);
+destroy_all_staircases();
+killsrcs();
+playwall=false;
+currentloc="";
+
 if (name=="main")
 {
 maxx=250;
