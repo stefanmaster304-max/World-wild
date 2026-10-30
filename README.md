@@ -1,4 +1,4 @@
-# Stefan's Projects
+# stefan_progects
 
 Site oficial de Stefan para apresentar projetos próprios e de parceiros, compartilhar informações sobre o desenvolvimento e publicar links para downloads. O site é em português e tem foco em acessibilidade, inclusão, jogos e tecnologia.
 
