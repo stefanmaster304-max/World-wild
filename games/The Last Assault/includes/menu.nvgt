@@ -7,7 +7,7 @@ m.enable_home_and_end=true;
 m.enable_first_letter_navigation=true;
 if (music==true)
 {
-m.add_music("menumusic.ogg");
+m.add_music(game_audio_path("menumusic.ogg"));
 m.music_added=true;
 }
 else
@@ -45,14 +45,14 @@ void helpmenu()
 {
 m.reset(false);
 file f;
-f.open("readme.txt","rb");
-string[] stuff=string_split(f.read(),"\r\n",true);
+f.open("README.md","rb");
+string[] stuff=string_split(f.read(),"\n",true);
 f.close();
 for(uint i=0; i<stuff.length(); i++)
 {
 m.add_item_tts(stuff[i],stuff[i],false);
 }
-int mres=m.run("Use the arrow keys to read the help. Presss enter or escape to go back to the main menu.",true);
+int mres=m.run("The Last Assault. Use the arrow keys to read the help. Press Enter or Escape to return to the main menu.",true);
 mainmenu();
 }
 int menuquestion(string q)

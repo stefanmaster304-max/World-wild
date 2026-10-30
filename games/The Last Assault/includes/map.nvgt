@@ -45,14 +45,14 @@ if (string_contains(gmt(), "wall",1)>-1)
 {
 if (playwall==false)
 {
-p.play_stationary(gmt()+".ogg",false);
+p.play_stationary(game_audio_path(gmt()+".ogg"),false);
 playwall=true;
 }
 bounce();
 }
 else
 {
-p.play_stationary(""+gmt()+"step"+random(1,5)+".ogg",false);
+p.play_stationary(game_audio_path(""+gmt()+"step"+random(1,5)+".ogg"),false);
 playwall=false;
 }
 }

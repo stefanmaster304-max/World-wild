@@ -45,10 +45,10 @@ int a;
 inv.get(inv.get_keys()[invpos],a);
 string item=string_replace(inv.get_keys()[invpos],"_"," ",true);
 if (a==1)
-speak(item+", "+(invpos+1)+" of "+inv.get_keys().length);
+speak(item+", "+(invpos+1)+" of "+inv.get_keys().length());
 else
-if (string_contains(item,"ammo",1)>-1) speak(a+" "+item+", "+(invpos+1)+" of "+inv.get_keys().length);
-else speak(a+" "+item+"s, "+(invpos+1)+" of "+inv.get_keys().length);
+if (string_contains(item,"ammo",1)>-1) speak(a+" "+item+", "+(invpos+1)+" of "+inv.get_keys().length());
+else speak(a+" "+item+"s, "+(invpos+1)+" of "+inv.get_keys().length());
 }
 }
 int count_total_items()
@@ -109,7 +109,7 @@ void invstuff()
 if (usetimer.elapsed>=130)
 {
 usetimer.restart();
-if (inv.get_keys().length>0 and invpos<inv.get_size())
+if (inv.get_keys().length()>0 and invpos<inv.get_size())
 use(inv.get_keys()[invpos]);
 else speak("empty");
 }

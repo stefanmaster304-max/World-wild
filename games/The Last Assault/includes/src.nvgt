@@ -13,7 +13,7 @@ y2=sy2;
 z1=sz1;
 z2=sz2;
 file=sf;
-sound=sp.play_3d(file, me.x, me.y, me.z, x1, y1, z1, true);
+sound=sp.play_3d(game_audio_path(file), me.x, me.y, me.z, x1, y1, z1, true);
 }
 }
 void sourceloop()

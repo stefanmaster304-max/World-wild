@@ -99,7 +99,7 @@ bool enable_tab_and_shift_tab;
 bool music_added=false;
 int voltime=50;
 timer voltimer;
-sound music;
+sound@ music = sound();
 int volkeyup=KEY_PRIOR;
 int volkeydown=KEY_NEXT;
 int volkeycheck=KEY_V;
@@ -290,7 +290,7 @@ sound@ internal_sound;
 tts_voice@ internal_tts;
 if(@sound_handle==null)
 {
-sound temp_sound;
+sound@ temp_sound = sound();
 @internal_sound=temp_sound;
 }
 else
@@ -928,7 +928,7 @@ funcdef int menu_callback(dynamic_menu_pro@, string);
 
 class key_hold{
 bool status;
-short key_flag=0;
+int key_flag=0;
 int key_code;
 int repeat_time;
 int setting_1;

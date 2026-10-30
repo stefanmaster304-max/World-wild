@@ -1,5 +1,5 @@
 # Projetos de jogos
 
-Esta pasta é destinada aos projetos de jogos mantidos neste repositório. Quando um jogo tiver o código-fonte disponível publicamente, ele poderá ser organizado aqui junto de sua versão-fonte. Quando houver versões compiladas, elas também poderão ser disponibilizadas para download.
+Esta pasta reúne jogos que não fazem parte do site publicado pelo GitHub Pages. O jogo em trabalho agora é **The Last Assault**, versão **0.0.1**, convertido de BGT para NVGT 0.89.1 beta por Stefan. O código-fonte NVGT e os áudios do jogo ficam em `The Last Assault/`.
 
-Esta pasta não faz parte do site publicado pelo GitHub Pages, cuja origem é `docs/`.
+A pasta `games/` fica fora da origem do site, que é `docs/`. Quando houver versões compiladas prontas para distribuição, elas poderão ser disponibilizadas junto das informações do respectivo projeto.

@@ -1,10 +1,10 @@
 /*
 Sound Pool Class
 
-This class provides a convenient way of managing sounds in an environment, both with 1 and 2 dimensions. It uses the functions found in sound_positioning.bgt to do the actual sound adjustments, so modifying these functions will affect the entire system. The sound_pool_item class holds all the information necessary for one single sound in the game world. Note that you should not make instances of the sound_pool_item class directly but always use the methods and properties provided in the sound_pool class.
+This class provides a convenient way of managing sounds in an environment, both with 1 and 2 dimensions. It uses the functions found in sound_positioning.nvgt to do the actual sound adjustments, so modifying these functions will affect the entire system. The sound_pool_item class holds all the information necessary for one single sound in the game world. Note that you should not make instances of the sound_pool_item class directly but always use the methods and properties provided in the sound_pool class.
 */
 
-#include "sound_positioning.bgt"
+#include "sound_positioning.nvgt"
 
 class sound_pool_item
 {
@@ -17,7 +17,6 @@ int z;
 bool looping;
 float pan_step;
 float volume_step;
-float behind_pitch_decrease;
 float start_pan;
 float start_volume;
 float start_pitch;
@@ -53,7 +52,6 @@ z=0;
 looping=false;
 pan_step=0.0;
 volume_step=0.0;
-behind_pitch_decrease=0.0;
 start_pan=0.0;
 start_volume=0.0;
 start_pitch=100.0;
@@ -89,10 +87,7 @@ return;
 }
 if(total_distance<=max_distance and handle.active==false)
 {
-string old_storage=get_sound_storage();
-set_sound_storage(packname);
-handle.stream(filename);
-set_sound_storage(old_storage);
+handle.stream(game_audio_path(filename));
 if(handle.active==true)
 {
 if(start_offset>0)
@@ -158,7 +153,7 @@ if(listener_z<delta_lower)
 true_z=delta_lower;
 else if(listener_z>delta_upper)
 true_z=delta_upper;
-position_sound_custom_3d(handle, listener_x, listener_y, listener_z, true_x, true_y, true_z, pan_step, volume_step, behind_pitch_decrease, start_pan, start_volume, start_pitch);
+position_sound_custom_3d(handle, listener_x, listener_y, listener_z, true_x, true_y, true_z, pan_step, volume_step, start_pan, start_volume);
 }
 
 /*
@@ -229,7 +224,6 @@ class sound_pool
 int max_distance;
 float pan_step;
 float volume_step;
-float behind_pitch_decrease;
 
 // Default constructor, where we give the user 100 sounds.
 sound_pool()
@@ -238,7 +232,6 @@ items.resize(100);
 max_distance=0;
 pan_step=1.0;
 volume_step=1.0;
-behind_pitch_decrease=0.25;
 last_listener_x=0;
 last_listener_y=0;
 highest_slot=0;
@@ -252,7 +245,6 @@ items.resize(number_of_items);
 max_distance=0;
 pan_step=1.0;
 volume_step=1.0;
-behind_pitch_decrease=0.25;
 last_listener_x=0;
 last_listener_y=0;
 highest_slot=0;
@@ -280,7 +272,7 @@ items[slot].start_pan=start_pan;
 items[slot].start_volume=start_volume;
 items[slot].start_pitch=start_pitch;
 items[slot].persistent=persistent;
-items[slot].handle.stream(items[slot].filename);
+items[slot].handle.stream(game_audio_path(items[slot].filename));
 if(items[slot].handle.active==false)
 {
 items[slot].reset();
@@ -331,7 +323,6 @@ items[slot].y=0;
 items[slot].looping=looping;
 items[slot].pan_step=pan_step;
 items[slot].volume_step=volume_step;
-items[slot].behind_pitch_decrease=0.0;
 items[slot].start_pan=start_pan;
 items[slot].start_volume=start_volume;
 items[slot].start_pitch=start_pitch;
@@ -360,7 +351,7 @@ highest_slot=slot;
 return slot;
 }
 }
-items[slot].handle.stream(items[slot].filename);
+items[slot].handle.stream(game_audio_path(items[slot].filename));
 if(items[slot].handle.active==false)
 {
 items[slot].reset();
@@ -405,7 +396,6 @@ items[slot].y=sound_y;
 items[slot].looping=looping;
 items[slot].pan_step=pan_step;
 items[slot].volume_step=volume_step;
-items[slot].behind_pitch_decrease=behind_pitch_decrease;
 items[slot].start_pan=start_pan;
 items[slot].start_volume=start_volume;
 items[slot].start_pitch=start_pitch;
@@ -434,7 +424,7 @@ highest_slot=slot;
 return slot;
 }
 }
-items[slot].handle.stream(items[slot].filename);
+items[slot].handle.stream(game_audio_path(items[slot].filename));
 if(items[slot].handle.active==false)
 {
 items[slot].reset();
@@ -479,7 +469,6 @@ items[slot].z=sound_z;
 items[slot].looping=looping;
 items[slot].pan_step=pan_step;
 items[slot].volume_step=volume_step;
-items[slot].behind_pitch_decrease=behind_pitch_decrease;
 items[slot].start_pan=start_pan;
 items[slot].start_volume=start_volume;
 items[slot].start_pitch=start_pitch;
@@ -511,7 +500,7 @@ highest_slot=slot;
 return slot;
 }
 }
-items[slot].handle.stream(items[slot].filename);
+items[slot].handle.stream(game_audio_path(items[slot].filename));
 if(items[slot].handle.active==false)
 {
 items[slot].reset();
@@ -894,7 +883,7 @@ if(slot==-1)
 return -1;
 }
 current.reset();
-sound temp;
+sound@ temp = sound();
 @current.handle=temp;
 return slot;
 }

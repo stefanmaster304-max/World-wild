@@ -1,4 +1,4 @@
-sound capbeep;
+sound@ capbeep = sound();
 class virtualizer
 {
 int charrepeat=1;
@@ -45,7 +45,7 @@ speak("Beep for capital letters");
 }
 else if (capmode==1) {
 capmode=2;
-speak("Say “cap” in front of the capital letters");
+speak("Say ï¿½capï¿½ in front of the capital letters");
 }
 else {
 capmode=0;

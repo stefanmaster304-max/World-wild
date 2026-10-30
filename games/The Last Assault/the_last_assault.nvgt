@@ -1,17 +1,25 @@
-#include"includes/bullet.bgt"
-#include"includes/enemy.bgt"
-#include"includes/sound_pool.bgt"
-#include"includes/bodyfall.bgt"
-#include"includes/map.bgt"
-#include"includes/staircase.bgt"
-#include"includes/src.bgt"
-#include"includes/readable_time.bgt"
-#include"includes/dlg.bgt"
-#include"includes/dlgplayer.bgt"
-#include"includes/menu.bgt"
-#include"includes/virtualizer.bgt"
-#include"includes/inventory.bgt"
-#include"includes/m_pro.bgt"
+#pragma asset "sounds"
+#pragma document "README.md"
+#pragma document "CHANGELOG.md"
+#include "bgt_compat.nvgt"
+string game_audio_path(const string&in filename) {
+    if (filename.find_first("sounds/") == 0) return filename;
+    return "sounds/" + filename;
+}
+#include"includes/bullet.nvgt"
+#include"includes/enemy.nvgt"
+#include"includes/sound_pool.nvgt"
+#include"includes/bodyfall.nvgt"
+#include"includes/map.nvgt"
+#include"includes/staircase.nvgt"
+#include"includes/src.nvgt"
+#include"includes/readable_time.nvgt"
+#include"includes/dlg.nvgt"
+#include"includes/dlgplayer.nvgt"
+#include"includes/menu.nvgt"
+#include"includes/virtualizer.nvgt"
+#include"includes/inventory.nvgt"
+#include"includes/m_pro.nvgt"
 int x, y, z;
 int maxx, maxy;
 int weapon, damage, range, time, speed, ammo, maxammo, reloadtime;
@@ -40,21 +48,22 @@ double xprequired=100;
 string i, itemnum;
 string mapname;
 string weaponname;
-vector me, store;
+vector me;
 sound_pool p;
 virtualizer v;
-sound bleading;
-timer gametimer, movetimer, jumptimer, weapontimer, medtimer, reloadtimer, storemovetimer;
+sound@ bleading = sound();
+timer gametimer, movetimer, jumptimer, weapontimer, medtimer, reloadtimer;
 bool reloading=false;
 void main()
 {
+// Steam Audio/Phonon HRTF: ativado globalmente em toda inicialização do jogo.
+set_sound_global_hrtf(true);
+if (!sound_global_hrtf)
+alert("Áudio espacial", "Não foi possível ativar o HRTF global do Steam Audio.");
 if (screen_reader_is_running(1)) install_keyhook();
-set_sound_storage("sounds.dat");
-set_sound_decryption_key("fwjrgiorw2iorweofwoiwefonfeoifew",true);
-show_game_window("Game with no title");
-p.behind_pitch_decrease=7;
-sp.behind_pitch_decrease=7;
-bleading.load("lowhealth.ogg");
+// Os efeitos são arquivos OGG soltos em sounds/; não há pacote BGT sounds.dat.
+show_game_window("The Last Assault 0.0.1");
+bleading.load(game_audio_path("lowhealth.ogg"));
 mainmenu();
 }
 void game()
@@ -63,7 +72,7 @@ inv.delete_all();
 health=random(250,1000);
 give("handgun ammo",20);
 give("handgun clip",2);
-p.play_2d("store.ogg",me.x,me.y,store.x,store.y,true);
+
 while(true)
 {
 bulletloop();
@@ -90,12 +99,6 @@ else
 {
 speak("No location");
 }
-}
-if (storemovetimer.elapsed>=600000)
-{
-storemovetimer.restart();
-store.x=random(0,maxx);
-store.y=random(0,maxx);
 }
 if (key_pressed(KEY_T))
 {
@@ -139,7 +142,7 @@ speak("This weapon doesn't take ammo.");
 }
 if (xp>=xprequired)
 {
-p.play_stationary("level.ogg",false);
+p.play_stationary(game_audio_path("level.ogg"),false);
 level+=1;
 xprequired=(50*(level*(level*2)));
 }
@@ -275,7 +278,7 @@ if (key_pressed(KEY_SPACE) and jumping==0 and jumpable==1)
 sjumpcheck();
 if (abletojump2>0)
 {
-p.play_stationary("jump.ogg",false);
+p.play_stationary(game_audio_path("jump.ogg"),false);
 ty1=me.z;
 ty2=me.z+jumpheight;
 jumping=1;
@@ -298,7 +301,7 @@ checkforplatforms();
 if (me.z<=ty1)
 {
 me.z=ty1;
-p.play_stationary(tile+"land.ogg",false);
+p.play_stationary(game_audio_path(tile+"land.ogg"),false);
 jumping=0;
 }
 */
@@ -331,14 +334,14 @@ void checkforplatforms()
 {
 if (gmt()!="")
 {
-p.play_stationary(""+gmt()+"land.ogg",false);
+p.play_stationary(game_audio_path(""+gmt()+"land.ogg"),false);
 jumping=0;
 //falling=false;
 }
 }
 void play(string snd, bool loop=false)
 {
-p.play_stationary(snd+".ogg",loop);
+p.play_stationary(game_audio_path(snd+".ogg"),loop);
 }
 void checkloc()
 {

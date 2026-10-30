@@ -56,12 +56,12 @@ string s=seconds>1 ? "seconds" : "second";
 ret+=seconds+" "+s;
 }
 string[] ret2=string_split(ret,", ",true);
-if(ret2.length>1)
+if(ret2.length()>1)
 {
-int slength=ret2[(ret2.length-1)].length();
+int slength=ret2[(ret2.length()-1)].length();
 ret=string_trim_right(ret,(slength+2));
 ret+=" and ";
-ret+=ret2[(ret2.length-1)];
+ret+=ret2[(ret2.length()-1)];
 }
 return ret;
 }

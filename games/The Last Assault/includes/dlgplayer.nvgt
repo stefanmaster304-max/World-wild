@@ -1,7 +1,7 @@
-﻿sound dlgaudio;
+﻿sound@ dlgaudio = sound();
 void dlgplay(string dlgsound, bool dlgfade=false, int fadespeed=30)
 {
-dlgaudio.load(dlgsound);
+dlgaudio.load(game_audio_path(dlgsound));
 dlgaudio.play();
 while(dlgaudio.playing)
 {
