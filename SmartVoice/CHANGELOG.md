@@ -4,6 +4,9 @@
 
 ### Added
 
+- Initial Smart Voice Android app foundation, version `0.0.1`, with welcome flow and English, Portuguese, and Spanish interface text.
+- Local Microsoft and Google speech-engine support, voice-package storage/selection, voice preview, and independent volume, pitch, and rate controls.
+- Emoji name table, plus user dictionary management with add/edit/delete, TXT/CFG import, TXT export, and clear operations.
 - Android ZIP association so file managers can offer **Import to Smart Voice** for ZIP packages. Opening a package starts the normal cancellable import flow.
 - Online voice catalog backed by AccessMind's public voice catalog API, with selectable voice variants, package download, progress indication, and cancellation.
 - AccessMind Vocalizer package metadata reader for voice `.hdr` XML plus `.dat` model archives.
