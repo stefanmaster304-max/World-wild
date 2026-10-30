@@ -12,6 +12,7 @@ Smart Voice is an Android text-to-speech engine for screen-reader users. Version
 - System text-to-speech settings shortcut, interface-language selection, and a Telegram contact button for [@damomgamer](https://t.me/damomgamer).
 - An online voice catalog with an **Access Mind Server** source, voice/language search, and language, gender, and quality filters. The list shows the server's voice, language code, gender, package variant, quality, and size. Selecting a row downloads and imports that ZIP through the same validator used by local imports, with progress and cancellation.
 - Copy/share actions on package, download, and synthesis error dialogs so diagnostic details can be sent to the developer.
+- The full TTS request path reports unexpected Java/JNI linkage errors through Android's synthesis callback. On Android 11+, the next launch can show and copy the OS trace from a previous Java or native process crash.
 
 The importer checks the ZIP structure before registering data. Microsoft packages require their descriptor, model directory, `.APM` model, and `.INI` metadata. Google packages require a descriptor and the selected model's `pipeline.pb` and `backend_pipeline.textproto`. AccessMind Vocalizer packages are parsed from their XML `.hdr` metadata and `.dat` model files. ZIP path traversal, oversized archives, invalid descriptors, missing models, and unknown engines are rejected with an explanation.
 
@@ -39,7 +40,7 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. The che
 
 ## Validation
 
-The APK was compiled from this source. TTS discovery is declared for Android's engine list, and the in-app preview explicitly requests the Smart Voice package and selected imported voice. I installed Android emulator images, but this x86_64 host cannot run the ARM64 image needed by Google/Vocalizer, and the software x86_64 emulator could not be controlled because ADB requires a home-directory path that is read-only in this environment. Engine listing and actual playback still need verification on a device. A successful build does not confirm runtime playback.
+The APK was compiled from this source. TTS discovery is declared for Android's engine list, and the in-app preview explicitly requests the Smart Voice package and selected imported voice. Unexpected Java/JNI linkage errors are recorded; Android 11+ process-exit traces are surfaced on the next launch after a crash. I installed Android emulator images, but this x86_64 host cannot run the ARM64 image needed by Google/Vocalizer, and the software x86_64 emulator could not be controlled because ADB requires a home-directory path that is read-only in this environment. Engine listing and actual playback still need verification on a device. A successful build does not confirm runtime playback, and a fatal native signal cannot be intercepted by Java while it occurs.
 
 ## Project files
 

@@ -102,6 +102,19 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
     }
 
     @Override protected void onSynthesizeText(SynthesisRequest request, SynthesisCallback callback) {
+        try {
+            synthesizeRequest(request, callback);
+        } catch (RuntimeException e) {
+            failUnexpectedRequest(request, callback, e);
+        } catch (LinkageError e) {
+            // Native engines and their Java bridges can fail during class or JNI
+            // initialization. Keep that failure inside the TTS request so the
+            // service does not silently die before the app receives its error.
+            failUnexpectedRequest(request, callback, e);
+        }
+    }
+
+    private void synthesizeRequest(SynthesisRequest request, SynthesisCallback callback) {
         stopped = false;
         getSharedPreferences("smart_voice_settings", MODE_PRIVATE).edit().remove("last_tts_error").apply();
         String requestedId = request.getVoiceName();
@@ -161,6 +174,30 @@ public final class SmartVoiceTtsService extends TextToSpeechService {
         } catch (Exception e) {
             recordError("Microsoft synthesis failed for " + voice.name + ": " + e, e);
             callback.error(TextToSpeech.ERROR);
+        }
+    }
+
+    private void failUnexpectedRequest(SynthesisRequest request, SynthesisCallback callback, Throwable failure) {
+        String engine = "unknown";
+        String voiceName = request == null ? "unknown" : request.getVoiceName();
+        try {
+            VoiceEntry voice = findVoice(voiceName);
+            if (voice == null && request != null) voice = findVoice(new VoiceStore(this).selectedVoiceId());
+            if (voice != null) {
+                engine = voice.engine;
+                voiceName = voice.name;
+            }
+        } catch (RuntimeException ignored) { }
+        try {
+            recordError("Unexpected TTS failure for " + engine + " voice '" + voiceName + "'.", failure);
+        } catch (RuntimeException loggingFailure) {
+            Log.e("SmartVoiceTTS", "Could not persist synthesis failure", loggingFailure);
+            Log.e("SmartVoiceTTS", "Original synthesis failure", failure);
+        }
+        try {
+            callback.error(TextToSpeech.ERROR);
+        } catch (RuntimeException | LinkageError callbackFailure) {
+            Log.e("SmartVoiceTTS", "Could not report the synthesis failure to Android", callbackFailure);
         }
     }
 

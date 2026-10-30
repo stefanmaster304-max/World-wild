@@ -1,6 +1,8 @@
 package com.stefan.smartvoice;
 
 import android.app.Activity;
+import android.app.ActivityManager;
+import android.app.ApplicationExitInfo;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.Intent;
@@ -9,6 +11,7 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
 import android.speech.tts.TextToSpeech;
 import android.view.View;
 import android.view.ViewGroup;
@@ -29,6 +32,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -87,6 +91,7 @@ public final class MainActivity extends Activity {
         });
         show(prefs.getBoolean("welcome_completed", false) ? "home" : "welcome");
         handleIncomingIntent(getIntent());
+        getWindow().getDecorView().post(this::showPreviousCrashReport);
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -101,6 +106,70 @@ public final class MainActivity extends Activity {
         if (key.equals(handledIncomingUri)) return;
         handledIncomingUri = key;
         importPackage(intent.getData());
+    }
+
+    /**
+     * A native TTS crash can terminate the process before the synthesis callback
+     * returns an error dialog. On Android 11+, surface the OS crash trace on the
+     * next launch so it can be copied from the app without adb/logcat.
+     */
+    private void showPreviousCrashReport() {
+        if (Build.VERSION.SDK_INT < 30 || isFinishing()) return;
+        ActivityManager manager = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+        if (manager == null) return;
+        ApplicationExitInfo crash = null;
+        for (ApplicationExitInfo exit : manager.getHistoricalProcessExitReasons(null, 0, 20)) {
+            if (!getPackageName().equals(exit.getProcessName())) continue;
+            if (exit.getReason() != ApplicationExitInfo.REASON_CRASH
+                    && exit.getReason() != ApplicationExitInfo.REASON_CRASH_NATIVE) continue;
+            crash = exit;
+            break;
+        }
+        if (crash == null) return;
+        android.content.SharedPreferences diagnosticPrefs = getSharedPreferences("smart_voice_crash_diagnostics", MODE_PRIVATE);
+        long timestamp = crash.getTimestamp();
+        try {
+            long installedAt = getPackageManager().getPackageInfo(getPackageName(), 0).lastUpdateTime;
+            if (timestamp < installedAt) return;
+        } catch (Exception ignored) { }
+        if (timestamp <= diagnosticPrefs.getLong("reported_timestamp", 0L)) return;
+        diagnosticPrefs.edit().putLong("reported_timestamp", timestamp).apply();
+
+        StringBuilder report = new StringBuilder();
+        report.append("Process: ").append(crash.getProcessName())
+                .append("\nExit reason: ").append(crash.getReason())
+                .append("\nTimestamp: ").append(timestamp);
+        String description = crash.getDescription();
+        if (description != null && !description.isEmpty()) report.append("\nDescription: ").append(description);
+        try (InputStream trace = crash.getTraceInputStream()) {
+            if (trace != null) {
+                ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int count;
+                while (bytes.size() < 512 * 1024 && (count = trace.read(buffer, 0,
+                        Math.min(buffer.length, 512 * 1024 - bytes.size()))) != -1) {
+                    bytes.write(buffer, 0, count);
+                }
+                String traceText = new String(bytes.toByteArray(), StandardCharsets.UTF_8).trim();
+                if (!traceText.isEmpty()) report.append("\n\nCrash trace:\n").append(traceText);
+            }
+        } catch (Exception e) {
+            report.append("\nCould not read the system crash trace: ").append(safeMessage(e));
+        }
+
+        String details = report.toString();
+        new AlertDialog.Builder(this)
+                .setTitle(tr("previous_crash"))
+                .setMessage(details)
+                .setPositiveButton(tr("copy_error"), (dialog, which) -> {
+                    ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (clipboard != null) {
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Smart Voice crash report", details));
+                        Toast.makeText(this, tr("error_copied"), Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton(tr("close"), null)
+                .show();
     }
 
     private boolean applySelectedVoice(boolean showError) {
@@ -612,6 +681,7 @@ public final class MainActivity extends Activity {
                 {"download_success", "Voice downloaded successfully", "Voz baixada com êxito", "Voz descargada correctamente"},
                 {"download_failed", "Voice download failed.", "Falha ao baixar a voz.", "No se pudo descargar la voz."},
                 {"copy_error", "Copy error", "Copiar erro", "Copiar error"},
+                {"previous_crash", "Smart Voice closed after a system error", "O Smart Voice foi encerrado após um erro do sistema", "Smart Voice se cerró después de un error del sistema"},
                 {"send_error", "Send error", "Enviar erro", "Enviar error"},
                 {"error_copied", "Error copied to clipboard", "Erro copiado para a área de transferência", "Error copiado al portapapeles"},
                 {"close", "Close", "Fechar", "Cerrar"},

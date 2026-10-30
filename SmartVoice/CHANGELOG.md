@@ -4,6 +4,8 @@
 
 ### Engine and import reliability fixes
 
+- Wrapped the full Android TTS request path so unexpected Java and JNI linkage failures are recorded and returned through Android's synthesis error callback instead of escaping from the service.
+- On Android 11 and newer, the next app launch now offers a copyable report from Android's historical process-exit trace when Smart Voice previously ended in a Java or native crash. Reports from before the currently installed app update are ignored.
 - Added the required `DEFAULT` service category and engine settings metadata so Android can discover Smart Voice as a TTS service.
 - Removed an invalid check against Android's global default TTS engine. The preview now selects the exact imported voice exposed by the explicitly requested Smart Voice TTS service and verifies that Android accepted the same voice ID before speaking.
 - Recorded synthesis exceptions and added copy/share actions to error dialogs.
@@ -15,6 +17,8 @@
 - Removed the redundant version line from the home screen and updated the welcome text to name the three integrated engines and their supported package sources.
 
 Runtime validation limit: the ARM64 system image cannot run on this x86_64 host, and ADB for the x86_64 emulator is blocked by the sandbox's read-only home directory. No claim of device playback validation is made.
+
+Crash-reporting limit: the app can surface Java/native process traces on Android 11+, but it cannot catch a fatal native signal inside a voice library while that signal is occurring. Actual audio playback and the reported crash cause still need confirmation on an Android device.
 
 ### Added
 
