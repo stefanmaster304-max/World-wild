@@ -6,24 +6,25 @@ tts_voice tts;
 int found_reader=0;
 sound_pool spool;
 settings menuset;
-void fade (sound@ handle, double final_volume=-50, double delay=25)
+void fade(sound@ handle, double final_volume=0.0, double delay=25)
 {
-if (handle.volume == final_volume)
+// O volume do NVGT usa ganho linear entre 0.0 e 1.0. O fade BGT original
+// trabalhava em decibéis; tentar chegar a -50 no NVGT prendia o menu para sempre.
+double target_volume=final_volume;
+if (target_volume<0.0) target_volume=0.0;
+else if (target_volume>1.0) target_volume=1.0;
+
+double start_volume=handle.volume;
+if (start_volume<0.0) start_volume=0.0;
+else if (start_volume>1.0) start_volume=1.0;
+
+const int fade_steps=50;
+for (int step=1; step<=fade_steps; step++)
 {
-return;
+handle.volume=start_volume+(target_volume-start_volume)*double(step)/double(fade_steps);
+wait(delay);
 }
-while (handle.volume != final_volume)
-{
-if (handle.volume > final_volume)
-{
-handle.volume=handle.volume-1;
-}
-else if (handle.volume < final_volume)
-{
-handle.volume=handle.volume+1;
-}
-wait (delay);
-}
+handle.volume=target_volume;
 }
 bool speak(string text, bool interrupt=true)
 {
@@ -127,7 +128,7 @@ volkeycheck=key3;
 }
 void fade_music(int value1)
 {
-fade(music,-50,value1);
+fade(music,0.0,value1);
 music.stop();
 }
 void stop_music()
@@ -364,6 +365,9 @@ alert("error", "menu music volume could not be set");
 if (menuset.exists("volume"))
 {
 double volume=menuset.read_number("volume");
+// Aceita o valor em dB gravado pela versão BGT, convertendo-o para ganho NVGT.
+if (volume<0.0) volume=pow(10.0, volume/20.0);
+if (volume>1.0) volume=1.0;
 music.volume=volume;
 }
 spool.play_stationary(open_sound, false);
@@ -745,13 +749,15 @@ internal_tts.speak_interrupt("music volume: "+music.volume);
 }
 if (key_down(volkeydown) and voltimer.elapsed>=voltime)
 {
-music.volume=music.volume-2;
+music.volume-=0.05;
+if (music.volume<0.0) music.volume=0.0;
 menuset.write_number("volume", music.volume);
 voltimer.restart();
 }
 if (key_down(volkeyup) and voltimer.elapsed>=voltime)
 {
-music.volume=music.volume+2;
+music.volume+=0.05;
+if (music.volume>1.0) music.volume=1.0;
 menuset.write_number("volume", music.volume);
 voltimer.restart();
 }

@@ -11,6 +11,9 @@
 - Removida a configuração do pacote criptografado `sounds.dat`, ausente na origem.
 - Removido o som `store.ogg` ausente no pacote recebido, para evitar tentativa contínua de abrir um arquivo inexistente.
 - A ajuda no menu agora lê `README.md`.
+- Corrigido o travamento ao selecionar **Jogar**: o fade de áudio herdado do BGT tentava alcançar `-50`, valor inválido para o ganho linear `0.0–1.0` do NVGT, e ficava em um loop sem fim antes de chamar `draw_map`.
+- O fade agora termina em ganho `0.0` com passos limitados; o volume antigo salvo em decibéis é convertido para a escala NVGT e os controles de volume do menu operam nessa escala.
+- Ao iniciar o mapa novamente, as áreas, fontes ambientais e escadas da partida anterior são limpas antes de recriar o mapa original.
 - Projeto identificado como conteúdo fora do site GitHub Pages; permanece em `games/`, fora de `docs/`.
 
 ### Validação
