@@ -1,0 +1,91 @@
+:root {
+  color-scheme: light;
+  --ink: #142d42;
+  --muted: #42596d;
+  --paper: #ffffff;
+  --page: #f2f6fa;
+  --line: #cbd7e2;
+  --accent: #075985;
+  --accent-dark: #06466a;
+  --focus: #a33e00;
+  --soft-blue: #e6f1f8;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 100%;
+  line-height: 1.65;
+  color: var(--ink);
+  background: var(--page);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  display: flex;
+  min-width: 18rem;
+  min-height: 100vh;
+  flex-direction: column;
+  margin: 0;
+}
+
+a { color: var(--accent-dark); text-decoration-thickness: 0.1em; text-underline-offset: 0.18em; }
+a:hover { text-decoration-thickness: 0.16em; }
+a:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; border-radius: 2px; }
+
+.container { width: min(100% - 2rem, 70rem); margin-inline: auto; }
+.skip-link {
+  position: absolute;
+  z-index: 5;
+  top: 0.5rem;
+  left: 0.5rem;
+  padding: 0.65rem 0.9rem;
+  transform: translateY(-160%);
+  border: 2px solid var(--ink);
+  border-radius: 0.4rem;
+  background: var(--paper);
+  color: var(--ink);
+}
+.skip-link:focus { transform: translateY(0); }
+
+.site-header { border-bottom: 1px solid var(--line); background: var(--paper); }
+.header-inner { display: flex; min-height: 5.5rem; align-items: center; justify-content: space-between; gap: 1.5rem; }
+.site-name { margin: 0; font-size: 1.2rem; font-weight: 750; letter-spacing: -0.02em; }
+.nav-list { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0; padding: 0; list-style: none; }
+.nav-list a { display: inline-block; padding: 0.55rem 0.75rem; border-radius: 0.35rem; font-weight: 650; }
+.nav-list a[aria-current="page"] { background: var(--soft-blue); color: var(--ink); text-decoration: none; }
+
+main { flex: 1; }
+.home-main { display: grid; min-height: 31rem; align-content: center; padding-block: 4rem; }
+.welcome { max-width: 52rem; padding: clamp(1.5rem, 5vw, 3.5rem); border: 1px solid var(--line); border-left: 0.45rem solid var(--accent); border-radius: 0.8rem; background: var(--paper); box-shadow: 0 0.6rem 2rem rgb(20 45 66 / 7%); }
+.eyebrow { margin: 0 0 0.6rem; color: var(--accent-dark); font-size: 0.9rem; font-weight: 750; letter-spacing: 0.04em; }
+h1, h2 { line-height: 1.2; text-wrap: balance; }
+h1 { max-width: 22ch; margin: 0 0 1rem; font-size: clamp(2rem, 5vw, 3.45rem); letter-spacing: -0.045em; }
+h2 { margin: 0 0 0.8rem; font-size: clamp(1.35rem, 3vw, 1.8rem); letter-spacing: -0.02em; }
+.welcome-copy { max-width: 62ch; margin: 0.8rem 0 0; color: var(--muted); font-size: 1.12rem; }
+
+.page-main { max-width: 54rem; padding-block: clamp(2rem, 6vw, 4.5rem); }
+.page-heading { margin-bottom: clamp(2rem, 5vw, 3.5rem); }
+.lead { max-width: 68ch; margin: 0; color: var(--muted); font-size: 1.15rem; }
+.content-section { max-width: 70ch; margin-bottom: 2.5rem; }
+.content-section p, .contact-panel p, .empty-state p { color: var(--muted); }
+.contact-panel, .empty-state { padding: clamp(1.25rem, 4vw, 2rem); border: 1px solid var(--line); border-radius: 0.7rem; background: var(--paper); }
+.contact-panel { border-left: 0.4rem solid var(--accent); }
+.contact-panel p:last-child { margin-bottom: 0; }
+.text-link { font-weight: 700; }
+.empty-state { border-top: 0.4rem solid var(--accent); }
+.empty-state p:last-child { margin-bottom: 0; }
+
+.site-footer { margin-top: auto; border-top: 1px solid var(--line); background: var(--paper); }
+.footer-inner { min-height: 4.5rem; display: flex; align-items: center; }
+.footer-inner p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+
+@media (max-width: 42rem) {
+  .header-inner { align-items: flex-start; flex-direction: column; justify-content: center; gap: 0.35rem; padding-block: 0.85rem; }
+  .nav-list { gap: 0.1rem; }
+  .nav-list a { padding: 0.45rem 0.6rem; }
+  .home-main { min-height: 0; padding-block: 2rem; }
+}
+
+@media (forced-colors: active) {
+  .welcome, .contact-panel, .empty-state { border: 1px solid CanvasText; }
+  .welcome { border-left-width: 0.45rem; }
+  .nav-list a[aria-current="page"] { outline: 1px solid CanvasText; }
+}
