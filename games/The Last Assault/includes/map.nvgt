@@ -60,6 +60,8 @@ map_travel_point@[] map_travel_points;
 void clear_map_data()
 {
 	map_index.reset();
+	bullets.resize(0);
+	p.destroy_all();
 	map_area_priority=0;
 	map_travel_points.resize(0);
 	current_map_lines.resize(0);
@@ -144,7 +146,7 @@ bool save_map_lines(const string&in name, string[]&in lines)
 	if (!directory_exists("maps") && !directory_create("maps")) return false;
 	file output;
 	if (!output.open(map_file_path(name), "wb")) return false;
-	for (uint i=0; i<lines.length(); i++) output.write(lines[i] + "\n");
+	for (uint i=0; i<lines.length(); i++) output.write(lines[i] + "\r\n");
 	output.close();
 	return true;
 }
@@ -154,6 +156,15 @@ string get_platform_at(int x, int y, int z)
 	coordinate_map_area@ area=map_index.get_area(x, y, z, -1, 0.0, null, MAP_FLAG_PLATFORM);
 	if (@area is null) return "";
 	return area.data1;
+}
+
+void announce_current_zone()
+{
+	string zone_name=get_zone_at(me.x,me.y,me.z);
+	if(zone_name=="") game_speak(tr("Area unknown"));
+	else game_speak(zone_name);
+	currentloc=zone_name;
+	location_announced=true;
 }
 
 void playstep()
@@ -179,24 +190,26 @@ void bounce()
 	else if (facing==Backward) me.y++;
 }
 
-bool load_map(const string&in name)
+bool load_map(const string&in name,bool move_to_minimum=false,int start_x=0,int start_y=0,int start_z=0)
 {
 	if (!valid_map_name(name) || !file_exists(map_file_path(name))) return false;
 	file input;
 	if (!input.open(map_file_path(name), "rb")) return false;
 	string content=input.read();
 	input.close();
+	int old_x=me.x,old_y=me.y,old_z=me.z;
 	content=string_replace(content, "\r", "", true);
 	string[] lines=string_split(content, "\n", false);
 	if (lines.length()==0) return false;
 
 	clear_map_data();
 	mapname=name;
+	if(move_to_minimum) { me.x=start_x; me.y=start_y; me.z=start_z; }
 	location_announced=false;
 	currentloc="";
 	map_min_x=0; map_min_y=0; map_min_z=0;
 	map_max_x=0; map_max_y=0; map_max_z=0;
-	bool has_bounds=false;
+	bool has_min_x=false,has_max_x=false,has_min_y=false,has_max_y=false,has_min_z=false,has_max_z=false;
 	int loaded_records=0;
 
 	for (uint i=0; i<lines.length(); i++)
@@ -207,13 +220,25 @@ bool load_map(const string&in name)
 		string[] fields=string_split(line, ":", false);
 		if (fields.length()==0) continue;
 		string command=string_to_lower_case(fields[0].trim_whitespace());
-		if (command=="name") continue;
+		if (command=="name" || command=="map") continue;
 		if (command=="bounds" && fields.length()>=7)
 		{
 			map_min_x=string_to_number(fields[1]); map_max_x=string_to_number(fields[2]);
 			map_min_y=string_to_number(fields[3]); map_max_y=string_to_number(fields[4]);
 			map_min_z=string_to_number(fields[5]); map_max_z=string_to_number(fields[6]);
-			maxx=map_max_x; maxy=map_max_y; has_bounds=true;
+			has_min_x=true;has_max_x=true;has_min_y=true;has_max_y=true;has_min_z=true;has_max_z=true;
+			maxx=map_max_x; maxy=map_max_y;
+			continue;
+		}
+		if(fields.length()>=2 && (command=="minx" || command=="maxx" || command=="miny" || command=="maxy" || command=="minz" || command=="maxz"))
+		{
+			int value=int(string_to_number(fields[1]));
+			if(command=="minx") { map_min_x=value; has_min_x=true; }
+			else if(command=="maxx") { map_max_x=value; has_max_x=true; maxx=value; }
+			else if(command=="miny") { map_min_y=value; has_min_y=true; }
+			else if(command=="maxy") { map_max_y=value; has_max_y=true; maxy=value; }
+			else if(command=="minz") { map_min_z=value; has_min_z=true; }
+			else { map_max_z=value; has_max_z=true; }
 			continue;
 		}
 		if (command=="platform" && fields.length()>=8)
@@ -244,7 +269,7 @@ bool load_map(const string&in name)
 			string audio_file=legacy_tagged ? fields[8] : fields[7];
 			float audio_gain=legacy_tagged ? float(string_to_number(fields[9])) : (fields.length()>=9 ? float(string_to_number(fields[8])) : 1.0);
 			float audio_pitch=legacy_tagged ? float(string_to_number(fields[10])) : (fields.length()>=10 ? float(string_to_number(fields[9])) : 100.0);
-			bool is_music=legacy_tagged ? fields[7]=="music" : (standard_tagged && fields[10]=="music");
+			bool is_music=legacy_tagged ? fields[7]=="music" : (standard_tagged ? fields[10]=="music" : is_music_audio_asset(audio_file));
 			spawn_source(string_to_number(fields[1]),string_to_number(fields[2]),string_to_number(fields[3]),string_to_number(fields[4]),string_to_number(fields[5]),string_to_number(fields[6]),game_audio_path(audio_file),audio_gain,audio_pitch,is_music);
 			loaded_records++;
 		}
@@ -255,7 +280,7 @@ bool load_map(const string&in name)
 			string audio_file=legacy_tagged ? fields[8] : fields[7];
 			float audio_gain=legacy_tagged ? float(string_to_number(fields[9])) : (fields.length()>=9 ? float(string_to_number(fields[8])) : 1.0);
 			float audio_pitch=legacy_tagged ? float(string_to_number(fields[10])) : (fields.length()>=10 ? float(string_to_number(fields[9])) : 100.0);
-			bool is_music=legacy_tagged ? fields[7]=="music" : (standard_tagged && fields[10]=="music");
+			bool is_music=legacy_tagged ? fields[7]=="music" : (standard_tagged ? fields[10]=="music" : is_music_audio_asset(audio_file));
 			spawn_ambient_source(string_to_number(fields[1]),string_to_number(fields[2]),string_to_number(fields[3]),string_to_number(fields[4]),string_to_number(fields[5]),string_to_number(fields[6]),game_audio_path(audio_file),audio_gain,audio_pitch,is_music);
 			loaded_records++;
 		}
@@ -268,9 +293,10 @@ bool load_map(const string&in name)
 			loaded_records++;
 		}
 	}
-	if (!has_bounds || loaded_records==0)
+	if (!has_min_x || !has_max_x || !has_min_y || !has_max_y || !has_min_z || !has_max_z || loaded_records==0)
 	{
 		clear_map_data();
+		me.x=old_x; me.y=old_y; me.z=old_z;
 		return false;
 	}
 	return true;
@@ -288,14 +314,11 @@ bool travel_at_player()
 	string destination=target.destination;
 	int destination_x,destination_y,destination_z;
 	target.get_destination_coords(me.x,me.y,destination_x,destination_y,destination_z);
-	if (!load_map(destination))
+	if (!load_map(destination,true,destination_x,destination_y,destination_z))
 	{
 		game_speak(tr("The destination map ")+destination+tr(" could not be loaded."));
 		return true;
 	}
-	me.x=destination_x;
-	me.y=destination_y;
-	me.z=destination_z;
 	currentloc="";
 	game_speak(tr("Traveling to ")+mapname+".");
 	return true;

@@ -437,7 +437,8 @@ if (volume>1.0) volume=1.0;
 music.volume=volume;
 }
 spool.play_stationary(open_sound, false);
-music.play_looped();
+if(music_added) music.play_looped();
+else music.stop();
 running=true;
 voltimer.restart();
 if (enable_first_letter_navigation==true)

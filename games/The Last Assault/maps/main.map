@@ -1,18 +1,27 @@
-name:main
-bounds:0:250:0:250:0:40
-platform:0:250:0:250:0:0:concrete2
-source:0:250:0:150:0:250:citybirds.ogg
-zone:0:250:0:100:0:250:Concrete
+map: main
+minx: 0
+maxx: 250
+miny: 0
+maxy: 250
+minz: 0
+maxz: 40
+minlevel: 1
+maxlevel: 0
+minresurrection: 0
+maxresurrection: 0
+platform:0:250:0:100:0:0:concrete2
 platform:0:250:101:140:0:0:grass2
-zone:0:300:101:140:0:250:Grass
 platform:50:70:110:130:0:0:mud
 platform:55:65:115:125:0:0:swimming
 platform:50:55:109:124:20:20:bridge
-staircase:50:55:109:109:0:20:metal
-zone:50:55:109:109:0:20:Stairs to bridge
-zone:50:55:110:124:20:40:Bridge
-zone:50:70:110:130:0:250:A gently flowing river
-source:50:70:110:130:0:10:river.ogg
+platform:50:55:109:109:0:20:metal
 platform:0:250:151:230:0:0:swamp
-source:0:250:151:230:0:250:swamp.ogg
-zone:0:250:151:230:0:250:A swamp
+zone:0:250:0:100:0:40:Urban area
+zone:0:250:101:140:0:40:Grassland
+zone:0:250:151:230:0:40:Swamp
+zone:50:70:110:130:0:20:Riverside
+zone:50:55:109:109:0:20:Stairs to the bridge
+zone:50:55:110:124:20:40:Bridge
+source:10:20:10:20:0:10:citybirds.ogg:1:100
+ambience:50:70:110:130:0:10:river.ogg:0.85:100
+ambience:0:250:151:230:0:40:swamp.ogg:0.8:100

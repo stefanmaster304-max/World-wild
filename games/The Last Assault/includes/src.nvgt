@@ -1,6 +1,12 @@
 sound_pool sp(256);
 float map_music_gain=1.0;
 
+bool is_music_audio_asset(const string&in filename)
+{
+	string lower=string_to_lower_case(string_replace(filename,"\\","/",true));
+	return lower.find_first("/music/")>=0 || lower.find_first("/musics/")>=0 || lower.find_first("menumusic")>=0;
+}
+
 class map_audio_item
 {
 	int minx,maxx,miny,maxy,minz,maxz;
@@ -12,7 +18,8 @@ class map_audio_item
 		minx=x1; maxx=x2; miny=y1; maxy=y2; minz=z1; maxz=z2;
 		local_gain=gain; pitch=pitch_value; area_limited=limited; is_music=music;
 		int cx=(x1+x2)/2,cy=(y1+y2)/2,cz=(z1+z2)/2;
-		sound_slot=sp.play_3d(file,me.x,me.y,me.z,cx,cy,cz,true);
+		if(limited) sound_slot=sp.play_stationary_extended(file,true,0.0,0.0,gain*(music ? map_music_gain : 1.0),pitch_value);
+		else sound_slot=sp.play_3d(file,me.x,me.y,me.z,cx,cy,cz,true);
 		is_playing=(sound_slot>=0);
 		apply_settings();
 		if(area_limited && !contains(me.x,me.y,me.z))

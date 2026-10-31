@@ -1,18 +1,19 @@
 #pragma asset "sounds"
 #pragma asset "maps"
 #pragma document "README.md"
+#pragma document "README.en.md"
 #pragma document "CHANGELOG.md"
+#pragma document "CHANGELOG.en.md"
+#pragma asset "languages"
 #include "bgt_compat.nvgt"
-#include "form.nvgt"
+#include "includes/form.nvgt"
 #include "includes/language.nvgt"
 string game_audio_path(const string&in filename) {
     if (filename.find_first("sounds/") == 0) return filename;
     return "sounds/" + filename;
 }
 #include"includes/bullet.nvgt"
-#include"includes/enemy.nvgt"
 #include"includes/sound_pool.nvgt"
-#include"includes/bodyfall.nvgt"
 #include"includes/map.nvgt"
 #include"includes/staircase.nvgt"
 #include"includes/src.nvgt"
@@ -26,7 +27,7 @@ string game_audio_path(const string&in filename) {
 #include"includes/builder.nvgt"
 int x, y, z;
 int maxx, maxy;
-int weapon, damage, range, time, speed, ammo, maxammo, reloadtime;
+int weapon, range, time, speed, ammo, maxammo, reloadtime;
 bool scatter, melee;
 int facing;
 int level=1;
@@ -76,18 +77,19 @@ void game()
 inv.delete_all();
 if(game_config.exists("health")) health=game_config.read_number("health");
 else health=random(250,1000);
+if(health<=0) health=100;
 if(game_config.exists("level")) level=game_config.read_number("level");
 if(game_config.exists("xp")) xp=game_config.read_number("xp");
 give("handgun ammo",20);
 give("handgun clip",2);
+weapon=2;
+draw_weapon("handgun",15,250,50,20,false,1590,false);
 
 while(true)
 {
 bulletloop();
 staircasecheckloop();
-enemyloop();
 map_audio_update();
-bodyfallloop();
 checkloc();
 p.update_listener_3d(me.x,me.y,me.z);
 gametime=ms_to_readable_time(gametimer.elapsed);
@@ -109,11 +111,7 @@ if (health<=20 and health>0)
 {
 bleading.play_looped();
 }
-if (key_pressed(KEY_B))
-{
-string player_zone=get_zone_at(me.x,me.y,me.z);
-game_speak(tr("Current location: ")+(player_zone!="" ? player_zone : tr("Area unknown")));
-}
+if (key_pressed(KEY_B)) announce_current_zone();
 if (key_pressed(KEY_T))
 {
 	game_speak(tr("You have survived for ")+gametime+".");
@@ -127,17 +125,17 @@ if (medpoints>=300) usingmedkit=false;
 if (key_pressed(KEY_1))
 {
 weapon=1;
-draw_weapon("fists",8,4,140,10,0,true,0,false);
+draw_weapon("fists",4,140,10,0,true,0,false);
 }
 if (key_pressed(KEY_2))
 {
 weapon=2;
-draw_weapon("handgun",12,15,250,50,20,false,1590,false);
+draw_weapon("handgun",15,250,50,20,false,1590,false);
 }
 if (key_pressed(KEY_3) and level>=2)
 {
 weapon=3;
-draw_weapon("machinegun",25,40,80,20,30,false,4338,false);
+draw_weapon("machinegun",40,80,20,30,false,4338,false);
 }
 if (key_pressed(KEY_DELETE) and !SCRIPT_COMPILED)
 {
@@ -164,10 +162,6 @@ if (key_pressed(KEY_L))
 {
 	game_speak(tr_level_status(level,xp,xprequired-xp,level+1));
 }
-if (key_pressed(KEY_E))
-{
-	game_speak(tr_enemy_count(enemies.length()));
-}
 if (pressed_weapon_keys() and get_safe_zone_at(me.x,me.y,me.z)!="")
 {
 	game_speak("Weapons cannot be used in a safe zone.");
@@ -178,14 +172,14 @@ weapontimer.restart();
 if (melee==true)
 {
 play(weaponname);
-spawn_bullet(damage,range,me.x,me.y,facing,speed);
+spawn_bullet(range,me.x,me.y,facing,speed);
 }
 else
 {
 if (get_weapon_ammo()>0)
 {
 play(weaponname);
-spawn_bullet(damage,range,me.x,me.y,facing,speed);
+spawn_bullet(range,me.x,me.y,facing,speed);
 give(weaponname+" ammo",-1);
 }
 else
@@ -202,7 +196,7 @@ weapontimer.restart();
 if (get_weapon_ammo()>0)
 {
 play(weaponname);
-spawn_bullet(damage,range,me.x,me.y,facing,speed);
+spawn_bullet(range,me.x,me.y,facing,speed);
 give(weaponname+" ammo",-1);
 }
 else
@@ -241,6 +235,7 @@ play("kill"+random(1,3));
 dlgplay("death.ogg",true,20);
 reset();
 mainmenu();
+	return;
 }
 if (key_pressed(KEY_TAB))
 {
@@ -360,7 +355,7 @@ if (locate!="")
 {
 if (locate!=currentloc)
 {
-game_speak(tr("Current location: ")+locate);
+		game_speak(locate);
 currentloc=locate;
 }
 location_announced=true;
@@ -369,7 +364,7 @@ else
 {
 if (currentloc!="" || !location_announced)
 {
-game_speak(tr("Current location: ")+tr("Area unknown"));
+		game_speak(tr("Area unknown"));
 currentloc="";
 }
 location_announced=true;
@@ -380,12 +375,12 @@ string get_location()
 string locate=get_zone_at(me.x,me.y,me.z);
 return locate!="" ? locate : tr("Area unknown");
 }
-void draw_weapon(string name, int wdamage, int wrange, int wtime, int wspeed, int wmaxammo, bool wmelee, int wreloadtime, bool weaponscatter)
+void draw_weapon(string name, int wrange, int wtime, int wspeed, int wmaxammo, bool wmelee, int wreloadtime, bool weaponscatter)
 {
 weaponname=name;
 play(name+"draw");
 game_speak(tr_weapon_name(name));
-damage=wdamage;
+weapontimer.restart();
 range=wrange;
 maxammo=wmaxammo;
 melee=wmelee;
@@ -461,8 +456,6 @@ void reset()
 bleading.stop();
 p.destroy_all();
 bullets.resize(0);
-killenemies();
-killbodyfalls();
 sp.destroy_all();
 killsrcs();
 xp=0;

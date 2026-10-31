@@ -13,9 +13,7 @@ void builder_advance_world()
 	if(!builder_world_ticks) return;
 	bulletloop();
 	staircasecheckloop();
-	enemyloop();
 	map_audio_update();
-	bodyfallloop();
 	checkloc();
 	p.update_listener_3d(me.x,me.y,me.z);
 	gametime=ms_to_readable_time(gametimer.elapsed);
@@ -193,14 +191,17 @@ bool create_new_map()
 		}
 		if (selected_platform=="") { game_speak("Select one floor platform by pressing Space on it."); continue; }
 		string[] lines;
-		lines.insert_last("name:"+name);
-		lines.insert_last("bounds:"+x1+":"+x2+":"+y1+":"+y2+":"+z1+":"+z2);
+		lines.insert_last("map: "+name);
+		lines.insert_last("minx: "+x1); lines.insert_last("maxx: "+x2);
+		lines.insert_last("miny: "+y1); lines.insert_last("maxy: "+y2);
+		lines.insert_last("minz: "+z1); lines.insert_last("maxz: "+z2);
+		lines.insert_last("minlevel: 1"); lines.insert_last("maxlevel: 0");
+		lines.insert_last("minresurrection: 0"); lines.insert_last("maxresurrection: 0");
 		lines.insert_last("platform:"+x1+":"+x2+":"+y1+":"+y2+":"+z1+":"+z1+":"+selected_platform);
 		if (!save_map_lines(name,lines)) { game_speak("The map could not be written to the maps folder."); return false; }
 		if (builder_confirm("Map " + name + " created. Go there now?"))
 		{
-			if (!load_map(name)) { game_speak("The new map could not be loaded."); return false; }
-			me.x=x1; me.y=y1; me.z=z1;
+			if (!load_map(name,true,x1,y1,z1)) { game_speak("The new map could not be loaded."); return false; }
 			return true;
 		}
 		game_speak(tr("Map ")+name+tr(" created."));
@@ -237,16 +238,24 @@ bool builder_destination_range_valid(const string&in target,int x1,int x2,int y1
 	if(!map_file.open(map_file_path(target),"rb")) return false;
 	string[] lines=string_split(map_file.read(),"\n",false);
 	map_file.close();
+	int minx=0,maxx=0,miny=0,maxy=0,minz=0,maxz=0;
+	bool has_minx=false,has_maxx=false,has_miny=false,has_maxy=false,has_minz=false,has_maxz=false;
 	for(uint i=0;i<lines.length();i++)
 	{
 		string[] fields=string_split(lines[i].trim_whitespace(),":",false);
-		if(fields.length()<7 || string_to_lower_case(fields[0])!="bounds") continue;
-		int minx=int(string_to_number(fields[1])),maxx=int(string_to_number(fields[2]));
-		int miny=int(string_to_number(fields[3])),maxy=int(string_to_number(fields[4]));
-		int minz=int(string_to_number(fields[5])),maxz=int(string_to_number(fields[6]));
-		return x1>=minx && x2<=maxx && y1>=miny && y2<=maxy && z1>=minz && z2<=maxz;
+		if(fields.length()>=7 && string_to_lower_case(fields[0])=="bounds")
+			return x1>=int(string_to_number(fields[1])) && x2<=int(string_to_number(fields[2])) && y1>=int(string_to_number(fields[3])) && y2<=int(string_to_number(fields[4])) && z1>=int(string_to_number(fields[5])) && z2<=int(string_to_number(fields[6]));
+		if(fields.length()<2) continue;
+		string header=string_to_lower_case(fields[0].trim_whitespace());
+		int value=int(string_to_number(fields[1]));
+		if(header=="minx") { minx=value; has_minx=true; }
+		else if(header=="maxx") { maxx=value; has_maxx=true; }
+		else if(header=="miny") { miny=value; has_miny=true; }
+		else if(header=="maxy") { maxy=value; has_maxy=true; }
+		else if(header=="minz") { minz=value; has_minz=true; }
+		else if(header=="maxz") { maxz=value; has_maxz=true; }
 	}
-	return false;
+	return has_minx && has_maxx && has_miny && has_maxy && has_minz && has_maxz && x1>=minx && x2<=maxx && y1>=miny && y2<=maxy && z1>=minz && z2<=maxz;
 }
 
 string builder_area_record(const string&in command)
@@ -331,7 +340,7 @@ string builder_area_record(const string&in command)
 		{
 			string category=(command=="ambient" && form.get_list_position(category_control)==0) ? "music" : "sources";
 			string map_command=command=="ambient" ? "ambience" : "source";
-			return map_command+":"+x1+":"+x2+":"+y1+":"+y2+":"+z1+":"+z2+":"+value+":"+form.get_slider(volume_control)+":"+form.get_slider(pitch_control)+":"+category;
+			return map_command+":"+x1+":"+x2+":"+y1+":"+y2+":"+z1+":"+z2+":"+value+":"+form.get_slider(volume_control)+":"+form.get_slider(pitch_control);
 		}
 		if(command=="platform" || command=="staircase")
 			return command+":"+x1+":"+x2+":"+y1+":"+y2+":"+z1+":"+z2+":"+value;
@@ -516,14 +525,14 @@ bool builder_rename_current_map()
 		for(uint i=0;i<current_map_lines.length();i++)
 		{
 			string[] fields=string_split(current_map_lines[i],":",false);
-			if(fields.length()>=2 && string_to_lower_case(fields[0])=="name")
+			if(fields.length()>=2 && string_to_lower_case(fields[0])=="map")
 			{
-				current_map_lines[i]="name:"+new_name;
+				current_map_lines[i]="map: "+new_name;
 				found_name=true;
 				break;
 			}
 		}
-		if(!found_name) current_map_lines.insert_at(0,"name:"+new_name);
+		if(!found_name) current_map_lines.insert_at(0,"map: "+new_name);
 		if(!save_map_lines(new_name,current_map_lines)) return false;
 		file_delete(map_file_path(old_name));
 		return load_map(new_name);
