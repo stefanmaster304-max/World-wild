@@ -9,7 +9,7 @@ minlevel: 1
 maxlevel: 0
 minresurrection: 0
 maxresurrection: 0
-platform:0:250:0:100:0:0:concrete2
+platform:0:250:0:250:0:0:concrete2
 platform:0:250:101:140:0:0:grass2
 platform:50:70:110:130:0:0:mud
 platform:55:65:115:125:0:0:swimming

@@ -9,6 +9,20 @@ const int Forward=4;
 const int Up=5;
 const int Down=6;
 coordinate_map map_index;
+class map_platform_area
+{
+	int minx,maxx,miny,maxy,minz,maxz;
+	string material;
+	map_platform_area(int x1,int x2,int y1,int y2,int z1,int z2,const string&in floor_type)
+	{
+		minx=x1; maxx=x2; miny=y1; maxy=y2; minz=z1; maxz=z2; material=floor_type;
+	}
+	bool contains(int x,int y,int z) const
+	{
+		return x>=minx && x<=maxx && y>=miny && y<=maxy && z>=minz && z<=maxz;
+	}
+}
+map_platform_area@[] map_platforms;
 string mapname = "";
 string[] current_map_lines;
 int map_min_x, map_max_x, map_min_y, map_max_y, map_min_z, map_max_z;
@@ -60,6 +74,7 @@ map_travel_point@[] map_travel_points;
 void clear_map_data()
 {
 	map_index.reset();
+	map_platforms.resize(0);
 	bullets.resize(0);
 	p.destroy_all();
 	map_area_priority=0;
@@ -72,11 +87,20 @@ void clear_map_data()
 	killsrcs();
 	playwall=false;
 	currentloc="";
+	jumping=0;
+	ascending=false;
+	atapex=false;
+	onstaircase=false;
+	abletojump2=1;
+	movetimer.restart();
+	jumptimer.restart();
 }
 
 void spawn_platform(int minx, int maxx, int miny, int maxy, int minz, int maxz, const string&in type)
 {
 	map_index.add_area(minx, maxx, miny, maxy, minz, maxz, 0.0, null, type, "", "", map_area_priority++, MAP_FLAG_PLATFORM);
+	map_platform_area area(minx,maxx,miny,maxy,minz,maxz,type);
+	map_platforms.insert_last(area);
 }
 
 void spawn_zone(int minx, int maxx, int miny, int maxy, int minz, int maxz, const string&in label)
@@ -154,8 +178,10 @@ bool save_map_lines(const string&in name, string[]&in lines)
 string get_platform_at(int x, int y, int z)
 {
 	coordinate_map_area@ area=map_index.get_area(x, y, z, -1, 0.0, null, MAP_FLAG_PLATFORM);
-	if (@area is null) return "";
-	return area.data1;
+	if (@area !is null) return area.data1;
+	for(int i=int(map_platforms.length())-1;i>=0;i--)
+		if(map_platforms[i].contains(x,y,z)) return map_platforms[i].material;
+	return "";
 }
 
 void announce_current_zone()

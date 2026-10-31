@@ -1,180 +1,180 @@
-Play	Chơi
-Settings	Chơi
-Documentation	Tài liệu
-Exit	Tài liệu
-Main menu	Menu chính
-Select a map	Menu chính
-View README file	Xem tệp README
-View changelog file	Xem tệp README
-Game language	Ngôn ngữ trò chơi
-Menu wrapping	Ngôn ngữ trò chơi
-Enabled	Bật
-Disabled	Bật
-Close	Đóng
-Current location: 	Vị trí hiện tại: 
-Area unknown	Vị trí hiện tại: 
-Weapons cannot be used in a safe zone.	Không thể sử dụng vũ khí trong vùng an toàn.
-Settings saved.	Đã lưu cài đặt.
-Back	Quay lại
-Map construction menu	Quay lại
-Create new map	Tạo bản đồ mới
-Edit current map lines	Tạo bản đồ mới
-Delete current map	Xóa bản đồ hiện tại
-Add platform	Xóa bản đồ hiện tại
-Add zone	Thêm khu vực
-Add safe zone	Thêm khu vực
-Add travel point	Thêm điểm di chuyển
-Add positional sound source	Thêm điểm di chuyển
-Add area ambient sound	Thêm âm thanh môi trường trong khu vực
-Add staircase	Thêm âm thanh môi trường trong khu vực
-Add	Đóng
-Cancel	Đóng
-Zone name	Tên khu vực
-Minimum X	Tên khu vực
-Maximum X	Tên khu vực
-Minimum Y	Y tối thiểu
-Maximum Y	Y tối thiểu
-Minimum Z	Z tối thiểu
-Maximum Z	Z tối thiểu
-Sound category	Loại âm thanh
-Music	Loại âm thanh
-Sources	Loại âm thanh
-Map music	Nhạc bản đồ
-Environmental sources	Nhạc bản đồ
-Sound volume	Âm lượng
-Sound pitch	Âm lượng
-Add line	Quay lại
-Add line to map	Quay lại
-Line content	Nội dung dòng
-Copy selected line	Nội dung dòng
-Paste line	Dán dòng
-Copy all map lines	Dán dòng
-Rename map	Đổi tên bản đồ
-Save map name	Đổi tên bản đồ
-Create a new map	Tạo bản đồ mới
-Create map	Tạo bản đồ mới
-Floor platform	Bề mặt nền
-Environmental sound source	Bề mặt nền
-Map 	Bản đồ 
-Traveling to 	Bản đồ 
-Map music volume: 	Âm lượng nhạc bản đồ: 
-Master volume: 	Âm lượng nhạc bản đồ: 
-No clips	Hết băng đạn
-Success	Hết băng đạn
-This weapon doesn't take ammo.	Vũ khí này không dùng đạn.
-There is no travel point here.	Không có điểm di chuyển ở đây.
-Invalid coordinates.	Tọa độ không hợp lệ.
-Choose or enter a value first.	Tọa độ không hợp lệ.
-You already selected a platform.	Bạn đã chọn bề mặt rồi.
-You already selected an item.	Bạn đã chọn bề mặt rồi.
-This record is not valid for this map.	Dữ liệu này không hợp lệ với bản đồ.
-The map could not be saved.	Không thể lưu bản đồ.
-The destination map does not exist.	Không thể lưu bản đồ.
-Destination maximum X	X tối đa của đích
-Destination maximum Y	X tối đa của đích
-Destination maximum Z	X tối đa của đích
-Destination minimum X	X tối thiểu của đích
-Destination minimum Y	X tối thiểu của đích
-Destination minimum Z	X tối thiểu của đích
-Edit map line	Sửa dòng bản đồ
-Map loading error	Sửa dòng bản đồ
-Map name	Tên bản đồ
-The destination map 	Tên bản đồ
- could not be loaded.	 không thể tải.
- created.	 không thể tải.
-The selected map could not be loaded.	Không thể tải bản đồ đã chọn.
-There are no valid map files in the maps folder.	Không có tệp bản đồ hợp lệ trong thư mục maps.
-Destination map	Bản đồ đích
-Destination minimum coordinates must not exceed their maximum values.	Tọa độ tối thiểu không được lớn hơn tọa độ tối đa.
-Enter a valid map name that is not already in use.	Hãy nhập tên bản đồ hợp lệ chưa được sử dụng.
-Invalid travel point coordinates.	Tọa độ điểm di chuyển không hợp lệ.
-Map name and bounds are protected.	Tên và giới hạn bản đồ được bảo vệ.
-Map name and bounds cannot be edited here.	Không thể sửa tên và giới hạn bản đồ tại đây.
-Select a map line first.	Hãy chọn một dòng bản đồ trước.
-Select one floor platform by pressing Space on it.	Nhấn Space trên một bề mặt để chọn làm sàn.
-The destination coordinates must fit inside the target map bounds.	Tọa độ đích phải nằm trong giới hạn bản đồ.
-The map change could not be saved and loaded.	Không thể lưu và tải thay đổi bản đồ.
-The map coordinates are invalid. Minimum values must not exceed maximum values.	Tọa độ bản đồ không hợp lệ. Giá trị tối thiểu không được vượt quá tối đa.
-The map could not be written to the maps folder.	Không thể ghi bản đồ vào thư mục maps.
-The map file could not be deleted.	Không thể xóa tệp bản đồ.
-The map is no longer valid.	Bản đồ không còn hợp lệ.
-The new map could not be loaded.	Không thể tải bản đồ mới.
-The selected area must fit inside the current map bounds.	Khu vực đã chọn phải nằm trong giới hạn bản đồ hiện tại.
-The travel point could not be saved and loaded.	Không thể lưu và tải điểm di chuyển.
-You are level 	Bạn đang ở cấp 
-You have survived for 	Bạn đang ở cấp 
-Your weapon still has ammo in it! Don't waste ammo!	Vũ khí vẫn còn đạn! Đừng lãng phí đạn!
-Áudio espacial	Âm thanh không gian
-Yes	Có
-No	Có
-Copied	Có
-Beep for capital letters	Phát tiếng bíp cho chữ hoa
-Say �cap� in front of the capital letters	Phát tiếng bíp cho chữ hoa
-Treat capital letters no different.	Đọc chữ hoa như bình thường.
-Cap 	Đọc chữ hoa như bình thường.
-Blank	Trống
-blank	Trống
-space	Trống
-Cancel.	Đã hủy.
-character repeat off	Đã hủy.
-character repeat on	Đã bật lặp ký tự
-empty	Đã bật lặp ký tự
-text copied	đã sao chép văn bản
-text pasted	đã sao chép văn bản
-music volume: 	âm lượng nhạc: 
-error	âm lượng nhạc: 
-Use the arrow keys to scroll. Press Enter or Escape to close.	Dùng phím mũi tên để đọc nội dung. Nhấn Enter hoặc Escape để đóng.
-Delete selected line	Xóa dòng đã chọn
-Edit selected line	Xóa dòng đã chọn
-Save line	Lưu dòng
-Map records	Lưu dòng
-Map record	Lưu dòng
-sound source	nguồn âm thanh
-ambient sound	nguồn âm thanh
-safe zone	nguồn âm thanh
-staircase	cầu thang
-platform	cầu thang
-zone	cầu thang
-Add 	Thêm 
-Line added.	Thêm 
-Line updated.	Đã cập nhật dòng.
-Line removed.	Đã cập nhật dòng.
-No line selected.	Chưa chọn dòng nào.
-Line copied to clipboard.	Chưa chọn dòng nào.
-Line pasted from clipboard.	Đã dán dòng từ bộ nhớ tạm.
-Clipboard is empty.	Đã dán dòng từ bộ nhớ tạm.
-All map data copied to clipboard.	Đã sao chép toàn bộ dữ liệu bản đồ vào bộ nhớ tạm.
-hp	điểm máu
-menu music volume could not be set	không thể điều chỉnh âm lượng nhạc menu
-Não foi possível ativar o HRTF global do Steam Audio.	Không thể bật HRTF toàn cục của Steam Audio.
-How much xp do you want?	Bạn muốn bao nhiêu điểm kinh nghiệm?
-enter what item you want to give yourself.	Nhập vật phẩm bạn muốn tự nhận.
-Enter how many to give yourself	Nhập số lượng bạn muốn nhận
-English	Tiếng Anh
-Portuguese	Tiếng Anh
-Spanish	Tiếng Tây Ban Nha
-Turkish	Tiếng Tây Ban Nha
-Vietnamese	Tiếng Tây Ban Nha
+\scould not be loaded.	\skhông thể tải.
+\screated.	\sđã được tạo.
+@ammo_status	Đã nạp {ammo} viên đạn, còn {clips} băng đạn.
+@item.Energy potion	thuốc năng lượng
+@item.Energy_potion	thuốc năng lượng
+@item.handgun ammo	đạn súng ngắn
+@item.handgun clip	băng đạn súng ngắn
+@item.medkit	bộ sơ cứu
+@level_status	Bạn đang ở cấp {level} với {xp} điểm kinh nghiệm. Cần thêm {remaining} điểm để đạt cấp {next}.
 @menu_position	. {position} trên {count}
 @percent	{value} phần trăm
-@ammo_status	Đã nạp {ammo} viên đạn, còn {clips} băng đạn.
-@level_status	Bạn đang ở cấp {level} với {xp} điểm kinh nghiệm. Cần thêm {remaining} điểm để đạt cấp {next}.
 @selected_floor	Đã chọn {name} làm nền bản đồ.
 @selected_item	Đã chọn {name}.
 @weapon.fists	Nắm đấm
 @weapon.handgun	Súng ngắn
 @weapon.machinegun	Súng máy
-@item.handgun ammo	đạn súng ngắn
-@item.handgun clip	băng đạn súng ngắn
-@item.medkit	bộ sơ cứu
-@item.Energy potion	thuốc năng lượng
-@item.Energy_potion	thuốc năng lượng
-Documentation language	Ngôn ngữ tài liệu
-Documentation file	Tệp tài liệu
-Open document	Mở tài liệu
-README	README
+Add	Thêm
+Add\s	Thêm\s
+Add area ambient sound	Thêm âm thanh môi trường trong khu vực
+Add line	Thêm dòng
+Add line to map	Thêm dòng vào bản đồ
+Add platform	Thêm bề mặt
+Add positional sound source	Thêm nguồn âm thanh định vị
+Add safe zone	Thêm vùng an toàn
+Add staircase	Thêm cầu thang
+Add travel point	Thêm điểm di chuyển
+Add zone	Thêm khu vực
+All map data copied to clipboard.	Đã sao chép toàn bộ dữ liệu bản đồ vào bộ nhớ tạm.
+Area unknown	Khu vực chưa xác định
+Back	Quay lại
+Beep for capital letters	Phát tiếng bíp cho chữ hoa
+Blank	Trống
+Cancel	Hủy
+Cancel.	Đã hủy.
+Cap\s	Chữ hoa\s
 Changelog	Nhật ký thay đổi
-Enable menu wrapping	Bật vòng lặp menu
-Save settings	Lưu cài đặt
+Choose or enter a value first.	Hãy chọn hoặc nhập giá trị trước.
+Clipboard is empty.	Bộ nhớ tạm trống.
+Close	Đóng
+Copied	Đã sao chép
+Copy all map lines	Sao chép tất cả dòng bản đồ
+Copy selected line	Sao chép dòng đã chọn
+Could not open documentation file:\s	Không thể mở tệp tài liệu:\s
+Create a new map	Tạo bản đồ mới
+Create map	Tạo bản đồ
+Create new map	Tạo bản đồ mới
+Current location:\s	Vị trí hiện tại:\s
+Delete current map	Xóa bản đồ hiện tại
+Delete selected line	Xóa dòng đã chọn
+Destination map	Bản đồ đích
+Destination maximum X	X tối đa của đích
+Destination maximum Y	Y tối đa của đích
+Destination maximum Z	Z tối đa của đích
+Destination minimum X	X tối thiểu của đích
+Destination minimum Y	Y tối thiểu của đích
+Destination minimum Z	Z tối thiểu của đích
+Destination minimum coordinates must not exceed their maximum values.	Tọa độ tối thiểu không được lớn hơn tọa độ tối đa.
+Disabled	Tắt
+Documentation	Tài liệu
+Documentation file	Tệp tài liệu
+Documentation language	Ngôn ngữ tài liệu
 Documentation text	Nội dung tài liệu
-Could not open documentation file: 	Không thể mở tệp tài liệu: 
+Edit current map lines	Sửa các dòng bản đồ hiện tại
+Edit map line	Sửa dòng bản đồ
+Edit selected line	Sửa dòng đã chọn
+Enable menu wrapping	Bật vòng lặp menu
+Enabled	Bật
+English	Tiếng Anh
+Enter a valid map name that is not already in use.	Hãy nhập tên bản đồ hợp lệ chưa được sử dụng.
+Enter how many to give yourself	Nhập số lượng bạn muốn nhận
+Environmental sound source	Nguồn âm thanh môi trường
+Environmental sources	Âm thanh môi trường
+Exit	Thoát
+Floor platform	Bề mặt nền
+Game language	Ngôn ngữ trò chơi
+How much xp do you want?	Bạn muốn bao nhiêu điểm kinh nghiệm?
+Invalid coordinates.	Tọa độ không hợp lệ.
+Invalid travel point coordinates.	Tọa độ điểm di chuyển không hợp lệ.
+Line added.	Đã thêm dòng.
+Line content	Nội dung dòng
+Line copied to clipboard.	Đã sao chép dòng vào bộ nhớ tạm.
+Line pasted from clipboard.	Đã dán dòng từ bộ nhớ tạm.
+Line removed.	Đã xóa dòng.
+Line updated.	Đã cập nhật dòng.
+Main menu	Menu chính
+Map\s	Bản đồ\s
+Map construction menu	Menu xây dựng bản đồ
+Map loading error	Lỗi tải bản đồ
+Map music	Nhạc bản đồ
+Map music volume:\s	Âm lượng nhạc bản đồ:\s
+Map name	Tên bản đồ
+Map name and bounds are protected.	Tên và giới hạn bản đồ được bảo vệ.
+Map name and bounds cannot be edited here.	Không thể sửa tên và giới hạn bản đồ tại đây.
+Map record	Dòng bản đồ
+Map records	Các dòng bản đồ
+Master volume:\s	Âm lượng tổng:\s
+Maximum X	X tối đa
+Maximum Y	Y tối đa
+Maximum Z	Z tối đa
+Menu wrapping	Lặp vòng trong menu
+Minimum X	X tối thiểu
+Minimum Y	Y tối thiểu
+Minimum Z	Z tối thiểu
+Music	Nhạc
+No	Không
+No clips	Hết băng đạn
+No line selected.	Chưa chọn dòng nào.
+Não foi possível ativar o HRTF global do Steam Audio.	Không thể bật HRTF toàn cục của Steam Audio.
+Open document	Mở tài liệu
+Paste line	Dán dòng
+Play	Chơi
+Portuguese	Tiếng Bồ Đào Nha
+README	README
+Rename map	Đổi tên bản đồ
+Save line	Lưu dòng
+Save map name	Lưu tên bản đồ
+Save settings	Lưu cài đặt
+Say �cap� in front of the capital letters	Đọc cap trước chữ hoa
+Select a map	Chọn bản đồ
+Select a map line first.	Hãy chọn một dòng bản đồ trước.
+Select one floor platform by pressing Space on it.	Nhấn Space trên một bề mặt để chọn làm sàn.
+Settings	Cài đặt
+Settings saved.	Đã lưu cài đặt.
+Sound category	Loại âm thanh
+Sound pitch	Cao độ
+Sound volume	Âm lượng
+Sources	Nguồn âm thanh
+Spanish	Tiếng Tây Ban Nha
+Success	Thành công
+The destination coordinates must fit inside the target map bounds.	Tọa độ đích phải nằm trong giới hạn bản đồ.
+The destination map\s	Bản đồ đích\s
+The destination map does not exist.	Bản đồ đích không tồn tại.
+The map change could not be saved and loaded.	Không thể lưu và tải thay đổi bản đồ.
+The map coordinates are invalid. Minimum values must not exceed maximum values.	Tọa độ bản đồ không hợp lệ. Giá trị tối thiểu không được vượt quá tối đa.
+The map could not be saved.	Không thể lưu bản đồ.
+The map could not be written to the maps folder.	Không thể ghi bản đồ vào thư mục maps.
+The map file could not be deleted.	Không thể xóa tệp bản đồ.
+The map is no longer valid.	Bản đồ không còn hợp lệ.
+The new map could not be loaded.	Không thể tải bản đồ mới.
+The selected area must fit inside the current map bounds.	Khu vực đã chọn phải nằm trong giới hạn bản đồ hiện tại.
+The selected map could not be loaded.	Không thể tải bản đồ đã chọn.
+The travel point could not be saved and loaded.	Không thể lưu và tải điểm di chuyển.
+There are no valid map files in the maps folder.	Không có tệp bản đồ hợp lệ trong thư mục maps.
+There is no travel point here.	Không có điểm di chuyển ở đây.
+This record is not valid for this map.	Dữ liệu này không hợp lệ với bản đồ.
+This weapon doesn't take ammo.	Vũ khí này không dùng đạn.
+Traveling to\s	Đang di chuyển đến\s
+Treat capital letters no different.	Đọc chữ hoa như bình thường.
+Turkish	Tiếng Thổ Nhĩ Kỳ
+Use the arrow keys to scroll. Press Enter or Escape to close.	Dùng phím mũi tên để đọc nội dung. Nhấn Enter hoặc Escape để đóng.
+Vietnamese	Tiếng Việt
+View README file	Xem tệp README
+View changelog file	Xem nhật ký thay đổi
+Weapons cannot be used in a safe zone.	Không thể sử dụng vũ khí trong vùng an toàn.
+Yes	Có
+You already selected a platform.	Bạn đã chọn bề mặt rồi.
+You already selected an item.	Bạn đã chọn mục này rồi.
+You are level\s	Bạn đang ở cấp\s
+You have survived for\s	Bạn đã sống sót trong\s
+Your weapon still has ammo in it! Don't waste ammo!	Vũ khí vẫn còn đạn! Đừng lãng phí đạn!
+Zone name	Tên khu vực
+ambient sound	âm thanh môi trường
+blank	Trống
+character repeat off	Đã tắt lặp ký tự
+character repeat on	Đã bật lặp ký tự
+empty	trống
+enter what item you want to give yourself.	Nhập vật phẩm bạn muốn tự nhận.
+error	lỗi
+hp	điểm máu
+menu music volume could not be set	không thể điều chỉnh âm lượng nhạc menu
+music volume:\s	âm lượng nhạc:\s
+platform	bề mặt
+safe zone	vùng an toàn
+sound source	nguồn âm thanh
+space	dấu cách
+staircase	cầu thang
+text copied	đã sao chép văn bản
+text pasted	đã dán văn bản
+zone	khu vực
+Áudio espacial	Âm thanh không gian

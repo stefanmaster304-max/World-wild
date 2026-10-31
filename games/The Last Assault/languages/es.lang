@@ -1,180 +1,180 @@
-Play	Jugar
-Settings	Jugar
-Documentation	Documentación
-Exit	Documentación
-Main menu	Menú principal
-Select a map	Menú principal
-View README file	Ver archivo README
-View changelog file	Ver archivo README
-Game language	Idioma del juego
-Menu wrapping	Idioma del juego
-Enabled	Activada
-Disabled	Activada
-Close	Cerrar
-Current location: 	Ubicación actual: 
-Area unknown	Ubicación actual: 
-Weapons cannot be used in a safe zone.	No se pueden usar armas en una zona segura.
-Settings saved.	Configuración guardada.
-Back	Volver
-Map construction menu	Volver
-Create new map	Crear mapa nuevo
-Edit current map lines	Crear mapa nuevo
-Delete current map	Eliminar mapa actual
-Add platform	Eliminar mapa actual
-Add zone	Añadir zona
-Add safe zone	Añadir zona
-Add travel point	Añadir punto de viaje
-Add positional sound source	Añadir punto de viaje
-Add area ambient sound	Añadir sonido ambiental de área
-Add staircase	Añadir sonido ambiental de área
-Add	Cerrar
-Cancel	Cerrar
-Zone name	Nombre de la zona
-Minimum X	Nombre de la zona
-Maximum X	Nombre de la zona
-Minimum Y	Y mínimo
-Maximum Y	Y mínimo
-Minimum Z	Z mínimo
-Maximum Z	Z mínimo
-Sound category	Categoría de sonido
-Music	Categoría de sonido
-Sources	Categoría de sonido
-Map music	Música del mapa
-Environmental sources	Música del mapa
-Sound volume	Volumen del sonido
-Sound pitch	Volumen del sonido
-Map 	Mapa 
-Traveling to 	Mapa 
-Map music volume: 	Volumen de la música del mapa: 
-Master volume: 	Volumen de la música del mapa: 
-No clips	No quedan cargadores
-Success	No quedan cargadores
-This weapon doesn't take ammo.	Esta arma no usa munición.
-Your weapon still has ammo in it! Don't waste ammo!	¡Tu arma todavía tiene munición! No la desperdicies.
-You are level 	Estás en el nivel 
-You have survived for 	Estás en el nivel 
-There is no travel point here.	No hay ningún punto de viaje aquí.
-Invalid coordinates.	Coordenadas no válidas.
-Invalid travel point coordinates.	Coordenadas no válidas.
-Choose or enter a value first.	Elige o introduce un valor primero.
-Enter a valid map name that is not already in use.	Introduce un nombre de mapa válido que no esté en uso.
-Map name and bounds are protected.	El nombre y los límites del mapa están protegidos.
-Map name and bounds cannot be edited here.	El nombre y los límites del mapa no se pueden editar aquí.
-Select a map line first.	Selecciona primero una línea del mapa.
-Select one floor platform by pressing Space on it.	Selecciona una plataforma de suelo pulsando Espacio sobre ella.
-You already selected a platform.	Ya has seleccionado una plataforma.
-You already selected an item.	Ya has seleccionado un elemento.
-This record is not valid for this map.	Este registro no es válido para este mapa.
-The map could not be saved.	No se pudo guardar el mapa.
-The map could not be written to the maps folder.	No se pudo guardar el mapa en la carpeta de mapas.
-The map file could not be deleted.	No se pudo eliminar el archivo del mapa.
-The map is no longer valid.	El mapa ya no es válido.
-The new map could not be loaded.	No se pudo cargar el mapa nuevo.
-The destination map does not exist.	El mapa de destino no existe.
-The map coordinates are invalid. Minimum values must not exceed maximum values.	Las coordenadas del mapa no son válidas. Los mínimos no pueden superar los máximos.
-The selected area must fit inside the current map bounds.	El área seleccionada debe caber dentro de los límites del mapa actual.
-The destination coordinates must fit inside the target map bounds.	Las coordenadas de destino deben caber dentro de los límites del mapa de destino.
-Destination minimum coordinates must not exceed their maximum values.	Los mínimos de destino no pueden superar los máximos.
-The map change could not be saved and loaded.	No se pudo guardar y cargar el cambio del mapa.
-The travel point could not be saved and loaded.	No se pudo guardar y cargar el punto de viaje.
-Add line	Añadir línea
-Add line to map	Añadir línea
-Line content	Contenido de la línea
-Copy selected line	Contenido de la línea
-Paste line	Pegar línea
-Copy all map lines	Pegar línea
-Rename map	Cambiar nombre del mapa
-Save map name	Cambiar nombre del mapa
-Create a new map	Crear un mapa nuevo
-Create map	Crear un mapa nuevo
-Floor platform	Plataforma del suelo
-Environmental sound source	Plataforma del suelo
-Destination map	Mapa de destino
-Destination maximum X	X máximo de destino
-Destination maximum Y	X máximo de destino
-Destination maximum Z	X máximo de destino
-Destination minimum X	X mínimo de destino
-Destination minimum Y	X mínimo de destino
-Destination minimum Z	X mínimo de destino
-Edit map line	Editar línea del mapa
-Map loading error	Editar línea del mapa
-Map name	Nombre del mapa
-The destination map 	Nombre del mapa
- could not be loaded.	 no se pudo cargar.
- created.	 no se pudo cargar.
-The selected map could not be loaded.	No se pudo cargar el mapa seleccionado.
-There are no valid map files in the maps folder.	No hay archivos de mapa válidos en la carpeta maps.
-Use the arrow keys to scroll. Press Enter or Escape to close.	Usa las flechas para desplazarte por el texto. Pulsa Enter o Escape para cerrar.
-Delete selected line	Eliminar línea seleccionada
-Edit selected line	Eliminar línea seleccionada
-Save line	Guardar línea
-Map records	Guardar línea
-Map record	Guardar línea
-sound source	fuente de sonido
-ambient sound	fuente de sonido
-safe zone	fuente de sonido
-staircase	escalera
-platform	escalera
-zone	escalera
-Add 	Añadir 
-Line added.	Añadir 
-Line updated.	Línea actualizada.
-Line removed.	Línea actualizada.
-No line selected.	No hay ninguna línea seleccionada.
-Line copied to clipboard.	No hay ninguna línea seleccionada.
-Line pasted from clipboard.	Línea pegada desde el portapapeles.
-Clipboard is empty.	Línea pegada desde el portapapeles.
-All map data copied to clipboard.	Todos los datos del mapa se copiaron al portapapeles.
-hp	puntos de salud
-menu music volume could not be set	no se pudo ajustar el volumen de la música del menú
-Não foi possível ativar o HRTF global do Steam Audio.	No se pudo activar el HRTF global de Steam Audio.
-How much xp do you want?	¿Cuánta experiencia quieres?
-enter what item you want to give yourself.	Escribe qué objeto quieres darte.
-Enter how many to give yourself	Escribe cuántos quieres darte
-Yes	Sí
-No	Sí
-Copied	Sí
-Beep for capital letters	Pitido para las mayúsculas
-Say �cap� in front of the capital letters	Pitido para las mayúsculas
-Treat capital letters no different.	Tratar las mayúsculas normalmente.
-Cap 	Tratar las mayúsculas normalmente.
-Blank	En blanco
-blank	En blanco
-space	En blanco
-Cancel.	Cancelado.
-character repeat off	Cancelado.
-character repeat on	Repetición de caracteres activada
-empty	Repetición de caracteres activada
-text copied	texto copiado
-text pasted	texto copiado
-music volume: 	volumen de la música: 
-error	volumen de la música: 
-Áudio espacial	volumen de la música: 
-English	Inglés
-Portuguese	Inglés
-Spanish	Español
-Turkish	Español
-Vietnamese	Español
+\scould not be loaded.	\sno se pudo cargar.
+\screated.	\sse creó.
+@ammo_status	{ammo} balas cargadas, quedan {clips} cargadores.
+@item.Energy potion	poción de energía
+@item.Energy_potion	poción de energía
+@item.handgun ammo	munición de pistola
+@item.handgun clip	cargador de pistola
+@item.medkit	botiquín
+@level_status	Estás en el nivel {level} con {xp} de experiencia. Necesitas {remaining} más para llegar al nivel {next}.
 @menu_position	. {position} de {count}
 @percent	{value} por ciento
-@ammo_status	{ammo} balas cargadas, quedan {clips} cargadores.
-@level_status	Estás en el nivel {level} con {xp} de experiencia. Necesitas {remaining} más para llegar al nivel {next}.
 @selected_floor	{name} seleccionado como suelo del mapa.
 @selected_item	{name} seleccionado.
 @weapon.fists	Puños
 @weapon.handgun	Pistola
 @weapon.machinegun	Ametralladora
-@item.handgun ammo	munición de pistola
-@item.handgun clip	cargador de pistola
-@item.medkit	botiquín
-@item.Energy potion	poción de energía
-@item.Energy_potion	poción de energía
-Documentation language	Idioma de la documentación
-Documentation file	Archivo de documentación
-Open document	Abrir documento
-README	README
+Add	Añadir
+Add\s	Añadir\s
+Add area ambient sound	Añadir sonido ambiental de área
+Add line	Añadir línea
+Add line to map	Añadir línea al mapa
+Add platform	Añadir plataforma
+Add positional sound source	Añadir fuente de sonido posicional
+Add safe zone	Añadir zona segura
+Add staircase	Añadir escalera
+Add travel point	Añadir punto de viaje
+Add zone	Añadir zona
+All map data copied to clipboard.	Todos los datos del mapa se copiaron al portapapeles.
+Area unknown	Área desconocida
+Back	Volver
+Beep for capital letters	Pitido para las mayúsculas
+Blank	En blanco
+Cancel	Cancelar
+Cancel.	Cancelado.
+Cap\s	Mayúscula\s
 Changelog	Registro de cambios
-Enable menu wrapping	Activar navegación circular en los menús
-Save settings	Guardar configuración
+Choose or enter a value first.	Elige o introduce un valor primero.
+Clipboard is empty.	El portapapeles está vacío.
+Close	Cerrar
+Copied	Copiado
+Copy all map lines	Copiar todas las líneas del mapa
+Copy selected line	Copiar línea seleccionada
+Could not open documentation file:\s	No se pudo abrir el archivo de documentación:\s
+Create a new map	Crear un mapa nuevo
+Create map	Crear mapa
+Create new map	Crear mapa nuevo
+Current location:\s	Ubicación actual:\s
+Delete current map	Eliminar mapa actual
+Delete selected line	Eliminar línea seleccionada
+Destination map	Mapa de destino
+Destination maximum X	X máximo de destino
+Destination maximum Y	Y máximo de destino
+Destination maximum Z	Z máximo de destino
+Destination minimum X	X mínimo de destino
+Destination minimum Y	Y mínimo de destino
+Destination minimum Z	Z mínimo de destino
+Destination minimum coordinates must not exceed their maximum values.	Los mínimos de destino no pueden superar los máximos.
+Disabled	Desactivada
+Documentation	Documentación
+Documentation file	Archivo de documentación
+Documentation language	Idioma de la documentación
 Documentation text	Texto de la documentación
-Could not open documentation file: 	No se pudo abrir el archivo de documentación: 
+Edit current map lines	Editar líneas del mapa actual
+Edit map line	Editar línea del mapa
+Edit selected line	Editar línea seleccionada
+Enable menu wrapping	Activar navegación circular en los menús
+Enabled	Activada
+English	Inglés
+Enter a valid map name that is not already in use.	Introduce un nombre de mapa válido que no esté en uso.
+Enter how many to give yourself	Escribe cuántos quieres darte
+Environmental sound source	Fuente de sonido ambiental
+Environmental sources	Fuentes ambientales
+Exit	Salir
+Floor platform	Plataforma del suelo
+Game language	Idioma del juego
+How much xp do you want?	¿Cuánta experiencia quieres?
+Invalid coordinates.	Coordenadas no válidas.
+Invalid travel point coordinates.	Coordenadas del punto de viaje no válidas.
+Line added.	Línea añadida.
+Line content	Contenido de la línea
+Line copied to clipboard.	Línea copiada al portapapeles.
+Line pasted from clipboard.	Línea pegada desde el portapapeles.
+Line removed.	Línea eliminada.
+Line updated.	Línea actualizada.
+Main menu	Menú principal
+Map\s	Mapa\s
+Map construction menu	Menú de construcción del mapa
+Map loading error	Error al cargar el mapa
+Map music	Música del mapa
+Map music volume:\s	Volumen de la música del mapa:\s
+Map name	Nombre del mapa
+Map name and bounds are protected.	El nombre y los límites del mapa están protegidos.
+Map name and bounds cannot be edited here.	El nombre y los límites del mapa no se pueden editar aquí.
+Map record	Registro del mapa
+Map records	Registros del mapa
+Master volume:\s	Volumen general:\s
+Maximum X	X máximo
+Maximum Y	Y máximo
+Maximum Z	Z máximo
+Menu wrapping	Navegación circular en menús
+Minimum X	X mínimo
+Minimum Y	Y mínimo
+Minimum Z	Z mínimo
+Music	Música
+No	No
+No clips	No quedan cargadores
+No line selected.	No hay ninguna línea seleccionada.
+Não foi possível ativar o HRTF global do Steam Audio.	No se pudo activar el HRTF global de Steam Audio.
+Open document	Abrir documento
+Paste line	Pegar línea
+Play	Jugar
+Portuguese	Portugués
+README	README
+Rename map	Cambiar nombre del mapa
+Save line	Guardar línea
+Save map name	Guardar nombre del mapa
+Save settings	Guardar configuración
+Say �cap� in front of the capital letters	Di cap antes de las letras mayúsculas
+Select a map	Seleccionar mapa
+Select a map line first.	Selecciona primero una línea del mapa.
+Select one floor platform by pressing Space on it.	Selecciona una plataforma de suelo pulsando Espacio sobre ella.
+Settings	Configuración
+Settings saved.	Configuración guardada.
+Sound category	Categoría de sonido
+Sound pitch	Tono del sonido
+Sound volume	Volumen del sonido
+Sources	Fuentes
+Spanish	Español
+Success	Éxito
+The destination coordinates must fit inside the target map bounds.	Las coordenadas de destino deben caber dentro de los límites del mapa de destino.
+The destination map\s	El mapa de destino\s
+The destination map does not exist.	El mapa de destino no existe.
+The map change could not be saved and loaded.	No se pudo guardar y cargar el cambio del mapa.
+The map coordinates are invalid. Minimum values must not exceed maximum values.	Las coordenadas del mapa no son válidas. Los mínimos no pueden superar los máximos.
+The map could not be saved.	No se pudo guardar el mapa.
+The map could not be written to the maps folder.	No se pudo guardar el mapa en la carpeta de mapas.
+The map file could not be deleted.	No se pudo eliminar el archivo del mapa.
+The map is no longer valid.	El mapa ya no es válido.
+The new map could not be loaded.	No se pudo cargar el mapa nuevo.
+The selected area must fit inside the current map bounds.	El área seleccionada debe caber dentro de los límites del mapa actual.
+The selected map could not be loaded.	No se pudo cargar el mapa seleccionado.
+The travel point could not be saved and loaded.	No se pudo guardar y cargar el punto de viaje.
+There are no valid map files in the maps folder.	No hay archivos de mapa válidos en la carpeta maps.
+There is no travel point here.	No hay ningún punto de viaje aquí.
+This record is not valid for this map.	Este registro no es válido para este mapa.
+This weapon doesn't take ammo.	Esta arma no usa munición.
+Traveling to\s	Viajando a\s
+Treat capital letters no different.	Tratar las mayúsculas normalmente.
+Turkish	Turco
+Use the arrow keys to scroll. Press Enter or Escape to close.	Usa las flechas para desplazarte por el texto. Pulsa Enter o Escape para cerrar.
+Vietnamese	Vietnamita
+View README file	Ver archivo README
+View changelog file	Ver registro de cambios
+Weapons cannot be used in a safe zone.	No se pueden usar armas en una zona segura.
+Yes	Sí
+You already selected a platform.	Ya has seleccionado una plataforma.
+You already selected an item.	Ya has seleccionado un elemento.
+You are level\s	Estás en el nivel\s
+You have survived for\s	Has sobrevivido durante\s
+Your weapon still has ammo in it! Don't waste ammo!	¡Tu arma todavía tiene munición! No la desperdicies.
+Zone name	Nombre de la zona
+ambient sound	sonido ambiental
+blank	En blanco
+character repeat off	Repetición de caracteres desactivada
+character repeat on	Repetición de caracteres activada
+empty	vacío
+enter what item you want to give yourself.	Escribe qué objeto quieres darte.
+error	error
+hp	puntos de salud
+menu music volume could not be set	no se pudo ajustar el volumen de la música del menú
+music volume:\s	volumen de la música:\s
+platform	plataforma
+safe zone	zona segura
+sound source	fuente de sonido
+space	espacio
+staircase	escalera
+text copied	texto copiado
+text pasted	texto pegado
+zone	zona
+Áudio espacial	Audio espacial

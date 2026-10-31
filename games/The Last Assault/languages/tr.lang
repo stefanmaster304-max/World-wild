@@ -1,180 +1,180 @@
-Play	Oyna
-Settings	Oyna
-Documentation	Belgeler
-Exit	Belgeler
-Main menu	Ana menü
-Select a map	Ana menü
-View README file	README dosyasını görüntüle
-View changelog file	README dosyasını görüntüle
-Game language	Oyun dili
-Menu wrapping	Oyun dili
-Enabled	Açık
-Disabled	Açık
-Close	Kapat
-Current location: 	Mevcut konum: 
-Area unknown	Mevcut konum: 
-Weapons cannot be used in a safe zone.	Güvenli bölgede silah kullanılamaz.
-Settings saved.	Ayarlar kaydedildi.
-Back	Geri dön
-Map construction menu	Geri
-Create new map	Yeni harita oluştur
-Edit current map lines	Yeni harita oluştur
-Delete current map	Geçerli haritayı sil
-Add platform	Geçerli haritayı sil
-Add zone	Bölge ekle
-Add safe zone	Bölge ekle
-Add travel point	Seyahat noktası ekle
-Add positional sound source	Seyahat noktası ekle
-Add area ambient sound	Alan ortam sesi ekle
-Add staircase	Alan ortam sesi ekle
-Add	Kapat
-Cancel	Kapat
-Zone name	Bölge adı
-Minimum X	Bölge adı
-Maximum X	Bölge adı
-Minimum Y	En düşük Y
-Maximum Y	En düşük Y
-Minimum Z	En düşük Z
-Maximum Z	En düşük Z
-Sound category	Ses kategorisi
-Music	Ses kategorisi
-Sources	Ses kategorisi
-Map music	Harita müziği
-Environmental sources	Harita müziği
-Sound volume	Ses düzeyi
-Sound pitch	Ses düzeyi
-Add line	Geri dön
-Add line to map	Geri dön
-Line content	Satır içeriği
-Copy selected line	Satır içeriği
-Paste line	Satırı yapıştır
-Copy all map lines	Satırı yapıştır
-Rename map	Haritayı yeniden adlandır
-Save map name	Haritayı yeniden adlandır
-Create a new map	Yeni bir harita oluştur
-Create map	Yeni bir harita oluştur
-Floor platform	Zemin platformu
-Environmental sound source	Zemin platformu
-Map 	Harita 
-Traveling to 	Harita 
-Map music volume: 	Harita müziği seviyesi: 
-Master volume: 	Harita müziği seviyesi: 
-No clips	Şarjör yok
-Success	Şarjör yok
-This weapon doesn't take ammo.	Bu silah mühimmat kullanmıyor.
-There is no travel point here.	Burada seyahat noktası yok.
-Invalid coordinates.	Geçersiz koordinatlar.
-Choose or enter a value first.	Geçersiz koordinatlar.
-You already selected a platform.	Zaten bir platform seçtiniz.
-You already selected an item.	Zaten bir platform seçtiniz.
-This record is not valid for this map.	Bu kayıt bu harita için geçerli değil.
-The map could not be saved.	Harita kaydedilemedi.
-The destination map does not exist.	Harita kaydedilemedi.
-Destination maximum X	Hedef en yüksek X
-Destination maximum Y	Hedef en yüksek X
-Destination maximum Z	Hedef en yüksek X
-Destination minimum X	Hedef en düşük X
-Destination minimum Y	Hedef en düşük X
-Destination minimum Z	Hedef en düşük X
-Edit map line	Harita satırını düzenle
-Map loading error	Harita satırını düzenle
-Map name	Harita adı
-The destination map 	Harita adı
- could not be loaded.	 yüklenemedi.
- created.	 yüklenemedi.
-The selected map could not be loaded.	Seçilen harita yüklenemedi.
-There are no valid map files in the maps folder.	Haritalar klasöründe geçerli harita dosyası yok.
-Destination map	Hedef harita
-Destination minimum coordinates must not exceed their maximum values.	Hedef minimum koordinatları maksimum değerleri aşamaz.
-Enter a valid map name that is not already in use.	Kullanılmayan geçerli bir harita adı girin.
-Invalid travel point coordinates.	Seyahat noktası koordinatları geçersiz.
-Map name and bounds are protected.	Harita adı ve sınırları korumalıdır.
-Map name and bounds cannot be edited here.	Harita adı ve sınırları burada düzenlenemez.
-Select a map line first.	Önce bir harita satırı seçin.
-Select one floor platform by pressing Space on it.	Üzerinde Space tuşuna basarak bir zemin platformu seçin.
-The destination coordinates must fit inside the target map bounds.	Hedef koordinatlar harita sınırları içinde olmalıdır.
-The map change could not be saved and loaded.	Harita değişikliği kaydedilip yüklenemedi.
-The map coordinates are invalid. Minimum values must not exceed maximum values.	Harita koordinatları geçersiz. Minimum değerler maksimumları aşamaz.
-The map could not be written to the maps folder.	Harita maps klasörüne yazılamadı.
-The map file could not be deleted.	Harita dosyası silinemedi.
-The map is no longer valid.	Harita artık geçerli değil.
-The new map could not be loaded.	Yeni harita yüklenemedi.
-The selected area must fit inside the current map bounds.	Seçilen alan geçerli harita sınırlarında olmalıdır.
-The travel point could not be saved and loaded.	Seyahat noktası kaydedilip yüklenemedi.
-You are level 	Seviyeniz 
-You have survived for 	Seviyeniz 
-Your weapon still has ammo in it! Don't waste ammo!	Silahınızda hâlâ mermi var! Mermileri boşa harcamayın!
-Áudio espacial	Uzamsal ses
-Yes	Evet
-No	Evet
-Copied	Evet
-Beep for capital letters	Büyük harflerde bip sesi
-Say �cap� in front of the capital letters	Büyük harflerde bip sesi
-Treat capital letters no different.	Büyük harfleri normal kabul et.
-Cap 	Büyük harfleri normal kabul et.
-Blank	Boş
-blank	Boş
-space	Boş
-Cancel.	İptal.
-character repeat off	İptal.
-character repeat on	Karakter tekrarı açık
-empty	Karakter tekrarı açık
-text copied	metin kopyalandı
-text pasted	metin kopyalandı
-music volume: 	müzik sesi: 
-error	müzik sesi: 
-Use the arrow keys to scroll. Press Enter or Escape to close.	Metinde gezinmek için ok tuşlarını kullanın. Kapatmak için Enter veya Escape tuşuna basın.
-Delete selected line	Seçili satırı sil
-Edit selected line	Seçili satırı sil
-Save line	Satırı kaydet
-Map records	Satırı kaydet
-Map record	Satırı kaydet
-sound source	ses kaynağı
-ambient sound	ses kaynağı
-safe zone	ses kaynağı
-staircase	merdiven
-platform	merdiven
-zone	merdiven
-Add 	Ekle: 
-Line added.	Ekle: 
-Line updated.	Satır güncellendi.
-Line removed.	Satır güncellendi.
-No line selected.	Satır seçilmedi.
-Line copied to clipboard.	Satır seçilmedi.
-Line pasted from clipboard.	Satır panodan yapıştırıldı.
-Clipboard is empty.	Satır panodan yapıştırıldı.
-All map data copied to clipboard.	Tüm harita verileri panoya kopyalandı.
-hp	can puanı
-menu music volume could not be set	menü müziğinin ses düzeyi ayarlanamadı
-Não foi possível ativar o HRTF global do Steam Audio.	Steam Audio genel HRTF etkinleştirilemedi.
-How much xp do you want?	Ne kadar deneyim puanı istiyorsunuz?
-enter what item you want to give yourself.	Kendinize vermek istediğiniz eşyayı yazın.
-Enter how many to give yourself	Kaç tane istediğinizi yazın
-English	İngilizce
-Portuguese	İngilizce
-Spanish	İspanyolca
-Turkish	İspanyolca
-Vietnamese	İspanyolca
+\scould not be loaded.	\syüklenemedi.
+\screated.	\soluşturuldu.
+@ammo_status	{ammo} mermi yüklü, {clips} şarjör kaldı.
+@item.Energy potion	enerji iksiri
+@item.Energy_potion	enerji iksiri
+@item.handgun ammo	tabanca mermisi
+@item.handgun clip	tabanca şarjörü
+@item.medkit	ilk yardım çantası
+@level_status	{level}. seviyedesiniz ve {xp} deneyiminiz var. {next}. seviyeye ulaşmak için {remaining} deneyim daha gerekli.
 @menu_position	. {position} / {count}
 @percent	yüzde {value}
-@ammo_status	{ammo} mermi yüklü, {clips} şarjör kaldı.
-@level_status	{level}. seviyedesiniz ve {xp} deneyiminiz var. {next}. seviyeye ulaşmak için {remaining} deneyim daha gerekli.
 @selected_floor	{name} harita zemini olarak seçildi.
 @selected_item	{name} seçildi.
 @weapon.fists	Yumruklar
 @weapon.handgun	Tabanca
 @weapon.machinegun	Makineli tüfek
-@item.handgun ammo	tabanca mermisi
-@item.handgun clip	tabanca şarjörü
-@item.medkit	ilk yardım çantası
-@item.Energy potion	enerji iksiri
-@item.Energy_potion	enerji iksiri
-Documentation language	Belge dili
-Documentation file	Belge dosyası
-Open document	Belgeyi aç
-README	README
+Add	Ekle
+Add\s	Ekle:\s
+Add area ambient sound	Alan ortam sesi ekle
+Add line	Satır ekle
+Add line to map	Haritaya satır ekle
+Add platform	Platform ekle
+Add positional sound source	Konumsal ses kaynağı ekle
+Add safe zone	Güvenli bölge ekle
+Add staircase	Merdiven ekle
+Add travel point	Seyahat noktası ekle
+Add zone	Bölge ekle
+All map data copied to clipboard.	Tüm harita verileri panoya kopyalandı.
+Area unknown	Bilinmeyen bölge
+Back	Geri dön
+Beep for capital letters	Büyük harflerde bip sesi
+Blank	Boş
+Cancel	İptal
+Cancel.	İptal.
+Cap\s	Büyük harf\s
 Changelog	Değişiklik günlüğü
-Enable menu wrapping	Menü sarmalamayı etkinleştir
-Save settings	Ayarları kaydet
+Choose or enter a value first.	Önce bir değer seçin veya girin.
+Clipboard is empty.	Pano boş.
+Close	Kapat
+Copied	Kopyalandı
+Copy all map lines	Tüm harita satırlarını kopyala
+Copy selected line	Seçili satırı kopyala
+Could not open documentation file:\s	Belge dosyası açılamadı:\s
+Create a new map	Yeni bir harita oluştur
+Create map	Harita oluştur
+Create new map	Yeni harita oluştur
+Current location:\s	Mevcut konum:\s
+Delete current map	Geçerli haritayı sil
+Delete selected line	Seçili satırı sil
+Destination map	Hedef harita
+Destination maximum X	Hedef en yüksek X
+Destination maximum Y	Hedef en yüksek Y
+Destination maximum Z	Hedef en yüksek Z
+Destination minimum X	Hedef en düşük X
+Destination minimum Y	Hedef en düşük Y
+Destination minimum Z	Hedef en düşük Z
+Destination minimum coordinates must not exceed their maximum values.	Hedef minimum koordinatları maksimum değerleri aşamaz.
+Disabled	Kapalı
+Documentation	Belgeler
+Documentation file	Belge dosyası
+Documentation language	Belge dili
 Documentation text	Belge metni
-Could not open documentation file: 	Belge dosyası açılamadı: 
+Edit current map lines	Geçerli harita satırlarını düzenle
+Edit map line	Harita satırını düzenle
+Edit selected line	Seçili satırı düzenle
+Enable menu wrapping	Menü sarmalamayı etkinleştir
+Enabled	Açık
+English	İngilizce
+Enter a valid map name that is not already in use.	Kullanılmayan geçerli bir harita adı girin.
+Enter how many to give yourself	Kaç tane istediğinizi yazın
+Environmental sound source	Ortam sesi kaynağı
+Environmental sources	Çevresel kaynaklar
+Exit	Çıkış
+Floor platform	Zemin platformu
+Game language	Oyun dili
+How much xp do you want?	Ne kadar deneyim puanı istiyorsunuz?
+Invalid coordinates.	Geçersiz koordinatlar.
+Invalid travel point coordinates.	Seyahat noktası koordinatları geçersiz.
+Line added.	Satır eklendi.
+Line content	Satır içeriği
+Line copied to clipboard.	Satır panoya kopyalandı.
+Line pasted from clipboard.	Satır panodan yapıştırıldı.
+Line removed.	Satır silindi.
+Line updated.	Satır güncellendi.
+Main menu	Ana menü
+Map\s	Harita\s
+Map construction menu	Harita oluşturma menüsü
+Map loading error	Harita yükleme hatası
+Map music	Harita müziği
+Map music volume:\s	Harita müziği seviyesi:\s
+Map name	Harita adı
+Map name and bounds are protected.	Harita adı ve sınırları korumalıdır.
+Map name and bounds cannot be edited here.	Harita adı ve sınırları burada düzenlenemez.
+Map record	Harita kaydı
+Map records	Harita kayıtları
+Master volume:\s	Ana ses seviyesi:\s
+Maximum X	En yüksek X
+Maximum Y	En yüksek Y
+Maximum Z	En yüksek Z
+Menu wrapping	Menüde başa sarma
+Minimum X	En düşük X
+Minimum Y	En düşük Y
+Minimum Z	En düşük Z
+Music	Müzik
+No	Hayır
+No clips	Şarjör yok
+No line selected.	Satır seçilmedi.
+Não foi possível ativar o HRTF global do Steam Audio.	Steam Audio genel HRTF etkinleştirilemedi.
+Open document	Belgeyi aç
+Paste line	Satırı yapıştır
+Play	Oyna
+Portuguese	Portekizce
+README	README
+Rename map	Haritayı yeniden adlandır
+Save line	Satırı kaydet
+Save map name	Harita adını kaydet
+Save settings	Ayarları kaydet
+Say �cap� in front of the capital letters	Büyük harflerden önce cap söyle
+Select a map	Harita seç
+Select a map line first.	Önce bir harita satırı seçin.
+Select one floor platform by pressing Space on it.	Üzerinde Space tuşuna basarak bir zemin platformu seçin.
+Settings	Ayarlar
+Settings saved.	Ayarlar kaydedildi.
+Sound category	Ses kategorisi
+Sound pitch	Ses perdesi
+Sound volume	Ses düzeyi
+Sources	Ses kaynakları
+Spanish	İspanyolca
+Success	Başarılı
+The destination coordinates must fit inside the target map bounds.	Hedef koordinatlar harita sınırları içinde olmalıdır.
+The destination map\s	Hedef harita\s
+The destination map does not exist.	Hedef harita bulunamadı.
+The map change could not be saved and loaded.	Harita değişikliği kaydedilip yüklenemedi.
+The map coordinates are invalid. Minimum values must not exceed maximum values.	Harita koordinatları geçersiz. Minimum değerler maksimumları aşamaz.
+The map could not be saved.	Harita kaydedilemedi.
+The map could not be written to the maps folder.	Harita maps klasörüne yazılamadı.
+The map file could not be deleted.	Harita dosyası silinemedi.
+The map is no longer valid.	Harita artık geçerli değil.
+The new map could not be loaded.	Yeni harita yüklenemedi.
+The selected area must fit inside the current map bounds.	Seçilen alan geçerli harita sınırlarında olmalıdır.
+The selected map could not be loaded.	Seçilen harita yüklenemedi.
+The travel point could not be saved and loaded.	Seyahat noktası kaydedilip yüklenemedi.
+There are no valid map files in the maps folder.	Haritalar klasöründe geçerli harita dosyası yok.
+There is no travel point here.	Burada seyahat noktası yok.
+This record is not valid for this map.	Bu kayıt bu harita için geçerli değil.
+This weapon doesn't take ammo.	Bu silah mühimmat kullanmıyor.
+Traveling to\s	Şuraya gidiliyor:\s
+Treat capital letters no different.	Büyük harfleri normal kabul et.
+Turkish	Türkçe
+Use the arrow keys to scroll. Press Enter or Escape to close.	Metinde gezinmek için ok tuşlarını kullanın. Kapatmak için Enter veya Escape tuşuna basın.
+Vietnamese	Vietnamca
+View README file	README dosyasını görüntüle
+View changelog file	Değişiklik günlüğünü görüntüle
+Weapons cannot be used in a safe zone.	Güvenli bölgede silah kullanılamaz.
+Yes	Evet
+You already selected a platform.	Zaten bir platform seçtiniz.
+You already selected an item.	Zaten bir öğe seçtiniz.
+You are level\s	Seviyeniz\s
+You have survived for\s	Hayatta kalma süreniz\s
+Your weapon still has ammo in it! Don't waste ammo!	Silahınızda hâlâ mermi var! Mermileri boşa harcamayın!
+Zone name	Bölge adı
+ambient sound	ortam sesi
+blank	Boş
+character repeat off	Karakter tekrarı kapalı
+character repeat on	Karakter tekrarı açık
+empty	boş
+enter what item you want to give yourself.	Kendinize vermek istediğiniz eşyayı yazın.
+error	hata
+hp	can puanı
+menu music volume could not be set	menü müziğinin ses düzeyi ayarlanamadı
+music volume:\s	müzik sesi:\s
+platform	platform
+safe zone	güvenli bölge
+sound source	ses kaynağı
+space	boşluk
+staircase	merdiven
+text copied	metin kopyalandı
+text pasted	metin yapıştırıldı
+zone	bölge
+Áudio espacial	Uzamsal ses

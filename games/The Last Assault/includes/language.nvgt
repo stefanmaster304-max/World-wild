@@ -6,6 +6,11 @@ timer player_save_timer;
 string[] language_keys;
 string[] language_values;
 
+string decode_language_field(const string&in value)
+{
+	return string_replace(value,"\\s"," ",true);
+}
+
 bool load_language_file(const string&in language_code)
 {
 	language_keys.resize(0);
@@ -19,8 +24,8 @@ bool load_language_file(const string&in language_code)
 	{
 		int separator=lines[i].find_first("\t");
 		if(separator<1) continue;
-		language_keys.insert_last(lines[i].substr(0,separator));
-		language_values.insert_last(lines[i].substr(separator+1));
+		language_keys.insert_last(decode_language_field(lines[i].substr(0,separator)));
+		language_values.insert_last(decode_language_field(lines[i].substr(separator+1)));
 	}
 	return language_keys.length()>0;
 }
