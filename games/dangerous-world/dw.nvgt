@@ -239,6 +239,12 @@ void play_logo_intro()
 savedata sd(prefsdir+"/settings.dat","gipwjefiqoiqewiofeiofqwehjoiwmoiwaniewnfoipwqenefowqiniosawENGRWORWIOPNHGRNIOOGINWGR");
 void main()
 {
+	sound_global_hrtf = true;
+	if (!sound_global_hrtf)
+	{
+		dlg("NVGT could not initialize the global spatial HRTF audio system. The game will close rather than run with incorrect spatial positioning.");
+		exit();
+	}
 	if (!directory_create(prefsdir))
 	{
 		dlg("Could not create the game's data folder in AppData: " + prefsdir);

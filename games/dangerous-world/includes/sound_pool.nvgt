@@ -117,6 +117,11 @@ class sound_pool_item {
 			return;
 		if (stationary == true)
 			return;
+		// Game compass headings are stored in degrees (north=0, east=90),
+		// while NVGT sound::set_position and the spatial math below require
+		// radians. Convert once at this boundary so listener turns and source
+		// bearings use NVGT's native angular units consistently.
+		rotation = float(calculate_theta(rotation));
 		float delta_left = x - left_range;
 		float delta_right = x + right_range;
 		float delta_backward = y - backward_range;
