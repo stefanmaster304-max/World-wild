@@ -1,0 +1,20 @@
+map: The Southern Ocean
+minx: 0
+maxx: 500
+miny: 0
+maxy: 500
+minz: 0
+maxz: 20
+minlevel: 1
+maxlevel: 0
+minresurrection: 0
+maxresurrection: 0
+travelpoint:0:500:500:500:0:10:main:0:500:0:0:0:0:none:1:0:0:0:1
+platform:0:500:490:500:0:0:mud4
+zone:0:500:490:500:0:20:Mud near the southern ocean
+zone:0:500:0:489:0:20:The Southern Ocean
+platform:0:500:11:489:0:0:swimming
+source:0:500:11:489:0:20:ocean3:0:100
+platform:0:500:0:10:0:0:mud4
+zone:0:500:0:10:0:20:Mud near the southern ocean
+ambience:0:500:0:500:0:20:Autumn Sunset:0:100

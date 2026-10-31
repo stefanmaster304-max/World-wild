@@ -1,0 +1,248 @@
+// keyboard_sounds.nvgt - Keyboard typing sound theme engine and selector dialog.
+//
+// A theme is a folder under sounds/keyboards/<theme>/ holding the five key
+// samples that ship with the game: type, cap, space, delete and return.
+// Every sample is played through the native NVGT sound pool `p` at the player's
+// own position, so it goes through the same spatialisation, HRTF and
+// voice-stealing path as every other sound in the game instead of a raw 2D
+// voice.
+
+string current_keyboard_theme = "keyboard1";
+bool keyboard_sounds_enabled = true;
+timer keyboard_sound_debounce;
+
+string get_global_keyboard_sound_theme()
+{
+	return current_keyboard_theme;
+}
+
+void set_global_keyboard_sound_theme(const string&in theme)
+{
+	if (theme == "") return;
+	current_keyboard_theme = theme;
+}
+
+string[] get_available_keyboard_themes()
+{
+	string[] themes;
+	string[]@ dirs = find_directories("sounds/keyboards/*");
+	if (dirs !is null)
+	{
+		for (uint i = 0; i < dirs.length(); i++)
+		{
+			string d = dirs[i];
+			if (d != "" && themes.find(d) == -1)
+			{
+				themes.insert_last(d);
+			}
+		}
+	}
+	if (themes.length() == 0)
+	{
+		themes.insert_last("keyboard1");
+	}
+	return themes;
+}
+
+string get_keyboard_theme_display_name(const string&in theme)
+{
+	if (theme == "keyboard1") return "Default Keyboard (keyboard1)";
+	string name = string_replace(theme, "_", " ", true);
+	return "Keyboard: " + name;
+}
+
+// Resolves sounds/keyboards/<current theme>/<sample>.ogg through the shared
+// path resolver so packed builds and case differences still find the file.
+string get_keyboard_sound(string sample)
+{
+	if (sample == "" || current_keyboard_theme == "") return "";
+	string base = "keyboards/" + current_keyboard_theme + "/" + sample;
+	string resolved = get_sound_path(base + ".ogg");
+	if (resolved == "") resolved = get_sound_path(base);
+	return resolved;
+}
+
+void play_keyboard_sound(string sample)
+{
+	if (keyboard_sounds_enabled == false) return;
+	// Forms in this project nest loops, so a single key press can be observed
+	// more than once per frame. The debounce keeps fast typing to one sample.
+	if (keyboard_sound_debounce.elapsed < 35) return;
+	string path = get_keyboard_sound(sample);
+	if (path == "") return;
+	keyboard_sound_debounce.restart();
+	p.play_stationary(path, false);
+}
+
+void play_typing_sound()
+{
+	play_keyboard_sound("type");
+}
+
+void play_caps_sound()
+{
+	play_keyboard_sound("cap");
+}
+
+void play_space_sound()
+{
+	play_keyboard_sound("space");
+}
+
+void play_delete_sound()
+{
+	play_keyboard_sound("delete");
+}
+
+void play_return_sound()
+{
+	play_keyboard_sound("return");
+}
+
+bool is_input_box_focused(audio_form@ f, const int[]&in input_ids)
+{
+	if (f is null) return false;
+	int cur = f.get_current_focus();
+	if (cur < 0) return false;
+	for (uint i = 0; i < input_ids.length(); i++)
+	{
+		if (input_ids[i] == cur) return true;
+	}
+	return false;
+}
+
+void update_form_input_keyboard_sound(audio_form@ f, const int[]&in input_ids)
+{
+	if (keyboard_sounds_enabled == false || f is null) return;
+	if (is_input_box_focused(f, input_ids))
+	{
+		update_keyboard_sound();
+	}
+}
+
+void update_form_input_keyboard_sound(audio_form@ f, int input_id)
+{
+	if (keyboard_sounds_enabled == false || f is null) return;
+	if (f.get_current_focus() == input_id)
+	{
+		update_keyboard_sound();
+	}
+}
+
+void update_keyboard_sound()
+{
+	if (keyboard_sounds_enabled == false) return;
+	if (keyboard_sound_debounce.elapsed < 30) return;
+
+	if (key_pressed(KEY_CAPSLOCK))
+	{
+		play_caps_sound();
+		return;
+	}
+	if (key_pressed(KEY_RETURN) or key_repeating(KEY_RETURN) or key_pressed(KEY_NUMPAD_ENTER) or key_repeating(KEY_NUMPAD_ENTER))
+	{
+		play_return_sound();
+		return;
+	}
+	if (key_pressed(KEY_BACK) or key_repeating(KEY_BACK) or key_pressed(KEY_DELETE) or key_repeating(KEY_DELETE))
+	{
+		play_delete_sound();
+		return;
+	}
+	if (key_pressed(KEY_SPACE) or key_repeating(KEY_SPACE))
+	{
+		play_space_sound();
+		return;
+	}
+	for (int code = KEY_A; code <= KEY_Z; code++)
+	{
+		if (key_pressed(code) or key_repeating(code))
+		{
+			play_typing_sound();
+			return;
+		}
+	}
+	for (int code = KEY_0; code <= KEY_9; code++)
+	{
+		if (key_pressed(code) or key_repeating(code))
+		{
+			play_typing_sound();
+			return;
+		}
+	}
+	for (int code = KEY_NUMPAD0; code <= KEY_NUMPAD9; code++)
+	{
+		if (key_pressed(code) or key_repeating(code))
+		{
+			play_typing_sound();
+			return;
+		}
+	}
+	int[] symbols = {
+		KEY_MINUS, KEY_EQUALS, KEY_LBRACKET, KEY_RBRACKET, KEY_SEMICOLON,
+		KEY_APOSTROPHE, KEY_GRAVE, KEY_BACKSLASH, KEY_COMMA, KEY_PERIOD, KEY_SLASH,
+		KEY_ADD, KEY_SUBTRACT, KEY_MULTIPLY, KEY_DIVIDE, KEY_DECIMAL
+	};
+	for (uint i = 0; i < symbols.length(); i++)
+	{
+		if (key_pressed(symbols[i]) or key_repeating(symbols[i]))
+		{
+			play_typing_sound();
+			return;
+		}
+	}
+}
+
+void select_keyboard_sound_theme_dialog()
+{
+	string[] themes = get_available_keyboard_themes();
+	if (themes.length() == 0)
+	{
+		dlg("No keyboard sound themes found in sounds/keyboards.");
+		return;
+	}
+
+	audio_form kf;
+	kf.create_window("Select keyboard typing sound theme", false, true, false);
+	int list = kf.create_list("Available keyboard sound packages", 0, false, true);
+
+	int sel_idx = 0;
+	for (uint i = 0; i < themes.length(); i++)
+	{
+		bool is_cur = (themes[i] == current_keyboard_theme || themes[i] == get_global_keyboard_sound_theme());
+		if (is_cur) sel_idx = int(i);
+		kf.add_list_item(list, get_keyboard_theme_display_name(themes[i]), themes[i], -1, false, is_cur);
+	}
+	kf.set_list_position(list, sel_idx, false);
+
+	int b_ok = kf.create_button("&Select", true);
+	int b_cancel = kf.create_button("&Cancel", false, true);
+	kf.set_default_controls(b_ok, b_cancel);
+	kf.focus(list);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		kf.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || kf.is_pressed(b_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+
+		if (kf.is_pressed(b_ok))
+		{
+			int pos = kf.get_list_position(list);
+			if (pos >= 0 && pos < int(themes.length()))
+			{
+				set_global_keyboard_sound_theme(themes[pos]);
+				current_keyboard_theme = get_global_keyboard_sound_theme();
+				writeprefs();
+				speak("Keyboard typing sound theme set to " + get_keyboard_theme_display_name(current_keyboard_theme) + ".");
+				return;
+			}
+		}
+	}
+}

@@ -1,0 +1,557 @@
+// item_data_saver.nvgt - Data storage, file I/O, and persistence for items.
+// Unified encrypted format: settings/items.dat (all items encrypted into a single bundle)
+
+const string ITEM_DIR = "settings/items";
+const string ITEMS_DAT_PATH = "settings/items.dat";
+const string ITEM_ENC_KEY = "ShooterItemConfigKey2026_9x!L#qZ8*vM3&kP5";
+
+string[] item_categories = {
+	"consumables",
+	"ammo",
+	"equipment",
+	"currency",
+	"packages",
+	"materials"
+};
+
+class item_data
+{
+	string id;
+	string name;
+	string category; // consumables, ammo, packages, equipment, currency, materials
+	string subtype;
+	int heal_amount;
+	int capacity;
+	string ammo_type;
+	string contains_items; // For packages: "health_potion:2;medkit:1"
+	string description;
+	int max_stack;
+
+	// Consumables can restore health.
+	bool restores_health;
+
+	// Currency items: how much of the currency one pickup is worth.
+	int quantity;
+
+	// Audio keys
+	string sound_use;
+	string sound_pickup;
+	string sound_loot;
+	string sound_draw;
+	string sound_open;
+	string sound_close;
+	string sound_plant;
+	string sound_loop;
+	string sound_hit;
+	string sound_break;
+	string sound_distant_hit;
+
+	item_data()
+	{
+		id = "";
+		name = "";
+		category = "consumables";
+		subtype = "";
+		heal_amount = 250;
+		capacity = 30;
+		ammo_type = "";
+		contains_items = "";
+		description = "";
+		max_stack = 99;
+
+		restores_health = true;
+		quantity = 0;
+
+		sound_use = "";
+		sound_pickup = "";
+		sound_loot = "";
+		sound_draw = "";
+		sound_open = "";
+		sound_close = "";
+		sound_hit = "";
+		sound_break = "";
+		sound_distant_hit = "";
+	}
+}
+
+item_data@[] item_registry(0);
+
+void ensure_item_directories()
+{
+	if (!directory_exists("settings")) directory_create("settings");
+	if (!directory_exists(ITEM_DIR)) directory_create(ITEM_DIR);
+}
+
+void parse_item_config(item_data@ it, const string&in content)
+{
+	string[]@ lines = string_split(content, "\n", true);
+	if (lines is null) return;
+
+	for (uint i = 0; i < lines.length(); i++)
+	{
+		string line = lines[i].trim_whitespace();
+		if (line == "" || string_starts_with(line, "#") || string_starts_with(line, ";")) continue;
+		int eq = string_contains(line, "=", 1);
+		if (eq == -1) continue;
+
+		string key = string_left(line, eq).trim_whitespace();
+		string val = line.substr(eq + 1).trim_whitespace();
+
+		if (key == "name") it.name = val;
+		else if (key == "category") it.category = val;
+		else if (key == "subtype") it.subtype = val;
+		else if (key == "heal_amount") it.heal_amount = int(string_to_number(val));
+		else if (key == "restores_health") it.restores_health = (string_to_number(val) > 0 || val == "true");
+		else if (key == "quantity") it.quantity = int(string_to_number(val));
+		else if (key == "capacity")
+		{
+			it.capacity = int(string_to_number(val));
+			if (it.category == "currency" && it.quantity <= 0) it.quantity = it.capacity;
+		}
+		else if (key == "ammo_type") it.ammo_type = val;
+		else if (key == "contains_items") it.contains_items = val;
+		else if (key == "description") it.description = val;
+		else if (key == "max_stack") it.max_stack = int(string_to_number(val));
+		else if (key == "sound_use") it.sound_use = val;
+		else if (key == "sound_pickup")
+		{
+			it.sound_pickup = val;
+			if (it.sound_loot == "") it.sound_loot = val;
+		}
+		else if (key == "sound_loot")
+		{
+			it.sound_loot = val;
+			if (it.sound_pickup == "") it.sound_pickup = val;
+		}
+		else if (key == "sound_draw") it.sound_draw = val;
+		else if (key == "sound_open") it.sound_open = val;
+		else if (key == "sound_close") it.sound_close = val;
+		else if (key == "sound_hit") it.sound_hit = val;
+		else if (key == "sound_break") it.sound_break = val;
+		else if (key == "sound_distant_hit" || key == "sound_distant_break") it.sound_distant_hit = val;
+	}
+
+	// Equipment durability is hit-based only; never keep a stray absorption
+	// value in memory even when an old config still carries one.
+	if (it.category == "equipment") it.heal_amount = 0;
+}
+
+string serialize_item_config(item_data@ it)
+{
+	string s_out = "";
+	s_out += "name=" + it.name + "\n";
+	s_out += "category=" + it.category + "\n";
+	s_out += "subtype=" + it.subtype + "\n";
+	s_out += "description=" + it.description + "\n";
+	s_out += "max_stack=" + it.max_stack + "\n";
+
+	if (it.category == "consumables")
+	{
+		// Only the restore types actually enabled carry an amount; disabled
+		// legacy item entries without a healing effect remain usable as ordinary items
+		// also restores health.
+		s_out += "restores_health=" + (it.restores_health ? 1 : 0) + "\n";
+		s_out += "heal_amount=" + (it.restores_health ? it.heal_amount : 0) + "\n";
+		if (it.sound_use != "") s_out += "sound_use=" + it.sound_use + "\n";
+		if (it.sound_loot != "") s_out += "sound_loot=" + it.sound_loot + "\n";
+		if (it.sound_pickup != "") s_out += "sound_pickup=" + it.sound_pickup + "\n";
+		if (it.sound_draw != "") s_out += "sound_draw=" + it.sound_draw + "\n";
+		if (it.sound_hit != "") s_out += "sound_hit=" + it.sound_hit + "\n";
+		if (it.sound_break != "") s_out += "sound_break=" + it.sound_break + "\n";
+		if (it.sound_distant_hit != "") s_out += "sound_distant_hit=" + it.sound_distant_hit + "\n";
+	}
+	else if (it.category == "ammo")
+	{
+		s_out += "capacity=" + it.capacity + "\n";
+		s_out += "ammo_type=" + it.ammo_type + "\n";
+		if (it.sound_loot != "") s_out += "sound_loot=" + it.sound_loot + "\n";
+		if (it.sound_pickup != "") s_out += "sound_pickup=" + it.sound_pickup + "\n";
+		if (it.sound_draw != "") s_out += "sound_draw=" + it.sound_draw + "\n";
+	}
+	else if (it.category == "packages")
+	{
+		s_out += "contains_items=" + it.contains_items + "\n";
+		if (it.sound_use != "") s_out += "sound_use=" + it.sound_use + "\n";
+		if (it.sound_loot != "") s_out += "sound_loot=" + it.sound_loot + "\n";
+		if (it.sound_pickup != "") s_out += "sound_pickup=" + it.sound_pickup + "\n";
+		if (it.sound_draw != "") s_out += "sound_draw=" + it.sound_draw + "\n";
+	}
+	else if (it.category == "currency")
+	{
+		s_out += "quantity=" + it.quantity + "\n";
+		if (it.sound_loot != "") s_out += "sound_loot=" + it.sound_loot + "\n";
+		if (it.sound_pickup != "") s_out += "sound_pickup=" + it.sound_pickup + "\n";
+		if (it.sound_draw != "") s_out += "sound_draw=" + it.sound_draw + "\n";
+	}
+	else if (it.category == "materials")
+	{
+		if (it.sound_loot != "") s_out += "sound_loot=" + it.sound_loot + "\n";
+		if (it.sound_pickup != "") s_out += "sound_pickup=" + it.sound_pickup + "\n";
+		if (it.sound_draw != "") s_out += "sound_draw=" + it.sound_draw + "\n";
+	}
+	else if (it.category == "equipment")
+	{
+		if (it.capacity > 0) s_out += "capacity=" + it.capacity + "\n";
+		if (it.heal_amount > 0) s_out += "heal_amount=" + it.heal_amount + "\n";
+		if (it.sound_use != "") s_out += "sound_use=" + it.sound_use + "\n";
+		if (it.sound_hit != "") s_out += "sound_hit=" + it.sound_hit + "\n";
+		if (it.sound_break != "") s_out += "sound_break=" + it.sound_break + "\n";
+		if (it.sound_distant_hit != "") s_out += "sound_distant_hit=" + it.sound_distant_hit + "\n";
+		if (it.sound_loot != "") s_out += "sound_loot=" + it.sound_loot + "\n";
+		if (it.sound_pickup != "") s_out += "sound_pickup=" + it.sound_pickup + "\n";
+		if (it.sound_draw != "") s_out += "sound_draw=" + it.sound_draw + "\n";
+		if (it.sound_plant != "") s_out += "sound_plant=" + it.sound_plant + "\n";
+		if (it.sound_loop != "") s_out += "sound_loop=" + it.sound_loop + "\n";
+	}
+	if (it.sound_open != "") s_out += "sound_open=" + it.sound_open + "\n";
+	if (it.sound_close != "") s_out += "sound_close=" + it.sound_close + "\n";
+	return s_out;
+}
+
+string serialize_all_items_bundle()
+{
+	string s = "# Shooter Unified Items Bundle v1.0\n\n";
+	for (uint i = 0; i < item_registry.length(); i++)
+	{
+		item_data@ it = @item_registry[i];
+		s += "[item:" + it.id + "]\n";
+	s += "category=" + it.category + "\n";
+	s += "name=" + it.name + "\n";
+	s += "subtype=" + it.subtype + "\n";
+	s += "description=" + it.description + "\n";
+	s += "max_stack=" + it.max_stack + "\n";
+	s += "capacity=" + it.capacity + "\n";
+	// Amounts only exist for the restore types a consumable actually enables.
+	int heal_b = (it.category == "consumables" && !it.restores_health) ? 0 : it.heal_amount;
+	s += "heal_amount=" + heal_b + "\n";
+	s += "restores_health=" + (it.restores_health ? "1" : "0") + "\n";
+		s += "quantity=" + it.quantity + "\n";
+		s += "ammo_type=" + it.ammo_type + "\n";
+		s += "contains_items=" + it.contains_items + "\n";
+		s += "sound_use=" + it.sound_use + "\n";
+		s += "sound_pickup=" + it.sound_pickup + "\n";
+		s += "sound_loot=" + (it.sound_loot != "" ? it.sound_loot : it.sound_pickup) + "\n";
+		s += "sound_draw=" + it.sound_draw + "\n";
+		s += "sound_open=" + it.sound_open + "\n";
+		s += "sound_close=" + it.sound_close + "\n";
+		s += "sound_plant=" + it.sound_plant + "\n";
+		s += "sound_loop=" + it.sound_loop + "\n";
+		s += "sound_hit=" + it.sound_hit + "\n";
+		s += "sound_break=" + it.sound_break + "\n";
+		s += "sound_distant_hit=" + it.sound_distant_hit + "\n";
+		s += "\n";
+	}
+	return s;
+}
+
+void parse_items_bundle(const string&in content)
+{
+	string[]@ lines = string_split(content, "\n", true);
+	if (lines is null) return;
+	item_data@ current = null;
+
+	for (uint i = 0; i < lines.length(); i++)
+	{
+		string line = lines[i].trim_whitespace();
+		if (line == "" || string_starts_with(line, "#") || string_starts_with(line, ";")) continue;
+
+		if (string_starts_with(line, "[item:") && string_ends_with(line, "]"))
+		{
+			string id = line.substr(6, line.length() - 7);
+			@current = @find_item_data(id);
+			if (current is null)
+			{
+				@current = @item_data();
+				current.id = id;
+				item_registry.insert_last(current);
+			}
+			continue;
+		}
+
+		if (current is null) continue;
+
+		int eq = string_contains(line, "=", 1);
+		if (eq == -1) continue;
+		string key = string_left(line, eq).trim_whitespace();
+		string val = line.substr(eq + 1).trim_whitespace();
+
+		if (key == "name") current.name = val;
+		else if (key == "category") current.category = val;
+		else if (key == "subtype") current.subtype = val;
+		else if (key == "heal_amount") current.heal_amount = int(string_to_number(val));
+		else if (key == "capacity") current.capacity = int(string_to_number(val));
+		else if (key == "ammo_type") current.ammo_type = val;
+		else if (key == "contains_items") current.contains_items = val;
+		else if (key == "description") current.description = val;
+		else if (key == "max_stack") current.max_stack = int(string_to_number(val));
+		else if (key == "restores_health") current.restores_health = (string_to_number(val) > 0 || val == "true");
+		else if (key == "quantity") current.quantity = int(string_to_number(val));
+		else if (key == "sound_use") current.sound_use = val;
+		else if (key == "sound_pickup") current.sound_pickup = val;
+		else if (key == "sound_draw") current.sound_draw = val;
+		else if (key == "sound_open") current.sound_open = val;
+		else if (key == "sound_close") current.sound_close = val;
+		else if (key == "sound_plant") current.sound_plant = val;
+		else if (key == "sound_loop") current.sound_loop = val;
+		else if (key == "sound_hit") current.sound_hit = val;
+		else if (key == "sound_break") current.sound_break = val;
+		else if (key == "sound_distant_hit" || key == "sound_distant_break") current.sound_distant_hit = val;
+	}
+
+	// Same normalization as parse_item_config: equipment never uses the
+	// absorption field, regardless of what an old bundle may contain.
+	for (uint i = 0; i < item_registry.length(); i++)
+	{
+		if (item_registry[i].category == "equipment") item_registry[i].heal_amount = 0;
+	}
+}
+
+bool save_item_config(item_data@ it)
+{
+	if (it is null || it.id == "" || is_item_encrypted(it.id)) return false;
+	ensure_item_directories();
+	string folder = ITEM_DIR + "/" + it.category;
+	if (!directory_exists(folder)) directory_create(folder);
+	string path = folder + "/" + it.id + ".config";
+
+	file f;
+	if (!f.open(path, "wb")) return false;
+	string data = serialize_item_config(it);
+	f.write(data);
+	f.close();
+
+	bool found = false;
+	for (uint i = 0; i < item_registry.length(); i++)
+	{
+		if (item_registry[i].id == it.id)
+		{
+			@item_registry[i] = it;
+			found = true;
+			break;
+		}
+	}
+	if (!found) item_registry.insert_last(it);
+	return true;
+}
+
+void load_all_items_config(bool force = false)
+{
+	if (!force && item_registry.length() > 0) return;
+	item_registry.resize(0);
+	ensure_item_directories();
+
+	// 1. Primary: Load single unified encrypted items.dat
+	string bundle_path = file_exists(ITEMS_DAT_PATH) ? ITEMS_DAT_PATH : (file_exists("data/items.dat") ? "data/items.dat" : (file_exists("items.dat") ? "items.dat" : ""));
+	if (bundle_path != "")
+	{
+		file f;
+		if (f.open(bundle_path, "rb"))
+		{
+			string enc = f.read();
+			f.close();
+			string decrypted = string_decrypt(enc, ITEM_ENC_KEY);
+			if (decrypted.length() > 0)
+			{
+				parse_items_bundle(decrypted);
+				if (item_registry.length() > 0) return;
+			}
+		}
+	}
+
+	// 2. Fallback in dev: Scan loose .config and legacy .dat files
+	for (uint c = 0; c < item_categories.length(); c++)
+	{
+		string folder = ITEM_DIR + "/" + item_categories[c];
+		if (!directory_exists(folder)) continue;
+
+		// Plain .config files
+		string[]@ files = find_files(folder + "/*.config");
+		if (files !is null)
+		{
+			for (uint i = 0; i < files.length(); i++)
+			{
+				string fn = files[i];
+				string id = fn;
+				if (string_ends_with(id, ".config")) id = string_left(id, id.length() - 7);
+
+				if (find_item_data(id) !is null) continue;
+
+				file f;
+				if (f.open(folder + "/" + fn, "rb"))
+				{
+					string content = f.read();
+					f.close();
+
+					item_data it;
+					it.id = id;
+					it.category = item_categories[c];
+					parse_item_config(it, content);
+					item_registry.insert_last(it);
+				}
+			}
+		}
+
+		// Encrypted .dat files (legacy)
+		string[]@ dat_files = find_files(folder + "/*.dat");
+		if (dat_files !is null)
+		{
+			for (uint i = 0; i < dat_files.length(); i++)
+			{
+				string fn = dat_files[i];
+				string id = fn;
+				if (string_ends_with(id, ".dat")) id = string_left(id, id.length() - 4);
+
+				if (find_item_data(id) !is null) continue;
+
+				file f;
+				if (f.open(folder + "/" + fn, "rb"))
+				{
+					string content = f.read();
+					f.close();
+					string decrypted = string_decrypt(content, ITEM_ENC_KEY);
+					if (decrypted != "")
+					{
+						item_data it;
+						it.id = id;
+						it.category = item_categories[c];
+						parse_item_config(it, decrypted);
+						item_registry.insert_last(it);
+					}
+				}
+			}
+		}
+	}
+}
+
+item_data@ find_item_data(const string&in id)
+{
+	for (uint i = 0; i < item_registry.length(); i++)
+	{
+		if (item_registry[i].id == id) return item_registry[i];
+	}
+	return null;
+}
+
+item_data@ get_item_data(const string&in id)
+{
+	item_data@ it = find_item_data(id);
+	if (it !is null) return it;
+	load_all_items_config();
+	return find_item_data(id);
+}
+
+void encrypt_all_items_silent()
+{
+	if (item_registry.length() == 0) return;
+	ensure_item_directories();
+	string bundle = serialize_all_items_bundle();
+	string enc = string_encrypt(bundle, ITEM_ENC_KEY);
+	file f;
+	if (f.open(ITEMS_DAT_PATH, "wb"))
+	{
+		f.write(enc);
+		f.close();
+	}
+}
+
+void encrypt_all_items()
+{
+	ensure_item_directories();
+	if (item_registry.length() == 0)
+	{
+		load_all_items_config();
+	}
+	if (item_registry.length() == 0)
+	{
+		speak("No items found to encrypt.");
+		return;
+	}
+	encrypt_all_items_silent();
+	for (uint c = 0; c < item_categories.length(); c++)
+	{
+		string folder = ITEM_DIR + "/" + item_categories[c];
+		if (directory_exists(folder))
+		{
+			string[]@ files = find_files(folder + "/*.config");
+			if (files !is null)
+			{
+				for (uint i = 0; i < files.length(); i++)
+				{
+					file_delete(folder + "/" + files[i]);
+				}
+			}
+		}
+	}
+	speak(item_registry.length() + " items encrypted into items.dat.");
+}
+
+void decrypt_all_items()
+{
+	ensure_item_directories();
+	load_all_items_config();
+	int count = 0;
+	for (uint i = 0; i < item_registry.length(); i++)
+	{
+		item_data@ it = @item_registry[i];
+		string folder = ITEM_DIR + "/" + it.category;
+		if (!directory_exists(folder)) directory_create(folder);
+		string path = folder + "/" + it.id + ".config";
+		file f;
+		if (f.open(path, "wb"))
+		{
+			f.write(serialize_item_config(it));
+			f.close();
+			count++;
+		}
+	}
+	if (file_exists(ITEMS_DAT_PATH)) file_delete(ITEMS_DAT_PATH);
+	if (file_exists("data/items.dat")) file_delete("data/items.dat");
+	if (file_exists("items.dat")) file_delete("items.dat");
+	speak(count + " items decrypted.");
+}
+
+bool is_item_encrypted(const string&in id = "")
+{
+	return file_exists(ITEMS_DAT_PATH) || file_exists("data/items.dat") || file_exists("items.dat");
+}
+
+bool delete_item_file(const string&in id)
+{
+	if (id == "" || is_item_encrypted(id)) return false;
+	item_data@ it = find_item_data(id);
+	if (it !is null)
+	{
+		string path = ITEM_DIR + "/" + it.category + "/" + it.id + ".config";
+		if (file_exists(path)) file_delete(path);
+		string legacy_dat = ITEM_DIR + "/" + it.category + "/" + it.id + ".dat";
+		if (file_exists(legacy_dat)) file_delete(legacy_dat);
+	}
+	else
+	{
+		for (uint c = 0; c < item_categories.length(); c++)
+		{
+			string p1 = ITEM_DIR + "/" + item_categories[c] + "/" + id + ".config";
+			if (file_exists(p1)) file_delete(p1);
+			string p2 = ITEM_DIR + "/" + item_categories[c] + "/" + id + ".dat";
+			if (file_exists(p2)) file_delete(p2);
+		}
+	}
+
+	for (uint i = 0; i < item_registry.length(); i++)
+	{
+		if (item_registry[i].id == id)
+		{
+			item_registry.remove_at(i);
+			break;
+		}
+	}
+
+	if (file_exists(ITEMS_DAT_PATH))
+	{
+		if (item_registry.length() > 0)
+			encrypt_all_items_silent();
+		else
+			file_delete(ITEMS_DAT_PATH);
+	}
+	return true;
+}

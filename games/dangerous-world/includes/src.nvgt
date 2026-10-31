@@ -1,0 +1,1352 @@
+sound_pool sp(512); // Map ambience/source pool is bounded to prevent mixer overload
+source@[] src(0);
+dictionary source_playback_offsets;
+dictionary source_resolved_path_cache;
+dictionary source_is_music_cache;
+
+string[] cached_source_maps;
+const uint MAX_CACHED_SOURCE_MAPS = 6;
+dictionary registered_source_maps;
+
+void save_current_map_source_positions()
+{
+	if (mapname == "") return;
+	save_map_source_positions(mapname);
+}
+
+void save_map_source_positions(const string&in mname)
+{
+	if (mname == "") return;
+	for (uint i = 0; i < src.length(); i++)
+	{
+		if (src[i].map == mname && src[i].sound >= 0)
+		{
+			double pos = 0.0;
+			if (pos > 0)
+			{
+				string key = mname + ":" + src[i].file;
+				source_playback_offsets.set(key, pos);
+			}
+		}
+	}
+}
+
+double get_saved_source_position(const string&in mname, const string&in file)
+{
+	if (mname == "" || file == "") return 0.0;
+	string key = mname + ":" + file;
+	double pos = 0.0;
+	if (source_playback_offsets.exists(key))
+	{
+		source_playback_offsets.get(key, pos);
+	}
+	return pos;
+}
+
+bool has_map_sources(const string&in mname)
+{
+	if (mname == "") return false;
+	return registered_source_maps.exists(mname);
+}
+
+void mark_map_sources_registered(const string&in mname)
+{
+	if (mname != "") registered_source_maps.set(mname, true);
+}
+
+void pause_map_sources(const string&in mname)
+{
+	// Non-muting spatial architecture keeps active neighbor streams running
+}
+
+void resume_map_sources(const string&in mname)
+{
+	double cur_min = 0.0;
+	for (uint i = 0; i < src.length(); i++)
+	{
+		if (src[i].sound >= 0)
+		{
+			if (src[i].is_ambience)
+			{
+				if (src[i].is_player_inside())
+				{
+					if (src[i].paused)
+					{
+						src[i].paused = false;
+						sp.resume_sound(src[i].sound);
+					}
+				}
+				else
+				{
+					if (!src[i].paused)
+					{
+						src[i].paused = true;
+						sp.pause_sound(src[i].sound);
+					}
+				}
+			}
+			else if (src[i].paused)
+			{
+				src[i].paused = false;
+				sp.resume_sound(src[i].sound);
+			}
+
+			if (src[i].use_time_limits)
+			{
+				src[i].update_timed_volume(cur_min);
+			}
+			else
+			{
+				double base_vol = src[i].is_music ? map_music_volume : (ambient_volume - 100);
+				float final_vol = float(base_vol + src[i].volume);
+				if (final_vol > 0.0) final_vol = 0.0;
+				if (final_vol < -100.0) final_vol = -100.0;
+				sp.update_sound_start_values(src[i].sound, 0.0, final_vol, float(src[i].pitch));
+			}
+		}
+	}
+}
+
+void destroy_map_sources(const string&in mname)
+{
+	if (mname == "") return;
+	for (int i = int(src.length()) - 1; i >= 0; i--)
+	{
+		if (src[i].map == mname)
+		{
+			if (src[i].sound >= 0)
+			{
+				double pos = 0.0;
+				if (pos > 0)
+				{
+					string key = mname + ":" + src[i].file;
+					source_playback_offsets.set(key, pos);
+				}
+				sp.destroy_sound(src[i].sound);
+			}
+			src.remove_at(uint(i));
+		}
+	}
+	if (registered_source_maps.exists(mname))
+		registered_source_maps.delete(mname);
+}
+
+class pending_source_def
+{
+	string smap;
+	int x1, x2, y1, y2, z1, z2;
+	string file;
+	double svol;
+	double spitch;
+	bool stime;
+	int sh, sm, eh, em, sfade;
+	int ox, oy, oz;
+	bool is_neighbor;
+	bool is_ambience;
+
+	pending_source_def()
+	{
+		smap = "";
+		x1 = 0; x2 = 0; y1 = 0; y2 = 0; z1 = 0; z2 = 0;
+		file = "";
+		svol = 0; spitch = 100;
+		stime = false;
+		sh = 6; sm = 0; eh = 18; em = 0; sfade = 30;
+		ox = 0; oy = 0; oz = 0;
+		is_neighbor = false;
+		is_ambience = false;
+	}
+}
+
+double mult_to_db_offset(double mult)
+{
+	if (mult <= 0.0001) return -100.0;
+	if (mult >= 0.9999) return 0.0;
+	// Linear perceived amplitude conversion to decibels:
+	// db = 20 * log10(mult), smoothly and audibly decreasing from 0 dB to -100 dB
+	double amp = mult;
+	if (amp <= 0.0001) return -100.0;
+	double db = 20.0 * log10(amp);
+	if (db < -100.0) db = -100.0;
+	if (db > 0.0) db = 0.0;
+	return db;
+}
+
+class source
+{
+	int x1, x2, y1, y2, z1, z2, sound;
+	int orig_x1, orig_x2, orig_y1, orig_y2, orig_z1, orig_z2;
+	int off_x, off_y, off_z;
+	string file;
+	string map;
+	double volume;
+	double pitch;
+	bool use_time_limits;
+	int start_hour, start_minute;
+	int end_hour, end_minute;
+	int fade_minutes;
+	double last_multiplier;
+	bool is_music;
+	bool is_ambience;
+	bool paused;
+	bool is_neighbor;
+
+	bool is_player_inside()
+	{
+		int px = int(round(me.x, 0));
+		int py = int(round(me.y, 0));
+		int pz = int(round(me.z, 0));
+		int min_x = (x1 < x2 ? x1 : x2);
+		int max_x = (x1 < x2 ? x2 : x1);
+		int min_y = (y1 < y2 ? y1 : y2);
+		int max_y = (y1 < y2 ? y2 : y1);
+		int min_z = (z1 < z2 ? z1 : z2);
+		int max_z = (z1 < z2 ? z2 : z1);
+		return (px >= min_x && px <= max_x && py >= min_y && py <= max_y && pz >= min_z && pz <= max_z);
+	}
+
+	double get_player_distance_to_box()
+	{
+		int px = int(round(me.x, 0));
+		int py = int(round(me.y, 0));
+		int pz = int(round(me.z, 0));
+		int min_x = (x1 < x2 ? x1 : x2);
+		int max_x = (x1 < x2 ? x2 : x1);
+		int min_y = (y1 < y2 ? y1 : y2);
+		int max_y = (y1 < y2 ? y2 : y1);
+		int min_z = (z1 < z2 ? z1 : z2);
+		int max_z = (z1 < z2 ? z2 : z1);
+
+		double dx = 0.0;
+		if (px < min_x) dx = double(min_x - px);
+		else if (px > max_x) dx = double(px - max_x);
+
+		double dy = 0.0;
+		if (py < min_y) dy = double(min_y - py);
+		else if (py > max_y) dy = double(py - max_y);
+
+		double dz = 0.0;
+		if (pz < min_z) dz = double(min_z - pz);
+		else if (pz > max_z) dz = double(pz - max_z);
+
+		return square_root(dx * dx + dy * dy + dz * dz);
+	}
+
+	source(int sx1, int sx2, int sy1, int sy2, int sz1, int sz2, string sf, double svol = 0, double spitch = 100, bool stime = false, int sh = 6, int sm = 0, int eh = 18, int em = 0, int sfade = 30, const string&in smap = "", int ox = 0, int oy = 0, int oz = 0, bool neighbor = false, bool is_amb = false)
+	{
+		orig_x1 = sx1; orig_x2 = sx2; orig_y1 = sy1; orig_y2 = sy2; orig_z1 = sz1; orig_z2 = sz2;
+		off_x = ox; off_y = oy; off_z = oz;
+		x1 = sx1 + ox; x2 = sx2 + ox; y1 = sy1 + oy; y2 = sy2 + oy; z1 = sz1 + oz; z2 = sz2 + oz;
+		file = sf;
+		map = (smap != "" ? smap : mapname);
+		volume = svol;
+		if (spitch <= 0) spitch = 100;
+		pitch = spitch;
+		use_time_limits = stime;
+		start_hour = sh; start_minute = sm;
+		end_hour = eh; end_minute = em;
+		fade_minutes = (sfade >= 0 ? sfade : 0);
+		last_multiplier = 1.0;
+		is_music = false;
+		is_ambience = is_amb;
+		paused = false;
+		is_neighbor = neighbor;
+
+		string sound_file = "";
+		if (source_resolved_path_cache.exists(file))
+		{
+			source_resolved_path_cache.get(file, sound_file);
+			if (source_is_music_cache.exists(file))
+				source_is_music_cache.get(file, is_music);
+		}
+		else
+		{
+			sound_file = get_music_sound(file);
+			if (sound_file != "")
+			{
+				is_music = true;
+			}
+			else
+			{
+				is_music = false;
+				sound_file = get_ambience_sound(file);
+				if (sound_file == "") sound_file = file;
+			}
+			source_resolved_path_cache.set(file, sound_file);
+			source_is_music_cache.set(file, is_music);
+		}
+
+		int cx = (x1 + x2) / 2;
+		int cy = (y1 + y2) / 2;
+		int cz = (z1 + z2) / 2;
+		int lx = cx - x1, rx = x2 - cx;
+		int ly = cy - y1, ry = y2 - cy;
+		int lz = cz - z1, rz = z2 - cz;
+
+		double init_vol = volume;
+		if (use_time_limits)
+		{
+			double cur_min = 0.0;
+			double mult = calculate_time_multiplier(cur_min);
+			last_multiplier = mult;
+			init_vol = volume + mult_to_db_offset(mult);
+			if (init_vol < -100.0) init_vol = -100.0;
+		}
+
+		double base_vol = is_music ? map_music_volume : (ambient_volume - 100);
+		float final_vol = float(base_vol + init_vol);
+		if (final_vol > 0.0) final_vol = 0.0;
+		if (final_vol < -100.0) final_vol = -100.0;
+
+		double start_off = get_saved_source_position(map, file);
+		bool should_stream = true;
+
+		sound = sp.play_extended_3d(sound_file, float(me.x), float(me.y), float(me.z), float(cx), float(cy), float(cz), double(facing), lx, rx, ly, ry, lz, rz, true, start_off, 0.0, final_vol, float(pitch), true, null, null, should_stream, 0);
+		sp.update_sound_range_3d(sound, lx, rx, ly, ry, lz, rz);
+
+		if (is_ambience && !is_player_inside())
+		{
+			paused = true;
+			sp.pause_sound(sound);
+		}
+	}
+
+	void update_spatial_transform(int ox, int oy, int oz, bool neighbor)
+	{
+		off_x = ox; off_y = oy; off_z = oz;
+		is_neighbor = neighbor;
+		x1 = orig_x1 + ox; x2 = orig_x2 + ox;
+		y1 = orig_y1 + oy; y2 = orig_y2 + oy;
+		z1 = orig_z1 + oz; z2 = orig_z2 + oz;
+
+		int cx = (x1 + x2) / 2;
+		int cy = (y1 + y2) / 2;
+		int cz = (z1 + z2) / 2;
+		int lx = cx - x1, rx = x2 - cx;
+		int ly = cy - y1, ry = y2 - cy;
+		int lz = cz - z1, rz = z2 - cz;
+
+		if (sound >= 0)
+		{
+			sp.items[sound].x = float(cx);
+			sp.items[sound].y = float(cy);
+			sp.items[sound].z = float(cz);
+			sp.items[sound].update(me.x, me.y, me.z, double(facing), sp.max_distance);
+			sp.update_sound_range_3d(sound, lx, rx, ly, ry, lz, rz);
+		}
+	}
+
+	double forward_dist(double from_t, double to_t)
+	{
+		double dist = to_t - from_t;
+		while (dist < 0.0) dist += 1440.0;
+		while (dist >= 1440.0) dist -= 1440.0;
+		return dist;
+	}
+
+	double calculate_time_multiplier(double cur_min)
+	{
+		if (!use_time_limits) return 1.0;
+
+		double s_min = double(start_hour * 60 + start_minute);
+		double e_min = double(end_hour * 60 + end_minute);
+		while (s_min < 0.0) s_min += 1440.0;
+		while (s_min >= 1440.0) s_min -= 1440.0;
+		while (e_min < 0.0) e_min += 1440.0;
+		while (e_min >= 1440.0) e_min -= 1440.0;
+
+		double t_min = cur_min;
+		while (t_min < 0.0) t_min += 1440.0;
+		while (t_min >= 1440.0) t_min -= 1440.0;
+
+		double active_len = forward_dist(s_min, e_min);
+		if (active_len == 0.0) return 1.0;
+
+		double fade = double(fade_minutes);
+		if (fade <= 0.0)
+		{
+			double elapsed = forward_dist(s_min, t_min);
+			return (elapsed < active_len) ? 1.0 : 0.0;
+		}
+
+		if (fade > active_len) fade = active_len;
+		double inactive_len = 1440.0 - active_len;
+		if (fade > inactive_len) fade = inactive_len;
+
+		// The cross-fade window precedes the transition boundary:
+		// Incoming track fades in from [s_min - fade, s_min], reaching 1.0 at s_min.
+		// Outgoing track fades out from [e_min - fade, e_min], reaching 0.0 at e_min.
+		// At the transition boundary (e_min/s_min), the outgoing track reaches 0.0 (strictly
+		// respecting the configured end time limit) while the incoming track reaches 1.0.
+		double fade_in_start = s_min - fade;
+		while (fade_in_start < 0.0) fade_in_start += 1440.0;
+		while (fade_in_start >= 1440.0) fade_in_start -= 1440.0;
+		double d_in = forward_dist(fade_in_start, t_min);
+
+		double elapsed = forward_dist(s_min, t_min);
+
+		if (d_in < fade)
+		{
+			double p = d_in / fade;
+			if (p < 0.0) p = 0.0;
+			if (p > 1.0) p = 1.0;
+			return p;
+		}
+		else if (elapsed < (active_len - fade))
+		{
+			return 1.0;
+		}
+		else if (elapsed < active_len)
+		{
+			double p = (elapsed - (active_len - fade)) / fade;
+			if (p < 0.0) p = 0.0;
+			if (p > 1.0) p = 1.0;
+			return 1.0 - p;
+		}
+		else
+		{
+			return 0.0;
+		}
+	}
+
+	void update_timed_volume(double cur_min)
+	{
+		if (!use_time_limits || sound == -1) return;
+		double mult = calculate_time_multiplier(cur_min);
+		if (abs(mult - last_multiplier) > 0.001)
+		{
+			last_multiplier = mult;
+			double eff_vol = volume + mult_to_db_offset(mult);
+			if (eff_vol < -100.0) eff_vol = -100.0;
+			double base_vol = is_music ? map_music_volume : (ambient_volume - 100);
+			float final_vol = float(base_vol + eff_vol);
+			if (final_vol > 0.0) final_vol = 0.0;
+			if (final_vol < -100.0) final_vol = -100.0;
+			sp.update_sound_start_values(sound, 0.0, final_vol, float(pitch));
+		}
+	}
+}
+
+void spawn_source(int sx1, int sx2, int sy1, int sy2, int sz1, int sz2, string sf, double svol = 0, double spitch = 100, bool stime = false, int sh = 6, int sm = 0, int eh = 18, int em = 0, int sfade = 30, const string&in smap = "", int ox = 0, int oy = 0, int oz = 0, bool neighbor = false, bool is_amb = false)
+{
+	source s1(sx1, sx2, sy1, sy2, sz1, sz2, sf, svol, spitch, stime, sh, sm, eh, em, sfade, smap, ox, oy, oz, neighbor, is_amb);
+	src.insert_last(s1);
+}
+
+void parse_source_lines_from_content(const string&in content, const string&in map_name, int ox, int oy, int oz, bool is_neighbor, pending_source_def@[]& out_list)
+{
+	string cleaned = string_replace(content, "\r", "", true);
+	string[]@ lines = string_split(cleaned, "\n", false);
+	if (lines is null) return;
+
+	for (uint i = 0; i < lines.length(); i++)
+	{
+		string line = lines[i].trim_whitespace();
+		if (line == "" || string_left(line, 1) == ";" || string_left(line, 1) == "#") continue;
+		string[] parsed = string_split(line, ":", false);
+		if (parsed.length() < 2) parsed = string_split(line, " ", false);
+		if (parsed.length() < 8) continue;
+		string tag = parsed[0].trim_whitespace().lower();
+		if (tag == "source" || tag == "ambience" || tag == "ambsource" || tag == "environment")
+		{
+			pending_source_def ps;
+			ps.is_ambience = (tag == "ambience" || tag == "ambsource" || tag == "environment");
+			ps.smap = map_name;
+			ps.x1 = int(string_to_number(parsed[1]));
+			ps.x2 = int(string_to_number(parsed[2]));
+			ps.y1 = int(string_to_number(parsed[3]));
+			ps.y2 = int(string_to_number(parsed[4]));
+			ps.z1 = int(string_to_number(parsed[5]));
+			ps.z2 = int(string_to_number(parsed[6]));
+			ps.file = parsed[7];
+			ps.svol = (parsed.length() >= 9 && parsed[8] != "") ? string_to_number(parsed[8]) : 0.0;
+			ps.spitch = (parsed.length() >= 10 && parsed[9] != "") ? string_to_number(parsed[9]) : 100.0;
+			if (parsed.length() >= 16)
+			{
+				ps.stime = (parsed[10] == "1" || parsed[10] == "true");
+				ps.sh = int(string_to_number(parsed[11]));
+				ps.sm = int(string_to_number(parsed[12]));
+				ps.eh = int(string_to_number(parsed[13]));
+				ps.em = int(string_to_number(parsed[14]));
+				ps.sfade = int(string_to_number(parsed[15]));
+			}
+			ps.ox = ox;
+			ps.oy = oy;
+			ps.oz = oz;
+			ps.is_neighbor = is_neighbor;
+			out_list.insert_last(ps);
+		}
+	}
+}
+
+class map_spatial_bounds
+{
+	int minx, maxx;
+	int miny, maxy;
+	int minz, maxz;
+	map_spatial_bounds()
+	{
+		minx = 0; maxx = 499;
+		miny = 0; maxy = 499;
+		minz = -50; maxz = 50;
+	}
+}
+dictionary map_spatial_bounds_cache;
+
+map_spatial_bounds@ get_map_spatial_bounds(const string&in mname)
+{
+	if (mname == "") return map_spatial_bounds();
+	if (map_spatial_bounds_cache.exists(mname))
+	{
+		map_spatial_bounds@ b;
+		map_spatial_bounds_cache.get(mname, @b);
+		if (b !is null) return b;
+	}
+	map_spatial_bounds nb;
+	string content = get_map_content_by_name(mname);
+	if (content != "")
+	{
+		string cleaned = string_replace(content, "\r", "", true);
+		string[]@ lines = string_split(cleaned, "\n", false);
+		if (lines !is null)
+		{
+			for (uint i = 0; i < lines.length(); i++)
+			{
+				string line = lines[i].trim_whitespace();
+				if (line == "" || string_left(line, 1) == ";" || string_left(line, 1) == "#") continue;
+				string[] parts = string_split(line, ":", false);
+				if (parts.length() < 2) parts = string_split(line, " ", false);
+				if (parts.length() < 2) continue;
+				string cmd = parts[0].trim_whitespace();
+				if (cmd == "minx") nb.minx = int(string_to_number(parts[1]));
+				else if (cmd == "maxx") nb.maxx = int(string_to_number(parts[1]));
+				else if (cmd == "miny") nb.miny = int(string_to_number(parts[1]));
+				else if (cmd == "maxy") nb.maxy = int(string_to_number(parts[1]));
+				else if (cmd == "minz") nb.minz = int(string_to_number(parts[1]));
+				else if (cmd == "maxz") nb.maxz = int(string_to_number(parts[1]));
+			}
+		}
+	}
+	map_spatial_bounds_cache.set(mname, @nb);
+	return nb;
+}
+
+void compute_relative_map_offset(const string&in orig_map, int x1, int x2, int y1, int y2, int z1, int z2, const string&in target_map, int dx1, int dx2, int dy1, int dy2, int dz1, int dz2, int &out out_ox, int &out out_oy, int &out out_oz)
+{
+	map_spatial_bounds@ ob = get_map_spatial_bounds(orig_map);
+	map_spatial_bounds@ tb = get_map_spatial_bounds(target_map);
+
+	double cx_cur = double(x1 + x2) / 2.0;
+	double cy_cur = double(y1 + y2) / 2.0;
+	double cz_cur = double(z1 + z2) / 2.0;
+	double cx_dest = double(dx1 + dx2) / 2.0;
+	double cy_dest = double(dy1 + dy2) / 2.0;
+	double cz_dest = double(dz1 + dz2) / 2.0;
+
+	// Check if this connection is along one of the outer borders of the origin map
+	if (x1 <= ob.minx && x2 <= ob.minx)
+	{
+		// West border of origin connects to East border of target
+		out_ox = ob.minx - (tb.maxx + 1);
+		out_oy = int(round(cy_cur - cy_dest, 0));
+		out_oz = 0;
+	}
+	else if (x1 >= ob.maxx && x2 >= ob.maxx)
+	{
+		// East border of origin connects to West border of target
+		out_ox = (ob.maxx + 1) - tb.minx;
+		out_oy = int(round(cy_cur - cy_dest, 0));
+		out_oz = 0;
+	}
+	else if (y1 >= ob.maxy && y2 >= ob.maxy)
+	{
+		// North border of origin connects to South border of target
+		out_ox = int(round(cx_cur - cx_dest, 0));
+		out_oy = (ob.maxy + 1) - tb.miny;
+		out_oz = 0;
+	}
+	else if (y1 <= ob.miny && y2 <= ob.miny)
+	{
+		// South border of origin connects to North border of target
+		out_ox = int(round(cx_cur - cx_dest, 0));
+		out_oy = ob.miny - (tb.maxy + 1);
+		out_oz = 0;
+	}
+	else
+	{
+		// Generic / point-based connection
+		out_ox = int(round(cx_cur - cx_dest, 0));
+		out_oy = int(round(cy_cur - cy_dest, 0));
+		out_oz = int(round(cz_cur - cz_dest, 0));
+	}
+}
+
+class neighbor_discovery_node
+{
+	string mname;
+	int ox, oy, oz;
+	int depth;
+	neighbor_discovery_node(const string&in m = "", int x = 0, int y = 0, int z = 0, int d = 0)
+	{
+		mname = m; ox = x; oy = y; oz = z; depth = d;
+	}
+}
+
+class neighbor_map_offset_info
+{
+	string mname;
+	int ox, oy, oz;
+	int depth;
+	neighbor_map_offset_info(const string&in m = "", int x = 0, int y = 0, int z = 0, int d = 0)
+	{
+		mname = m; ox = x; oy = y; oz = z; depth = d;
+	}
+}
+neighbor_map_offset_info@[] g_active_neighbor_maps;
+
+void sync_map_and_neighbor_sources(const string&in active_mname)
+{
+	if (active_mname == "") return;
+	g_active_neighbor_maps.resize(0);
+
+	pending_source_def@[] pending_sources;
+	dictionary visited_maps;
+
+	neighbor_discovery_node@[] queue;
+	queue.insert_last(neighbor_discovery_node(active_mname, 0, 0, 0, 0));
+	visited_maps.set(active_mname, true);
+
+	uint q_idx = 0;
+	while (q_idx < queue.length())
+	{
+		neighbor_discovery_node@ cur = queue[q_idx];
+		q_idx++;
+		if (cur.mname != active_mname)
+		{
+			g_active_neighbor_maps.insert_last(neighbor_map_offset_info(cur.mname, cur.ox, cur.oy, cur.oz, cur.depth));
+		}
+
+		string cur_content = get_map_content_by_name(cur.mname);
+		bool is_neigh = (cur.mname != active_mname);
+		parse_source_lines_from_content(cur_content, cur.mname, cur.ox, cur.oy, cur.oz, is_neigh, pending_sources);
+
+		// Discover neighbor connections up to depth 2 (includes direct neighbors and 2nd-degree neighbors like Swamp when in Ocean)
+		if (cur.depth < 2)
+		{
+			string cleaned = string_replace(cur_content, "\r", "", true);
+			string[]@ lines = string_split(cleaned, "\n", false);
+			if (lines !is null)
+			{
+				for (uint i = 0; i < lines.length(); i++)
+				{
+					string line = lines[i].trim_whitespace();
+					if (!string_starts_with(line, "travelpoint:")) continue;
+					string[]@ parts = string_split(line, ":", true);
+					if (parts.length() < 14) continue;
+
+					int x1 = 0, x2 = 0, y1 = 0, y2 = 0, z1 = 0, z2 = 0;
+					string target_map = "";
+					int dx1 = 0, dx2 = 0, dy1 = 0, dy2 = 0, dz1 = 0, dz2 = 0;
+
+					if (parts.length() >= 19)
+					{
+						x1 = int(string_to_number(parts[1]));
+						x2 = int(string_to_number(parts[2]));
+						y1 = int(string_to_number(parts[3]));
+						y2 = int(string_to_number(parts[4]));
+						z1 = int(string_to_number(parts[5]));
+						z2 = int(string_to_number(parts[6]));
+						target_map = parts[7];
+						dx1 = int(string_to_number(parts[8]));
+						dx2 = int(string_to_number(parts[9]));
+						dy1 = int(string_to_number(parts[10]));
+						dy2 = int(string_to_number(parts[11]));
+						dz1 = int(string_to_number(parts[12]));
+						dz2 = int(string_to_number(parts[13]));
+					}
+					else
+					{
+						x1 = int(string_to_number(parts[1])); x2 = x1;
+						y1 = int(string_to_number(parts[2])); y2 = y1;
+						z1 = int(string_to_number(parts[3])); z2 = z1;
+						target_map = parts[4];
+						dx1 = int(string_to_number(parts[5])); dx2 = dx1;
+						dy1 = int(string_to_number(parts[6])); dy2 = dy1;
+						dz1 = int(string_to_number(parts[7])); dz2 = dz1;
+					}
+
+					if (target_map == "" || visited_maps.exists(target_map) || !map_exists_on_disk(target_map)) continue;
+
+					int rel_ox = 0, rel_oy = 0, rel_oz = 0;
+					compute_relative_map_offset(cur.mname, x1, x2, y1, y2, z1, z2, target_map, dx1, dx2, dy1, dy2, dz1, dz2, rel_ox, rel_oy, rel_oz);
+
+					int total_ox = cur.ox + rel_ox;
+					int total_oy = cur.oy + rel_oy;
+					int total_oz = cur.oz + rel_oz;
+
+					visited_maps.set(target_map, true);
+					queue.insert_last(neighbor_discovery_node(target_map, total_ox, total_oy, total_oz, cur.depth + 1));
+				}
+			}
+		}
+	}
+
+	uint initial_src_count = src.length();
+	bool[] matched_existing;
+	matched_existing.resize(initial_src_count);
+	for (uint mi = 0; mi < initial_src_count; mi++) matched_existing[mi] = false;
+
+	for (uint pi = 0; pi < pending_sources.length(); pi++)
+	{
+		pending_source_def@ p = pending_sources[pi];
+		bool found = false;
+		for (uint si = 0; si < initial_src_count; si++)
+		{
+			if (matched_existing[si]) continue;
+			if (src[si].map == p.smap && src[si].file == p.file && src[si].orig_x1 == p.x1 && src[si].orig_y1 == p.y1 && src[si].orig_x2 == p.x2 && src[si].orig_y2 == p.y2)
+			{
+				matched_existing[si] = true;
+				src[si].update_spatial_transform(p.ox, p.oy, p.oz, p.is_neighbor);
+				if (src[si].is_ambience)
+				{
+					bool inside = src[si].is_player_inside();
+					if (inside && src[si].paused)
+					{
+						src[si].paused = false;
+						if (src[si].sound >= 0) sp.resume_sound(src[si].sound);
+					}
+					else if (!inside && !src[si].paused)
+					{
+						src[si].paused = true;
+						if (src[si].sound >= 0) sp.pause_sound(src[si].sound);
+					}
+				}
+				else if (src[si].paused)
+				{
+					src[si].paused = false;
+					if (src[si].sound >= 0) sp.resume_sound(src[si].sound);
+				}
+				found = true;
+				break;
+			}
+		}
+
+		if (!found)
+		{
+			spawn_source(p.x1, p.x2, p.y1, p.y2, p.z1, p.z2, p.file, p.svol, p.spitch, p.stime, p.sh, p.sm, p.eh, p.em, p.sfade, p.smap, p.ox, p.oy, p.oz, p.is_neighbor, p.is_ambience);
+		}
+	}
+
+	for (int si = int(initial_src_count) - 1; si >= 0; si--)
+	{
+		if (!matched_existing[uint(si)])
+		{
+			if (src[si].sound >= 0)
+			{
+				double pos = 0.0;
+				if (pos > 0)
+				{
+					string key = src[si].map + ":" + src[si].file;
+					source_playback_offsets.set(key, pos);
+				}
+				sp.destroy_sound(src[si].sound);
+			}
+			src.remove_at(uint(si));
+		}
+	}
+
+	registered_source_maps.set(active_mname, true);
+}
+
+void seamless_switch_map_sources(const string&in prev_map, const string&in next_map)
+{
+	// Sources and multi-hop neighbors are synchronized in draw_map via sync_map_and_neighbor_sources
+}
+
+void update_sources()
+{
+	double cur_min = 0.0;
+	for (uint i = 0; i < src.length(); i++)
+	{
+		if (src[i].is_ambience)
+		{
+			bool inside = src[i].is_player_inside();
+			double dist = src[i].get_player_distance_to_box();
+			if (inside || dist <= 200.0)
+			{
+				if (src[i].paused)
+				{
+					src[i].paused = false;
+					if (src[i].sound >= 0) sp.resume_sound(src[i].sound);
+				}
+				src[i].update_timed_volume(cur_min);
+				if (!inside && src[i].sound >= 0)
+				{
+					// Smoothly fade out ambient volume as player walks away across neighboring map/ocean
+					double fade_mult = 1.0 - (dist / 200.0);
+					if (fade_mult < 0.001) fade_mult = 0.001;
+					double base_vol = (ambient_volume - 100.0) + src[i].volume;
+					double atten_vol = base_vol + mult_to_db_offset(fade_mult);
+					if (atten_vol > 0.0) atten_vol = 0.0;
+					if (atten_vol < -100.0) atten_vol = -100.0;
+					sp.update_sound_start_values(src[i].sound, 0.0, float(atten_vol), float(src[i].pitch));
+				}
+			}
+			else
+			{
+				if (!src[i].paused)
+				{
+					src[i].paused = true;
+					if (src[i].sound >= 0) sp.pause_sound(src[i].sound);
+				}
+			}
+		}
+		else
+		{
+			if (!src[i].paused)
+			{
+				src[i].update_timed_volume(cur_min);
+			}
+		}
+	}
+}
+
+void apply_ambient_volume()
+{
+	double cur_min = 0.0;
+	if (underwater_ambient_sound.active)
+	{
+		underwater_ambient_sound.volume = ambient_volume - 100.0;
+	}
+	for (uint i = 0; i < src.length(); i++)
+	{
+		if (src[i].is_music || src[i].paused) continue;
+		double mult = src[i].calculate_time_multiplier(cur_min);
+		double eff_vol = src[i].volume + mult_to_db_offset(mult);
+		if (eff_vol < -100.0) eff_vol = -100.0;
+		float final_vol = float((ambient_volume - 100) + eff_vol);
+		if (final_vol > 0.0) final_vol = 0.0;
+		if (final_vol < -100.0) final_vol = -100.0;
+		sp.update_sound_start_values(src[i].sound, 0.0, final_vol, float(src[i].pitch));
+	}
+}
+
+void apply_music_volume()
+{
+	double cur_min = 0.0;
+	for (uint i = 0; i < src.length(); i++)
+	{
+		if (!src[i].is_music || src[i].paused) continue;
+		double mult = src[i].calculate_time_multiplier(cur_min);
+		double eff_vol = src[i].volume + mult_to_db_offset(mult);
+		if (eff_vol < -100.0) eff_vol = -100.0;
+		float final_vol = float(map_music_volume + eff_vol);
+		if (final_vol > 0.0) final_vol = 0.0;
+		if (final_vol < -100.0) final_vol = -100.0;
+		sp.update_sound_start_values(src[i].sound, 0.0, final_vol, float(src[i].pitch));
+	}
+}
+
+void clear_all_source_saved_positions()
+{
+	source_playback_offsets.delete_all();
+}
+
+void killsrcs()
+{
+	sp.destroy_all();
+	src.resize(0);
+	cached_source_maps.resize(0);
+	registered_source_maps.delete_all();
+	source_playback_offsets.delete_all();
+}
+
+bool play_builder_preview(const string&in path, double vol, double pitch)
+{
+	builder_preview_sound.close();
+	if (path == "") return false;
+	bool loaded = builder_preview_sound.stream(path);
+	if (!loaded)
+	{
+		builder_preview_sound.close();
+		loaded = builder_preview_sound.load(path);
+	}
+	if (loaded)
+	{
+		builder_preview_sound.volume = vol;
+		builder_preview_sound.pitch = pitch;
+		builder_preview_sound.play_looped();
+		return true;
+	}
+	return false;
+}
+
+void build_sound_source()
+{
+	string[] musics_list = get_map_sound_folders("builder/audio/musics/*");
+	string[] sources_list = get_map_sound_folders("builder/audio/sources/*");
+
+	string disallowed_nums = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ `!@#$%^&*()[]{};:'\"\\|,<>?_/.+=~";
+	string saved_x = "" + minx;
+	string saved_x2 = "" + maxx;
+	string saved_y = "" + miny;
+	string saved_y2 = "" + maxy;
+	string saved_z = "" + minz;
+	string saved_z2 = "" + maxz;
+	bool saved_timed = false;
+	double saved_sh = 6;
+	double saved_sm = 0;
+	double saved_eh = 18;
+	double saved_em = 0;
+	double saved_fade = 30;
+	int saved_cat_pos = 0;
+	int saved_sub_pos = 0;
+	double saved_vol = 0;
+	double saved_pit = 100;
+	bool do_build = true;
+	int last_cat_pos = -1;
+	int last_sub_pos = -1;
+
+	audio_form f;
+	int mx = -1, mx2 = -1, my = -1, my2 = -1, mnz = -1, mxz = -1;
+	int cb_timed = -1, s_sh = -1, s_sm = -1, s_eh = -1, s_em = -1, s_fade = -1;
+	int cat_list = -1, sub_list = -1, vol_s = -1, pit_s = -1, ok = -1, cn = -1;
+	bool preview_playing = false;
+	timer space_preview_timer;
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		if (do_build)
+		{
+			do_build = false;
+			if (last_cat_pos != -1)
+			{
+				saved_x = f.get_text(mx);
+				saved_x2 = f.get_text(mx2);
+				saved_y = f.get_text(my);
+				saved_y2 = f.get_text(my2);
+				saved_z = f.get_text(mnz);
+				saved_z2 = f.get_text(mxz);
+				saved_timed = f.is_checked(cb_timed);
+				saved_sh = f.get_slider(s_sh);
+				saved_sm = f.get_slider(s_sm);
+				saved_eh = f.get_slider(s_eh);
+				saved_em = f.get_slider(s_em);
+				saved_fade = f.get_slider(s_fade);
+				saved_vol = f.get_slider(vol_s);
+				saved_pit = f.get_slider(pit_s);
+			}
+			f.reset();
+			f.create_window("sound source", false, true, last_cat_pos != -1);
+			mx = f.create_input_box("minimum x", saved_x);
+			mx2 = f.create_input_box("maximum x", saved_x2);
+			my = f.create_input_box("minimum y", saved_y);
+			my2 = f.create_input_box("maximum y", saved_y2);
+			mnz = f.create_input_box("minimum z", saved_z);
+			mxz = f.create_input_box("maximum z", saved_z2);
+			f.set_disallowed_chars(mx, "0123456789-", true, "Numbers only.");
+			f.set_disallowed_chars(mx2, "0123456789-", true, "Numbers only.");
+			f.set_disallowed_chars(my, "0123456789-", true, "Numbers only.");
+			f.set_disallowed_chars(my2, "0123456789-", true, "Numbers only.");
+			f.set_disallowed_chars(mnz, "0123456789-", true, "Numbers only.");
+			f.set_disallowed_chars(mxz, "0123456789-", true, "Numbers only.");
+
+			cb_timed = f.create_checkbox("Use day and night time limits", saved_timed);
+			s_sh = f.create_slider("start hour", saved_sh, 0, 23, "", 1);
+			s_sm = f.create_slider("start minute", saved_sm, 0, 59, "", 1);
+			s_eh = f.create_slider("end hour", saved_eh, 0, 23, "", 1);
+			s_em = f.create_slider("end minute", saved_em, 0, 59, "", 1);
+			s_fade = f.create_slider("fade duration in minutes", saved_fade, 0, 120, "", 5);
+
+			cat_list = f.create_list("category");
+			f.add_list_item(cat_list, "musics", "musics");
+			f.add_list_item(cat_list, "sources", "sources");
+			f.set_list_position(cat_list, saved_cat_pos, false);
+
+			string sub_label = (saved_cat_pos == 0) ? "music sound" : "source sound";
+			sub_list = f.create_list(sub_label);
+			f.add_list_item(sub_list, "none", "none");
+			if (saved_cat_pos == 0)
+			{
+				for (uint i = 0; i < musics_list.length(); i++) f.add_list_item(sub_list, musics_list[i], musics_list[i]);
+			}
+			else
+			{
+				for (uint i = 0; i < sources_list.length(); i++) f.add_list_item(sub_list, sources_list[i], sources_list[i]);
+			}
+			f.set_list_position(sub_list, saved_sub_pos, false);
+
+			vol_s = f.create_slider("volume", saved_vol, -100, 0, "", 5);
+			pit_s = f.create_slider("pitch", saved_pit, 5, 500, "", 5);
+			ok = f.create_button("&okay", true);
+			cn = f.create_button("&cancel");
+			f.set_default_controls(ok, cn);
+
+			if (last_cat_pos == -1) f.focus_silently(mx);
+			else f.focus_silently(cat_list);
+			last_cat_pos = saved_cat_pos;
+		}
+
+		f.monitor();
+
+		bool is_t = f.is_checked(cb_timed);
+		f.set_state(s_sh, is_t, is_t);
+		f.set_state(s_sm, is_t, is_t);
+		f.set_state(s_eh, is_t, is_t);
+		f.set_state(s_em, is_t, is_t);
+		f.set_state(s_fade, is_t, is_t);
+
+		int cur_cat_pos = f.get_list_position(cat_list);
+		if (cur_cat_pos != -1 && cur_cat_pos != last_cat_pos)
+		{
+			saved_cat_pos = cur_cat_pos;
+			saved_sub_pos = 0;
+			builder_preview_sound.close();
+			preview_playing = false;
+			do_build = true;
+			continue;
+		}
+
+		int cur_focus = f.get_current_focus();
+		bool in_group = (cur_focus == sub_list || cur_focus == vol_s || cur_focus == pit_s);
+		int cur_sub_pos = f.get_list_position(sub_list);
+
+		if (preview_playing && cur_sub_pos != last_sub_pos)
+		{
+			last_sub_pos = cur_sub_pos;
+			if (cur_sub_pos > 0)
+			{
+				string snd_name = (saved_cat_pos == 0) ? musics_list[cur_sub_pos - 1] : sources_list[cur_sub_pos - 1];
+				string path = (saved_cat_pos == 0) ? get_music_sound(snd_name) : get_ambience_sound(snd_name);
+				preview_playing = play_builder_preview(path, f.get_slider(vol_s), f.get_slider(pit_s));
+			}
+			else
+			{
+				builder_preview_sound.close();
+				preview_playing = false;
+			}
+		}
+
+		bool space_hit = key_pressed(KEY_SPACE) || (key_down(KEY_SPACE) && space_preview_timer.elapsed >= 300);
+		if (space_hit && in_group)
+		{
+			space_preview_timer.restart();
+			if (preview_playing)
+			{
+				builder_preview_sound.close();
+				preview_playing = false;
+			}
+			else if (cur_sub_pos > 0)
+			{
+				string snd_name = (saved_cat_pos == 0) ? musics_list[cur_sub_pos - 1] : sources_list[cur_sub_pos - 1];
+				string path = (saved_cat_pos == 0) ? get_music_sound(snd_name) : get_ambience_sound(snd_name);
+				preview_playing = play_builder_preview(path, f.get_slider(vol_s), f.get_slider(pit_s));
+			}
+			last_sub_pos = cur_sub_pos;
+		}
+
+		if (builder_preview_sound.active)
+		{
+			builder_preview_sound.volume = f.get_slider(vol_s);
+			builder_preview_sound.pitch = f.get_slider(pit_s);
+		}
+
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(cn))
+		{
+			builder_preview_sound.close();
+			speak("canceled");
+			return;
+		}
+
+		if (f.is_pressed(ok))
+		{
+			string tx = f.get_text(mx);
+			string tx2 = f.get_text(mx2);
+			string ty = f.get_text(my);
+			string ty2 = f.get_text(my2);
+			string tz = f.get_text(mnz);
+			string tz2 = f.get_text(mxz);
+			if (tx == "" || tx2 == "" || ty == "" || ty2 == "" || tz == "" || tz2 == "")
+			{
+				speak("Coordinates cannot be empty.");
+				continue;
+			}
+
+			int p = f.get_list_position(sub_list);
+			if (p <= 0)
+			{
+				speak("No sound selected. Please select a sound.");
+				continue;
+			}
+
+			string bsub = (saved_cat_pos == 0) ? musics_list[p - 1] : sources_list[p - 1];
+			if (bsub == "" || bsub == "none")
+			{
+				speak("No sound selected. Please select a sound.");
+				continue;
+			}
+
+			int bx1 = int(string_to_number(tx));
+			int bx2 = int(string_to_number(tx2));
+			int by1 = int(string_to_number(ty));
+			int by2 = int(string_to_number(ty2));
+			int bz1 = int(string_to_number(tz));
+			int bz2 = int(string_to_number(tz2));
+			double bvol = f.get_slider(vol_s);
+			double bpit = f.get_slider(pit_s);
+
+			builder_preview_sound.close();
+			if (f.is_checked(cb_timed))
+			{
+				int bsh = int(f.get_slider(s_sh));
+				int bsm = int(f.get_slider(s_sm));
+				int beh = int(f.get_slider(s_eh));
+				int bem = int(f.get_slider(s_em));
+				int bfade = int(f.get_slider(s_fade));
+				save_to_map("source:" + bx1 + ":" + bx2 + ":" + by1 + ":" + by2 + ":" + bz1 + ":" + bz2 + ":" + bsub + ":" + bvol + ":" + bpit + ":1:" + bsh + ":" + bsm + ":" + beh + ":" + bem + ":" + bfade);
+			}
+			else
+			{
+				save_to_map("source:" + bx1 + ":" + bx2 + ":" + by1 + ":" + by2 + ":" + bz1 + ":" + bz2 + ":" + bsub + ":" + bvol + ":" + bpit);
+			}
+			return;
+		}
+	}
+}
+
+void build_sound_ambience()
+{
+	string[] musics_list = get_map_sound_folders("builder/audio/musics/*");
+	string[] sources_list = get_map_sound_folders("builder/audio/sources/*");
+
+	string disallowed_nums = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ `!@#$%^&*()[]{};:'\"\\|,<>?_/.+=~";
+	string saved_x = "" + minx;
+	string saved_x2 = "" + maxx;
+	string saved_y = "" + miny;
+	string saved_y2 = "" + maxy;
+	string saved_z = "" + minz;
+	string saved_z2 = "" + maxz;
+	bool saved_timed = false;
+	double saved_sh = 6;
+	double saved_sm = 0;
+	double saved_eh = 18;
+	double saved_em = 0;
+	double saved_fade = 30;
+	int saved_cat_pos = 0;
+	int saved_sub_pos = 0;
+	double saved_vol = 0;
+	double saved_pit = 100;
+	bool do_build = true;
+	int last_cat_pos = -1;
+	int last_sub_pos = -1;
+
+	audio_form f;
+	int mx = -1, mx2 = -1, my = -1, my2 = -1, mnz = -1, mxz = -1;
+	int cb_timed = -1, s_sh = -1, s_sm = -1, s_eh = -1, s_em = -1, s_fade = -1;
+	int cat_list = -1, sub_list = -1, vol_s = -1, pit_s = -1, ok = -1, cn = -1;
+	bool preview_playing = false;
+	timer space_preview_timer;
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		if (do_build)
+		{
+			do_build = false;
+			if (last_cat_pos != -1)
+			{
+				saved_x = f.get_text(mx);
+				saved_x2 = f.get_text(mx2);
+				saved_y = f.get_text(my);
+				saved_y2 = f.get_text(my2);
+				saved_z = f.get_text(mnz);
+				saved_z2 = f.get_text(mxz);
+				saved_timed = f.is_checked(cb_timed);
+				saved_sh = f.get_slider(s_sh);
+				saved_sm = f.get_slider(s_sm);
+				saved_eh = f.get_slider(s_eh);
+				saved_em = f.get_slider(s_em);
+				saved_fade = f.get_slider(s_fade);
+				saved_vol = f.get_slider(vol_s);
+				saved_pit = f.get_slider(pit_s);
+			}
+			f.reset();
+			f.create_window("sound ambience", false, true, last_cat_pos != -1);
+			mx = f.create_input_box("minimum x", saved_x);
+			mx2 = f.create_input_box("maximum x", saved_x2);
+			my = f.create_input_box("minimum y", saved_y);
+			my2 = f.create_input_box("maximum y", saved_y2);
+			mnz = f.create_input_box("minimum z", saved_z);
+			mxz = f.create_input_box("maximum z", saved_z2);
+			f.set_disallowed_chars(mx, disallowed_nums, false, "Numbers only.");
+			f.set_disallowed_chars(mx2, disallowed_nums, false, "Numbers only.");
+			f.set_disallowed_chars(my, disallowed_nums, false, "Numbers only.");
+			f.set_disallowed_chars(my2, disallowed_nums, false, "Numbers only.");
+			f.set_disallowed_chars(mnz, disallowed_nums, false, "Numbers only.");
+			f.set_disallowed_chars(mxz, disallowed_nums, false, "Numbers only.");
+
+			cb_timed = f.create_checkbox("Use day and night time limits", saved_timed);
+			s_sh = f.create_slider("start hour", saved_sh, 0, 23, "", 1);
+			s_sm = f.create_slider("start minute", saved_sm, 0, 59, "", 1);
+			s_eh = f.create_slider("end hour", saved_eh, 0, 23, "", 1);
+			s_em = f.create_slider("end minute", saved_em, 0, 59, "", 1);
+			s_fade = f.create_slider("fade duration in minutes", saved_fade, 0, 120, "", 5);
+
+			cat_list = f.create_list("category");
+			f.add_list_item(cat_list, "musics", "musics");
+			f.add_list_item(cat_list, "sources", "sources");
+			f.set_list_position(cat_list, saved_cat_pos, false);
+
+			string sub_label = (saved_cat_pos == 0) ? "music sound" : "source sound";
+			sub_list = f.create_list(sub_label);
+			f.add_list_item(sub_list, "none", "none");
+			if (saved_cat_pos == 0)
+			{
+				for (uint i = 0; i < musics_list.length(); i++) f.add_list_item(sub_list, musics_list[i], musics_list[i]);
+			}
+			else
+			{
+				for (uint i = 0; i < sources_list.length(); i++) f.add_list_item(sub_list, sources_list[i], sources_list[i]);
+			}
+			f.set_list_position(sub_list, saved_sub_pos, false);
+
+			vol_s = f.create_slider("volume", saved_vol, -100, 0, "", 5);
+			pit_s = f.create_slider("pitch", saved_pit, 5, 500, "", 5);
+			ok = f.create_button("&okay", true);
+			cn = f.create_button("&cancel");
+			f.set_default_controls(ok, cn);
+
+			if (last_cat_pos == -1) f.focus_silently(mx);
+			else f.focus_silently(cat_list);
+			last_cat_pos = saved_cat_pos;
+		}
+
+		f.monitor();
+
+		bool is_t = f.is_checked(cb_timed);
+		f.set_state(s_sh, is_t, is_t);
+		f.set_state(s_sm, is_t, is_t);
+		f.set_state(s_eh, is_t, is_t);
+		f.set_state(s_em, is_t, is_t);
+		f.set_state(s_fade, is_t, is_t);
+
+		int cur_cat_pos = f.get_list_position(cat_list);
+		if (cur_cat_pos != -1 && cur_cat_pos != last_cat_pos)
+		{
+			saved_cat_pos = cur_cat_pos;
+			saved_sub_pos = 0;
+			builder_preview_sound.close();
+			preview_playing = false;
+			do_build = true;
+			continue;
+		}
+
+		int cur_focus = f.get_current_focus();
+		bool in_group = (cur_focus == sub_list || cur_focus == vol_s || cur_focus == pit_s);
+		int cur_sub_pos = f.get_list_position(sub_list);
+
+		if (preview_playing && cur_sub_pos != last_sub_pos)
+		{
+			last_sub_pos = cur_sub_pos;
+			if (cur_sub_pos > 0)
+			{
+				string snd_name = (saved_cat_pos == 0) ? musics_list[cur_sub_pos - 1] : sources_list[cur_sub_pos - 1];
+				string path = (saved_cat_pos == 0) ? get_music_sound(snd_name) : get_ambience_sound(snd_name);
+				preview_playing = play_builder_preview(path, f.get_slider(vol_s), f.get_slider(pit_s));
+			}
+			else
+			{
+				builder_preview_sound.close();
+				preview_playing = false;
+			}
+		}
+
+		bool space_hit = key_pressed(KEY_SPACE) || (key_down(KEY_SPACE) && space_preview_timer.elapsed >= 300);
+		if (space_hit && in_group)
+		{
+			space_preview_timer.restart();
+			if (preview_playing)
+			{
+				builder_preview_sound.close();
+				preview_playing = false;
+			}
+			else if (cur_sub_pos > 0)
+			{
+				string snd_name = (saved_cat_pos == 0) ? musics_list[cur_sub_pos - 1] : sources_list[cur_sub_pos - 1];
+				string path = (saved_cat_pos == 0) ? get_music_sound(snd_name) : get_ambience_sound(snd_name);
+				preview_playing = play_builder_preview(path, f.get_slider(vol_s), f.get_slider(pit_s));
+			}
+			last_sub_pos = cur_sub_pos;
+		}
+
+		if (builder_preview_sound.active)
+		{
+			builder_preview_sound.volume = f.get_slider(vol_s);
+			builder_preview_sound.pitch = f.get_slider(pit_s);
+		}
+
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(cn))
+		{
+			builder_preview_sound.close();
+			speak("canceled");
+			return;
+		}
+
+		if (f.is_pressed(ok))
+		{
+			string tx = f.get_text(mx);
+			string tx2 = f.get_text(mx2);
+			string ty = f.get_text(my);
+			string ty2 = f.get_text(my2);
+			string tz = f.get_text(mnz);
+			string tz2 = f.get_text(mxz);
+			if (tx == "" || tx2 == "" || ty == "" || ty2 == "" || tz == "" || tz2 == "")
+			{
+				speak("Coordinates cannot be empty.");
+				continue;
+			}
+
+			int p = f.get_list_position(sub_list);
+			if (p <= 0)
+			{
+				speak("No sound selected. Please select a sound.");
+				continue;
+			}
+
+			string bsub = (saved_cat_pos == 0) ? musics_list[p - 1] : sources_list[p - 1];
+			if (bsub == "" || bsub == "none")
+			{
+				speak("No sound selected. Please select a sound.");
+				continue;
+			}
+
+			int bx1 = int(string_to_number(tx));
+			int bx2 = int(string_to_number(tx2));
+			int by1 = int(string_to_number(ty));
+			int by2 = int(string_to_number(ty2));
+			int bz1 = int(string_to_number(tz));
+			int bz2 = int(string_to_number(tz2));
+			double bvol = f.get_slider(vol_s);
+			double bpit = f.get_slider(pit_s);
+
+			builder_preview_sound.close();
+			if (f.is_checked(cb_timed))
+			{
+				int bsh = int(f.get_slider(s_sh));
+				int bsm = int(f.get_slider(s_sm));
+				int beh = int(f.get_slider(s_eh));
+				int bem = int(f.get_slider(s_em));
+				int bfade = int(f.get_slider(s_fade));
+				save_to_map("ambience:" + bx1 + ":" + bx2 + ":" + by1 + ":" + by2 + ":" + bz1 + ":" + bz2 + ":" + bsub + ":" + bvol + ":" + bpit + ":1:" + bsh + ":" + bsm + ":" + beh + ":" + bem + ":" + bfade);
+			}
+			else
+			{
+				save_to_map("ambience:" + bx1 + ":" + bx2 + ":" + by1 + ":" + by2 + ":" + bz1 + ":" + bz2 + ":" + bsub + ":" + bvol + ":" + bpit);
+			}
+			return;
+		}
+	}
+}

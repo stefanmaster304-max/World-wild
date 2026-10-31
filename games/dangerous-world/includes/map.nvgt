@@ -1,0 +1,1440 @@
+#include "map_system.nvgt"
+#include "map_state_manager.nvgt"
+
+int map_min_level = 1;
+int map_max_level = 0;
+int map_min_resurrection = 0;
+int map_max_resurrection = 0;
+string[] map;
+string[] zones;
+string[] safezones;
+bool is_underwater = false;
+sound underwater_ambient_sound;
+dictionary discovered_maps;
+
+void check_map_discovery(const string&in mname)
+{
+	if (mname == "") return;
+	string lname = string_to_lower_case(mname.trim_whitespace());
+	string key = "map:" + lname;
+	discovered_maps.set(key, true);
+	discovered_maps.set(lname, true);
+}
+
+void check_map_exploration(const string&in mname, int px, int py, int pz)
+{
+	if (mname == "") return;
+	check_map_discovery(mname);
+}
+
+string serialize_discovered_maps()
+{
+	string[] keys = discovered_maps.get_keys();
+	string res = "";
+	for (uint i = 0; i < keys.length(); i++)
+	{
+		if (i > 0) res += ";";
+		res += keys[i];
+	}
+	return res;
+}
+
+void deserialize_discovered_maps(const string&in data)
+{
+	discovered_maps.delete_all();
+	if (data == "") return;
+	string[] parts = string_split(data, ";", false);
+	for (uint i = 0; i < parts.length(); i++)
+	{
+		string k = parts[i].trim_whitespace();
+		if (k != "") discovered_maps.set(k, true);
+	}
+}
+
+const string MAP_ENC_KEY = "xK9#pL2$vR5!zQ7@wE3^nM8*cF1&bN6%hJ4*tY0=sU2+dA5/gI7(lO9)rP3_DWMapsPack2026";
+const string MAP_DIR = "settings/maps";
+const string MAPS_DAT_PATH = "settings/maps.dat";
+const int Left=1;
+const int Right=2;
+const int Backward=3;
+const int Forward=4;
+const int Up=5;
+const int Down=6;
+
+dictionary map_bundle_cache;
+dictionary map_parsed_lines_cache;
+bool map_bundle_loaded = false;
+
+void invalidate_map_lines_cache(const string&in mname = "")
+{
+	if (mname == "")
+		map_parsed_lines_cache.delete_all();
+	else if (map_parsed_lines_cache.exists(mname))
+		map_parsed_lines_cache.delete(mname);
+}
+
+void parse_maps_bundle(const string&in content)
+{
+	string cleaned = string_replace(content, "\r", "", true);
+	string[]@ lines = string_split(cleaned, "\n", false);
+	if (lines is null) return;
+	string current_map_name = "";
+	string current_map_content = "";
+
+	for (uint i = 0; i < lines.length(); i++)
+	{
+		string line = lines[i];
+		string trimmed = line.trim_whitespace();
+		if (string_starts_with(trimmed, "[map:") && string_ends_with(trimmed, "]"))
+		{
+			if (current_map_name != "")
+			{
+				map_bundle_cache[current_map_name] = current_map_content;
+			}
+			current_map_name = trimmed.substr(5, trimmed.length() - 6);
+			current_map_content = "";
+			continue;
+		}
+		if (current_map_name != "")
+		{
+			current_map_content += line + "\n";
+		}
+	}
+	if (current_map_name != "")
+	{
+		map_bundle_cache[current_map_name] = current_map_content;
+	}
+}
+
+void load_maps_bundle()
+{
+	if (map_bundle_loaded) return;
+	map_bundle_loaded = true;
+	string bundle_path = file_exists(MAPS_DAT_PATH) ? MAPS_DAT_PATH : (file_exists("data/maps.dat") ? "data/maps.dat" : (file_exists("maps.dat") ? "maps.dat" : ""));
+	if (bundle_path != "")
+	{
+		file f;
+		if (f.open(bundle_path, "rb"))
+		{
+			string enc = f.read();
+			f.close();
+			string decrypted = string_decrypt(enc, MAP_ENC_KEY);
+			if (decrypted.length() > 0)
+			{
+				parse_maps_bundle(decrypted);
+			}
+		}
+	}
+}
+
+string get_map_content_by_name(const string&in name)
+{
+	if (name == "") return "";
+
+	load_maps_bundle();
+
+	if (map_bundle_cache.exists(name))
+	{
+		string cached = "";
+		map_bundle_cache.get(name, cached);
+		if (cached == "__NOT_FOUND__") return "";
+		if (cached != "") return cached;
+	}
+
+	string filename = MAP_DIR + "/" + name + ".map";
+	if (file_exists(filename))
+	{
+		string content = file_get_contents(filename);
+		if (content != "")
+		{
+			map_bundle_cache[name] = content;
+			return content;
+		}
+	}
+
+	string legacy_filename = "maps/" + name + ".map";
+	if (file_exists(legacy_filename))
+	{
+		string content = file_get_contents(legacy_filename);
+		if (content != "")
+		{
+			map_bundle_cache[name] = content;
+			return content;
+		}
+	}
+
+	string enc_filename = MAP_DIR + "/" + name + ".map.dat";
+	if (file_exists(enc_filename))
+	{
+		string content = string_decrypt(file_get_contents(enc_filename), MAP_ENC_KEY);
+		if (content != "")
+		{
+			map_bundle_cache[name] = content;
+			return content;
+		}
+	}
+
+	string legacy_enc_filename = "data/maps/" + name + ".map.dat";
+	if (file_exists(legacy_enc_filename))
+	{
+		string content = string_decrypt(file_get_contents(legacy_enc_filename), MAP_ENC_KEY);
+		if (content != "")
+		{
+			map_bundle_cache[name] = content;
+			return content;
+		}
+	}
+
+	map_bundle_cache[name] = "__NOT_FOUND__";
+	return "";
+}
+
+string serialize_all_maps_bundle()
+{
+	string s = "# Shooter Unified Maps Bundle v1.0\n\n";
+	string[]@ keys = map_bundle_cache.get_keys();
+	if (keys !is null)
+	{
+		for (uint i = 0; i < keys.length(); i++)
+		{
+			string name = keys[i];
+			string map_txt = "";
+			map_bundle_cache.get(name, map_txt);
+			s += "[map:" + name + "]\n" + map_txt + "\n";
+		}
+	}
+	return s;
+}
+
+void encrypt_all_maps_silent()
+{
+	if (!directory_exists("settings")) directory_create("settings");
+	if (!directory_exists(MAP_DIR)) directory_create(MAP_DIR);
+	if (map_bundle_cache.get_keys().length() == 0)
+	{
+		if (directory_exists(MAP_DIR))
+		{
+			string[]@ files = find_files(MAP_DIR + "/*.map");
+			if (files !is null)
+			{
+				for (uint i = 0; i < files.length(); i++)
+				{
+					string name = files[i];
+					if (string_ends_with(name, ".map")) name = string_left(name, name.length() - 4);
+					string content = file_get_contents(MAP_DIR + "/" + files[i]);
+					map_bundle_cache[name] = content;
+				}
+			}
+		}
+		if (directory_exists("maps"))
+		{
+			string[]@ files = find_files("maps/*.map");
+			if (files !is null)
+			{
+				for (uint i = 0; i < files.length(); i++)
+				{
+					string name = files[i];
+					if (string_ends_with(name, ".map")) name = string_left(name, name.length() - 4);
+					if (!map_bundle_cache.exists(name))
+					{
+						string content = file_get_contents("maps/" + files[i]);
+						map_bundle_cache[name] = content;
+					}
+				}
+			}
+		}
+	}
+	string bundle = serialize_all_maps_bundle();
+	string enc = string_encrypt(bundle, MAP_ENC_KEY);
+	file f;
+	if (f.open(MAPS_DAT_PATH, "wb"))
+	{
+		f.write(enc);
+		f.close();
+	}
+}
+
+void encrypt_all_maps()
+{
+	if (directory_exists(MAP_DIR))
+	{
+		string[]@ files = find_files(MAP_DIR + "/*.map");
+		if (files !is null)
+		{
+			for (uint i = 0; i < files.length(); i++)
+			{
+				string name = files[i];
+				if (string_ends_with(name, ".map")) name = string_left(name, name.length() - 4);
+				string content = file_get_contents(MAP_DIR + "/" + files[i]);
+				map_bundle_cache[name] = content;
+			}
+		}
+	}
+	if (directory_exists("maps"))
+	{
+		string[]@ files = find_files("maps/*.map");
+		if (files !is null)
+		{
+			for (uint i = 0; i < files.length(); i++)
+			{
+				string name = files[i];
+				if (string_ends_with(name, ".map")) name = string_left(name, name.length() - 4);
+				if (!map_bundle_cache.exists(name))
+				{
+					string content = file_get_contents("maps/" + files[i]);
+					map_bundle_cache[name] = content;
+				}
+			}
+		}
+	}
+	encrypt_all_maps_silent();
+	if (directory_exists(MAP_DIR))
+	{
+		string[]@ files = find_files(MAP_DIR + "/*.map");
+		if (files !is null)
+		{
+			for (uint i = 0; i < files.length(); i++)
+			{
+				file_delete(MAP_DIR + "/" + files[i]);
+			}
+		}
+	}
+	if (directory_exists("maps"))
+	{
+		string[]@ files = find_files("maps/*.map");
+		if (files !is null)
+		{
+			for (uint i = 0; i < files.length(); i++)
+			{
+				file_delete("maps/" + files[i]);
+			}
+		}
+	}
+	map_bundle_loaded = false;
+	load_maps_bundle();
+	speak("Maps encrypted into maps.dat.");
+}
+
+void decrypt_all_maps()
+{
+	load_maps_bundle();
+	if (!directory_exists("settings")) directory_create("settings");
+	if (!directory_exists(MAP_DIR)) directory_create(MAP_DIR);
+	string[]@ keys = map_bundle_cache.get_keys();
+	int count = 0;
+	if (keys !is null)
+	{
+		for (uint i = 0; i < keys.length(); i++)
+		{
+			string name = keys[i];
+			string map_txt = "";
+			map_bundle_cache.get(name, map_txt);
+			file f;
+			if (f.open(MAP_DIR + "/" + name + ".map", "wb"))
+			{
+				f.write(map_txt);
+				f.close();
+				count++;
+			}
+		}
+	}
+	if (file_exists(MAPS_DAT_PATH)) file_delete(MAPS_DAT_PATH);
+	if (file_exists("data/maps.dat")) file_delete("data/maps.dat");
+	if (file_exists("maps.dat")) file_delete("maps.dat");
+	map_bundle_cache.delete_all();
+	map_bundle_loaded = false;
+	speak(count + " maps extracted from maps.dat.");
+}
+
+bool can_enter_map(string name, bool announce = true)
+{
+	if (name == "" || !map_exists_on_disk(name))
+	{
+		if (announce) speak("Destination map does not exist.");
+		return false;
+	}
+
+	string content = get_map_content_by_name(name);
+	if (content == "")
+	{
+		if (announce) speak("Destination map does not exist.");
+		return false;
+	}
+
+	content = string_replace(content, "\r\n", "\n", true);
+	content = string_replace(content, "\r", "\n", true);
+	string[] lines = string_split(content, "\n", false);
+
+	int check_min_lvl = 1;
+	int check_max_lvl = 0;
+	int check_min_res = 0;
+	int check_max_res = 0;
+
+	for (uint i = 0; i < lines.length(); i++)
+	{
+		string line = lines[i].trim_whitespace();
+		if (line == "" || string_left(line, 1) == ";" || string_left(line, 1) == "#") continue;
+		string[] parsed = string_split(line, ":", false);
+		if (parsed.length() < 2) parsed = string_split(line, " ", false);
+		if (parsed.length() < 2) continue;
+		string cmd = parsed[0].trim_whitespace();
+
+		if (cmd == "minlevel" || cmd == "min_level" || cmd == "minlvl")
+			check_min_lvl = int(string_to_number(parsed[1]));
+		else if (cmd == "maxlevel" || cmd == "max_level" || cmd == "maxlvl")
+			check_max_lvl = int(string_to_number(parsed[1]));
+		else if (cmd == "minresurrection" || cmd == "min_resurrection" || cmd == "minres")
+			check_min_res = int(string_to_number(parsed[1]));
+		else if (cmd == "maxresurrection" || cmd == "max_resurrection" || cmd == "maxres")
+			check_max_res = int(string_to_number(parsed[1]));
+	}
+
+	bool res_too_low = (resurrections < check_min_res);
+	bool res_too_high = (check_max_res > 0 && resurrections > check_max_res);
+	bool lvl_too_low = (level < check_min_lvl);
+	bool lvl_too_high = (check_max_lvl > 0 && level > check_max_lvl);
+
+	if (res_too_low)
+	{
+		if (announce) speak("This map is locked. You cannot enter here.");
+		return false;
+	}
+	if (res_too_high)
+	{
+		if (announce) speak("You cannot enter here yet; your resurrection exceeds the maximum allowed.");
+		return false;
+	}
+	if (lvl_too_low)
+	{
+		if (announce) speak("You cannot enter here yet; your level does not meet the requirements.");
+		return false;
+	}
+	if (lvl_too_high)
+	{
+		if (announce) speak("You cannot enter here yet; your level exceeds the maximum allowed.");
+		return false;
+	}return true;
+}
+
+void draw_map(string name, bool force_reload_sources = false)
+{
+bool map_already_saved = has_saved_map_state(name);
+restore_map_state(name);
+if (force_reload_sources)
+{
+	destroy_map_sources(name);
+}
+bool need_spawn_sources = !has_map_sources(name);
+mapname = name;
+map_min_level = 1;
+map_max_level = 0;
+map_min_resurrection = 0;
+map_max_resurrection = 0;
+string[] lines;
+if (map_parsed_lines_cache.exists(name))
+{
+	map_parsed_lines_cache.get(name, lines);
+}
+else
+{
+	string content = get_map_content_by_name(name);
+	if (content == "")
+	{
+		string[] av = get_available_maps();
+		bool fallback_loaded = false;
+		for (uint ai = 0; ai < av.length(); ai++)
+		{
+			if (av[ai] != name && map_exists_on_disk(av[ai]))
+			{
+				string c_fb = get_map_content_by_name(av[ai]);
+				if (c_fb != "")
+				{
+					speak("Map " + name + " not found. Loading next available map: " + av[ai]);
+					name = av[ai];
+					mapname = name;
+					me.x = 0; me.y = 0; me.z = 0;
+					save_location();
+					content = c_fb;
+					fallback_loaded = true;
+					break;
+				}
+			}
+		}
+		if (!fallback_loaded)
+		{
+			speak("Error: No valid maps available to load.");
+			return;
+		}
+	}
+	content = string_replace(content, "\r\n", "\n", true);
+	content = string_replace(content, "\r", "\n", true);
+	lines = string_split(content, "\n", false);
+	map_parsed_lines_cache.set(name, lines);
+}
+bool has_minx = false, has_maxx = false, has_miny = false, has_maxy = false, has_minz = false, has_maxz = false;
+
+for (uint i = 0; i < lines.length(); i++)
+{
+string line = lines[i].trim_whitespace();
+if (line == "" || string_left(line, 1) == ";" || string_left(line, 1) == "#")
+{
+continue;
+}
+string[] parsed = string_split(line, ":", false);
+if (parsed.length() < 2)
+{
+	parsed = string_split(line, " ", false);
+}
+if (parsed.length() < 2)
+{
+continue;
+}
+string cmd = parsed[0].trim_whitespace();
+if (cmd == "minlevel" || cmd == "min_level")
+{
+	map_min_level = int(string_to_number(parsed[1]));
+}
+else if (cmd == "maxlevel" || cmd == "max_level")
+{
+	map_max_level = int(string_to_number(parsed[1]));
+}
+else if (cmd == "minresurrection" || cmd == "min_resurrection")
+{
+	map_min_resurrection = int(string_to_number(parsed[1]));
+}
+else if (cmd == "maxresurrection" || cmd == "max_resurrection")
+{
+	map_max_resurrection = int(string_to_number(parsed[1]));
+}
+else if (cmd == "minx")
+{
+	minx = int(string_to_number(parsed[1]));
+	has_minx = true;
+}
+else if (cmd == "maxx")
+{
+	maxx = int(string_to_number(parsed[1]));
+	has_maxx = true;
+}
+else if (cmd == "miny")
+{
+	miny = int(string_to_number(parsed[1]));
+	has_miny = true;
+}
+else if (cmd == "maxy")
+{
+	maxy = int(string_to_number(parsed[1]));
+	has_maxy = true;
+}
+else if (cmd == "minz")
+{
+	minz = int(string_to_number(parsed[1]));
+	has_minz = true;
+}
+else if (cmd == "maxz")
+{
+	maxz = int(string_to_number(parsed[1]));
+	has_maxz = true;
+}
+else if (cmd == "size")
+{
+	string[] s_parts = parsed;
+	if (parsed.length() == 2 && string_contains(parsed[1], " ", 1) > 0)
+	{
+		string[] space_parts = string_split(parsed[1].trim_whitespace(), " ", false);
+		s_parts.resize(1);
+		for (uint spi = 0; spi < space_parts.length(); spi++)
+			if (space_parts[spi] != "") s_parts.insert_last(space_parts[spi]);
+	}
+	if (s_parts.length() >= 7)
+	{
+		minx = int(string_to_number(s_parts[1]));
+		miny = int(string_to_number(s_parts[2]));
+		minz = int(string_to_number(s_parts[3]));
+		maxx = int(string_to_number(s_parts[4]));
+		maxy = int(string_to_number(s_parts[5]));
+		maxz = int(string_to_number(s_parts[6]));
+		has_minx = true;
+		has_miny = true;
+		has_minz = true;
+		has_maxx = true;
+		has_maxy = true;
+		has_maxz = true;
+	}
+}
+else if (cmd == "map" || cmd == "mapname")
+{
+	if (parsed.length() >= 2)
+
+	{
+		mapname = parsed[1].trim_whitespace();
+	}
+}
+else if (cmd == "platform")
+{
+if (parsed.length() >= 8)
+{
+spawn_platform(int(string_to_number(parsed[1])), int(string_to_number(parsed[2])), int(string_to_number(parsed[3])), int(string_to_number(parsed[4])), int(string_to_number(parsed[5])), int(string_to_number(parsed[6])), parsed[7]);
+}
+}
+else if (cmd == "wall")
+{
+if (parsed.length() >= 8)
+{
+spawn_wall(string_to_number(parsed[1]), string_to_number(parsed[2]), string_to_number(parsed[3]), string_to_number(parsed[4]), string_to_number(parsed[5]), string_to_number(parsed[6]), parsed[7]);
+}
+}
+else if (cmd == "zone")
+{
+if (parsed.length() >= 8)
+{
+spawn_zone(string_to_number(parsed[1]), string_to_number(parsed[2]), string_to_number(parsed[3]), string_to_number(parsed[4]), string_to_number(parsed[5]), string_to_number(parsed[6]), parsed[7]);
+}
+}
+else if (cmd == "source")
+{
+	// Sound sources are managed uniformly and seamlessly by sync_map_and_neighbor_sources
+}
+else if (cmd == "store")
+{
+if (parsed.length() >= 8)
+{
+string store_id = parsed[1];
+        spawn_store(string_to_number(parsed[2]), string_to_number(parsed[3]), string_to_number(parsed[4]), string_to_number(parsed[5]), string_to_number(parsed[6]), string_to_number(parsed[7]), store_id);
+    }
+}
+else if (cmd == "safezone")
+{
+if (parsed.length() >= 7)
+{
+spawn_safezone(string_to_number(parsed[1]), string_to_number(parsed[2]), string_to_number(parsed[3]), string_to_number(parsed[4]), string_to_number(parsed[5]), string_to_number(parsed[6]));
+}
+}
+else if (cmd == "travelpoint")
+{
+	string[]@ tp_parts = string_split(line, ":", true);
+	if (tp_parts.length() >= 19)
+	{
+		int x1 = int(string_to_number(tp_parts[1]));
+		int x2 = int(string_to_number(tp_parts[2]));
+		int y1 = int(string_to_number(tp_parts[3]));
+		int y2 = int(string_to_number(tp_parts[4]));
+		int z1 = int(string_to_number(tp_parts[5]));
+		int z2 = int(string_to_number(tp_parts[6]));
+		string target_map = tp_parts[7];
+		int dx1 = int(string_to_number(tp_parts[8]));
+		int dx2 = int(string_to_number(tp_parts[9]));
+		int dy1 = int(string_to_number(tp_parts[10]));
+		int dy2 = int(string_to_number(tp_parts[11]));
+		int dz1 = int(string_to_number(tp_parts[12]));
+		int dz2 = int(string_to_number(tp_parts[13]));
+		string tp_text = tp_parts[14];
+		if (tp_text == "none") tp_text = "";
+		int min_l = int(string_to_number(tp_parts[15]));
+		int max_l = int(string_to_number(tp_parts[16]));
+		int min_r = int(string_to_number(tp_parts[17]));
+		int max_r = int(string_to_number(tp_parts[18]));
+		bool is_auto = false;
+		if (tp_parts.length() >= 20)
+		{
+			string auto_flag = tp_parts[19].trim_whitespace();
+			is_auto = (auto_flag == "1" || auto_flag == "true" || auto_flag == "auto");
+		}
+
+		if (target_map != "" && map_exists_on_disk(target_map))
+		{
+			spawn_travelpoint(x1, x2, y1, y2, z1, z2, target_map, dx1, dx2, dy1, dy2, dz1, dz2, tp_text, min_l, max_l, min_r, max_r, is_auto);
+		}
+	}
+	else if (tp_parts.length() >= 14)
+	{
+		int px = int(string_to_number(tp_parts[1]));
+		int py = int(string_to_number(tp_parts[2]));
+		int pz = int(string_to_number(tp_parts[3]));
+		string target_map = tp_parts[4];
+		int tx = (tp_parts[5] == "random_x") ? random(0, maxx) : int(string_to_number(tp_parts[5]));
+		int ty = (tp_parts[6] == "random_y") ? random(0, maxy) : int(string_to_number(tp_parts[6]));
+		int tz = int(string_to_number(tp_parts[7]));
+		string tp_text = tp_parts[8];
+		if (tp_text == "none") tp_text = "";
+		int min_l = int(string_to_number(tp_parts[9]));
+		int max_l = int(string_to_number(tp_parts[10]));
+		int min_r = int(string_to_number(tp_parts[11]));
+		int max_r = int(string_to_number(tp_parts[12]));
+
+		if (target_map != "" && map_exists_on_disk(target_map))
+		{
+			spawn_travelpoint(px, px, py, py, pz, pz, target_map, tx, tx, ty, ty, tz, tz, tp_text, min_l, max_l, min_r, max_r);
+		}
+	}
+	else if (tp_parts.length() >= 11)
+	{
+		int px = int(string_to_number(tp_parts[1]));
+		int py = int(string_to_number(tp_parts[2]));
+		int pz = int(string_to_number(tp_parts[3]));
+		string target_map = tp_parts[4];
+		int tx = (tp_parts[5] == "random_x") ? random(0, maxx) : int(string_to_number(tp_parts[5]));
+		int ty = (tp_parts[6] == "random_y") ? random(0, maxy) : int(string_to_number(tp_parts[6]));
+		int tz = int(string_to_number(tp_parts[7]));
+		string tp_text = tp_parts[8];
+		if (tp_text == "none") tp_text = "";
+		int min_r = int(string_to_number(tp_parts[9]));
+
+		if (target_map != "" && map_exists_on_disk(target_map))
+		{
+			spawn_travelpoint(px, px, py, py, pz, pz, target_map, tx, tx, ty, ty, tz, tz, tp_text, 1, 0, min_r, 0);
+		}
+	}
+	else if (tp_parts.length() >= 10)
+	{
+		int px = int(string_to_number(tp_parts[1]));
+		int py = int(string_to_number(tp_parts[2]));
+		int pz = int(string_to_number(tp_parts[3]));
+		string target_map = tp_parts[4];
+		int tx = (tp_parts[5] == "random_x") ? random(0, maxx) : int(string_to_number(tp_parts[5]));
+		int ty = (tp_parts[6] == "random_y") ? random(0, maxy) : int(string_to_number(tp_parts[6]));
+		int tz = int(string_to_number(tp_parts[7]));
+		string tp_text = tp_parts[8];
+		if (tp_text == "none") tp_text = "";
+		int min_r = int(string_to_number(tp_parts[9]));
+
+		if (target_map != "" && map_exists_on_disk(target_map))
+		{
+			spawn_travelpoint(px, px, py, py, pz, pz, target_map, tx, tx, ty, ty, tz, tz, tp_text, 1, 0, min_r, 0);
+		}
+	}
+}
+else if (cmd == "door")
+{
+if (parsed.length() >= 12)
+{
+spawn_door(int(string_to_number(parsed[1])), int(string_to_number(parsed[2])), int(string_to_number(parsed[3])), int(string_to_number(parsed[4])), int(string_to_number(parsed[5])), int(string_to_number(parsed[6])), int(string_to_number(parsed[7])), parsed[8], parsed[9], parsed[10], parsed[11]);
+}
+}
+else if (cmd == "staircase")
+{
+if (parsed.length() >= 8)
+{
+string stile = (parsed.length() >= 9) ? parsed[8] : parsed[7];
+spawn_staircase(int(string_to_number(parsed[1])), int(string_to_number(parsed[2])), int(string_to_number(parsed[3])), int(string_to_number(parsed[4])), int(string_to_number(parsed[5])), int(string_to_number(parsed[6])), stile);
+}
+}
+else if (cmd == "sign")
+{
+if (parsed.length() >= 6)
+{
+int cx = int(string_to_number(parsed[1]));
+int cy = int(string_to_number(parsed[2]));
+int cz = int(string_to_number(parsed[3]));
+string ctype = parsed[parsed.length() - 1];
+string ctext = "";
+for (uint k = 4; k < parsed.length() - 1; k++)
+{
+if (k > 4) ctext += ":";
+ctext += parsed[k];
+}
+spawn_sign(cx, cy, cz, ctext, ctype);
+}
+}
+else if (cmd == "text_square")
+{
+if (parsed.length() >= 8)
+{
+spawn_text_square(int(string_to_number(parsed[1])), int(string_to_number(parsed[2])), int(string_to_number(parsed[3])), int(string_to_number(parsed[4])), int(string_to_number(parsed[5])), int(string_to_number(parsed[6])), parsed[7]);
+}
+}
+else if (cmd == "checkpoint")
+{
+if (parsed.length() >= 5)
+{
+spawn_checkpoint(int(string_to_number(parsed[1])), int(string_to_number(parsed[2])), int(string_to_number(parsed[3])), parsed[4]);
+}
+}
+else if (cmd == "spawnpoint")
+{
+if (parsed.length() >= 4)
+{
+set_map_spawnpoint(int(string_to_number(parsed[1])), int(string_to_number(parsed[2])), int(string_to_number(parsed[3])));
+}
+}
+else if (cmd == "item_spawner")
+{
+	if (!map_already_saved) read_item_spawner(parsed);
+}
+}
+if (!(has_minx && has_maxx && has_miny && has_maxy && has_minz && has_maxz))
+{
+	dlg("Error: This map is not supported - old format. Please create a new map.");
+	mainmenu();
+	return;
+}
+spawn_platform(0,maxx,-1000,-1,0,50,"wallw");
+spawn_platform(-1000,-1,0,maxy,0,50,"wallw");
+spawn_platform(0,maxx,maxy+1,maxy+1000,0,50,"wallw");
+spawn_platform(maxx+1,maxx+1000,0,maxy,0,50,"wallw");
+mapname=name;
+mark_map_sources_registered(name);
+sync_map_and_neighbor_sources(name);
+apply_ambient_volume();
+apply_music_volume();
+check_map_exploration(name, int(round(me.x, 0)), int(round(me.y, 0)), int(round(me.z, 0)));
+}
+void spawn_platform(int minx, int maxx, int miny, int maxy, int minz, int maxz, string type)
+{
+g_active_map.add_tile(minx, maxx, miny, maxy, minz, maxz, type);
+map.insert_last(minx+":"+maxx+":"+miny+":"+maxy+":"+minz+":"+maxz+":"+type);
+}
+
+void spawn_wall(int minx, int maxx, int miny, int maxy, int minz, int maxz, string type)
+{
+g_active_map.add_tile(minx, maxx, miny, maxy, minz, maxz, type);
+g_active_map.add_wall(minx, maxx, miny, maxy, minz, maxz, type);
+map.insert_last(minx+":"+maxx+":"+miny+":"+maxy+":"+minz+":"+maxz+":"+type);
+}
+void spawn_zone(int minx, int maxx, int miny, int maxy, int minz, int maxz, string text)
+{
+g_active_map.add_zone(minx, maxx, miny, maxy, minz, maxz, text);
+zones.insert_last(minx+":"+maxx+":"+miny+":"+maxy+":"+minz+":"+maxz+":"+text);
+}
+string get_zone_at(int x, int y, int z)
+{
+string gz = g_active_map.get_zone(x, y, z);
+if (gz != "") return gz;
+string final;
+if (zones.length()==0)
+return "";
+for(int i=int(zones.length())-1; i>=0; i--)
+{
+string[] parsed=string_split(zones[i], ":", false);
+if(parsed.length()>=7)
+{
+int minx=string_to_number(parsed[0]);
+int maxx=string_to_number(parsed[1]);
+int miny=string_to_number(parsed[2]);
+int maxy=string_to_number(parsed[3]);
+int minz=string_to_number(parsed[4]);
+int maxz=string_to_number(parsed[5]);
+if(minx<=x and maxx>=x and miny<=y and maxy>=y and minz<=z and maxz>=z)
+{
+final=parsed[6];
+return final;
+}
+}
+}
+return final;
+}
+void spawn_safezone(int minx,int maxx,int miny,int maxy,int minz,int maxz)
+{
+g_active_map.add_safezone(minx, maxx, miny, maxy, minz, maxz, "safe");
+safezones.insert_last(minx+":"+maxx+":"+miny+":"+maxy+":"+minz+":"+maxz);
+}
+bool is_safe(int x, int y, int z)
+{
+if (g_active_map.is_safezone(x, y, z)) return true;
+bool final=false;
+for(uint i=0; i<safezones.length(); i++)
+{
+string[] parsed=string_split(safezones[i], ":", false);
+int minx=string_to_number(parsed[0]);
+int maxx=string_to_number(parsed[1]);
+int miny=string_to_number(parsed[2]);
+int maxy=string_to_number(parsed[3]);
+int minz=string_to_number(parsed[4]);
+int maxz=string_to_number(parsed[5]);
+if(minx>x)
+{
+continue;
+}
+if (miny>y)
+{
+continue;
+}
+if(minx<=x and maxx>=x and miny<=y and maxy>=y and minz<=z and maxz>=z)
+{
+final=true;
+}
+}
+return final;
+}
+void szloop()
+{
+bool check=is_safe(me.x,me.y,me.z);
+if(szstate!=check)
+{
+szstate=check;
+if(szstate==true)
+{
+p.play_stationary(get_misc_sound("safe"),false);
+safe=true;
+}
+else
+{
+p.play_stationary(get_misc_sound("unsafe"),false);
+safe=false;
+}
+}
+}
+void playstep()
+{
+string current_tile = gmt();
+string current_wall = g_active_map.get_wall(me.x, me.y, me.z);
+bool is_wall = (current_wall != "") || (string_contains(current_tile, "wall", 1) > -1) || g_active_map.wall_blocks(me.x, me.y, me.z);
+if (is_wall)
+{
+string wall_name = (current_wall != "") ? current_wall : current_tile;
+string snd = get_wall_sound(wall_name, "bump");
+if (snd != "")
+{
+p.play_3d(snd, old.x, old.y, old.z, me.x, me.y, me.z, double(facing), false);
+}
+me = old;
+}
+else
+{
+old = me;
+if (is_underwater)
+{
+	string snd = get_platform_sound("underwater", "step");
+	if (snd == "") snd = get_platform_sound("deepwater", "step");
+	if (snd != "") p.play_stationary(snd, false);
+}
+else if (current_tile != "")
+{
+string snd = get_platform_sound(current_tile, "step");
+if (snd != "") p.play_stationary(snd, false);
+}
+}
+}
+string gmt()
+{
+	return get_tile_at(me.x, me.y, me.z);
+}
+string get_tile_at(int x, int y, int z)
+{
+string t = g_active_map.get_tile(x, y, z);
+if (t != "") return t;
+string final;
+for(int i=int(map.length())-1; i>=0; i--)
+{
+string[] parsed=string_split(map[i], ":", false);
+if (parsed.length()>=7)
+{
+int minx=string_to_number(parsed[0]);
+int maxx=string_to_number(parsed[1]);
+int miny=string_to_number(parsed[2]);
+int maxy=string_to_number(parsed[3]);
+int minz=string_to_number(parsed[4]);
+int maxz=string_to_number(parsed[5]);
+if (minx<=x and maxx>=x and miny<=y and maxy>=y and minz<=z and maxz>=z)
+{
+return parsed[6];
+}
+}
+}
+return final;
+}
+
+
+
+bool is_deep_water_tile_name(const string&in name)
+{
+	string t = string_to_lower_case(name);
+	if (t == "") return false;
+	if (string_contains(t, "deepwater", 1) > -1 || string_contains(t, "deep_water", 1) > -1
+		|| string_contains(t, "deep water", 1) > -1 || string_contains(t, "deep_ocean", 1) > -1
+		|| string_contains(t, "deep ocean", 1) > -1 || string_contains(t, "ocean_deep", 1) > -1
+		|| string_contains(t, "oceano_profundo", 1) > -1 || string_contains(t, "oceano profundo", 1) > -1
+		|| string_contains(t, "aguas_profundas", 1) > -1 || string_contains(t, "agua_profunda", 1) > -1
+		|| string_contains(t, "aguas profundas", 1) > -1 || string_contains(t, "agua profunda", 1) > -1
+		|| string_contains(t, "underwater", 1) > -1)
+	{
+		return true;
+	}
+	return false;
+}
+
+bool is_shallow_water_tile_name(const string&in name)
+{
+	string t = string_to_lower_case(name);
+	if (t == "") return false;
+	if (is_deep_water_tile_name(t)) return false;
+	if (string_contains(t, "shallow", 1) > -1 || string_contains(t, "rasa", 1) > -1
+		|| string_contains(t, "water", 1) > -1 || string_contains(t, "agua", 1) > -1
+		|| string_contains(t, "puddle", 1) > -1 || string_contains(t, "swim", 1) > -1
+		|| string_contains(t, "swimming", 1) > -1 || string_contains(t, "river", 1) > -1
+		|| string_contains(t, "rio", 1) > -1 || string_contains(t, "marsh", 1) > -1
+		|| string_contains(t, "swamp", 1) > -1)
+	{
+		return true;
+	}
+	return false;
+}
+
+bool is_deep_water(int x, int y, int z)
+{
+	string t = string_to_lower_case(get_tile_at(x, y, z));
+	return is_deep_water_tile_name(t);
+}
+
+bool is_shallow_water(int x, int y, int z)
+{
+	string t = string_to_lower_case(get_tile_at(x, y, z));
+	return is_shallow_water_tile_name(t);
+}
+
+bool is_water_tile(int x, int y, int z)
+{
+	return is_deep_water(x, y, z) || is_shallow_water(x, y, z);
+}
+void encrypt_maps()
+{
+	encrypt_all_maps();
+}
+void decrypt_maps()
+{
+	decrypt_all_maps();
+}
+
+string[] get_available_maps()
+{
+	string[] map_list;
+	load_maps_bundle();
+	string[]@ keys = map_bundle_cache.get_keys();
+	if (keys !is null)
+	{
+		for (uint i = 0; i < keys.length(); i++)
+		{
+			if (keys[i] != "" && map_list.find(keys[i]) < 0)
+			{
+				map_list.insert_last(keys[i]);
+			}
+		}
+	}
+	if (directory_exists(MAP_DIR))
+	{
+		string[] files = find_files(MAP_DIR + "/*.map");
+		for (uint i = 0; i < files.length(); i++)
+		{
+			string mname = files[i];
+			if (string_ends_with(mname, ".map")) mname = string_left(mname, mname.length() - 4);
+			if (mname != "" and map_list.find(mname) < 0)
+			{
+				map_list.insert_last(mname);
+			}
+		}
+	}
+	if (directory_exists(MAP_DIR))
+	{
+		string[] files = find_files(MAP_DIR + "/*.map.dat");
+		for (uint i = 0; i < files.length(); i++)
+		{
+			string mname = files[i];
+			if (string_ends_with(mname, ".map.dat")) mname = string_left(mname, mname.length() - 8);
+			if (mname != "" and map_list.find(mname) < 0)
+			{
+				map_list.insert_last(mname);
+			}
+		}
+	}
+	if (directory_exists("maps"))
+	{
+		string[] files = find_files("maps/*.map");
+		for (uint i = 0; i < files.length(); i++)
+		{
+			string mname = files[i];
+			if (string_ends_with(mname, ".map")) mname = string_left(mname, mname.length() - 4);
+			if (mname != "" and map_list.find(mname) < 0)
+			{
+				map_list.insert_last(mname);
+			}
+		}
+	}
+	if (directory_exists("data/maps"))
+	{
+		string[] files = find_files("data/maps/*.map.dat");
+		for (uint i = 0; i < files.length(); i++)
+		{
+			string mname = files[i];
+			if (string_ends_with(mname, ".map.dat")) mname = string_left(mname, mname.length() - 8);
+			if (mname != "" and map_list.find(mname) < 0)
+			{
+				map_list.insert_last(mname);
+			}
+		}
+	}
+	return map_list;
+}
+
+bool map_exists_on_disk(string name)
+{
+	if (name == "") return false;
+	if (file_exists(MAP_DIR + "/" + name + ".map")) return true;
+	if (file_exists(MAP_DIR + "/" + name + ".map.dat")) return true;
+	if (file_exists("maps/" + name + ".map")) return true;
+	if (file_exists("data/maps/" + name + ".map.dat")) return true;
+	load_maps_bundle();
+	if (map_bundle_cache.exists(name))
+	{
+		string c = "";
+		map_bundle_cache.get(name, c);
+		if (c.trim_whitespace().length() > 0) return true;
+	}
+	return false;
+}
+
+bool remove_map_from_disk_and_memory(const string&in name)
+{
+	if (name == "") return false;
+	if (file_exists(MAP_DIR + "/" + name + ".map")) file_delete(MAP_DIR + "/" + name + ".map");
+	if (file_exists(MAP_DIR + "/" + name + ".map.dat")) file_delete(MAP_DIR + "/" + name + ".map.dat");
+	if (file_exists("maps/" + name + ".map")) file_delete("maps/" + name + ".map");
+	if (file_exists("data/maps/" + name + ".map.dat")) file_delete("data/maps/" + name + ".map.dat");
+
+	if (map_bundle_cache.exists(name)) map_bundle_cache.delete(name);
+	if (map_parsed_lines_cache.exists(name)) map_parsed_lines_cache.delete(name);
+	if (g_map_states.exists(name)) g_map_states.delete(name);
+
+	if (file_exists(MAPS_DAT_PATH) || file_exists("maps.dat"))
+	{
+		encrypt_all_maps();
+	}
+	return true;
+}
+
+bool is_map_encrypted(const string&in name)
+{
+	if (SCRIPT_COMPILED) return true;
+	if (file_exists(MAPS_DAT_PATH) || file_exists("data/maps.dat") || file_exists("maps.dat")) return true;
+	if (name != "")
+	{
+		if (file_exists(MAP_DIR + "/" + name + ".map.dat") || file_exists("data/maps/" + name + ".map.dat") || file_exists("maps/" + name + ".map.dat")) return true;
+		if (!file_exists(MAP_DIR + "/" + name + ".map") && !file_exists("maps/" + name + ".map")) return true;
+	}
+	return false;
+}
+
+void build_platform()
+{
+	string disallowed_nums = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ `!@#$%^&*()[]{};:'\"\\|,<>?_/.+=~";
+	string[] platform_dirs = get_map_sound_folders("builder/construction/platforms/*");
+
+	// Collect all surface options: sound folders and materials
+	load_all_items_config();
+	string[] all_platform_options;
+	for (uint i = 0; i < platform_dirs.length(); i++)
+	{
+		all_platform_options.insert_last(platform_dirs[i]);
+	}
+	for (uint i = 0; i < item_registry.length(); i++)
+	{
+		if (item_registry[i].category == "materials" && all_platform_options.find(item_registry[i].id) == -1)
+		{
+			all_platform_options.insert_last(item_registry[i].id);
+		}
+	}
+	all_platform_options.sort_ascending();
+
+	audio_form f;
+	f.create_window("Add Platform", false, true, false);
+	int i_minx = f.create_input_box("Minimum X", "" + minx);
+	int i_maxx = f.create_input_box("Maximum X", "" + maxx);
+	int i_miny = f.create_input_box("Minimum Y", "" + miny);
+	int i_maxy = f.create_input_box("Maximum Y", "" + maxy);
+	int i_minz = f.create_input_box("Z Level", "" + minz);
+	int i_maxz = f.create_input_box("Max Z Level", "" + maxz);
+	int i_custom_tile = f.create_input_box("Custom Material or Tile Name (leave empty to use selected from list below)", "");
+	f.set_disallowed_chars(i_minx, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_maxx, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_miny, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_maxy, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_minz, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_maxz, "0123456789-", true, "Numbers only.");
+
+	int tile_ctrl = f.create_list("Surface Texture or Material (Space to preview)");
+	for (uint i = 0; i < all_platform_options.length(); i++)
+	{
+		string p_name = all_platform_options[i];
+		string display_name = p_name;
+		if (is_deep_water_tile_name(p_name))
+			display_name += " [Deep Water - Dive Only]";
+		else if (is_shallow_water_tile_name(p_name))
+			display_name += " [Shallow Water - Walkable]";
+		else
+		{
+			item_data@ mat_it = get_item_data(p_name);
+			if (mat_it !is null && mat_it.category == "materials")
+			{
+				display_name += " [Material: " + mat_it.name + "]";
+			}
+		}
+		f.add_list_item(tile_ctrl, display_name);
+	}
+
+
+	int btn_ok = f.create_button("Add Platform", true);
+	int btn_cancel = f.create_button("Cancel", false, true);
+	f.set_default_controls(btn_ok, btn_cancel);
+	f.focus_silently(i_minx);
+
+	int[] input_boxes = {i_minx, i_maxx, i_miny, i_maxy, i_minz, i_maxz, i_custom_tile};
+	while (true)
+	{
+		wait(5);
+		f.monitor();
+		update_form_input_keyboard_sound(f, input_boxes);
+		if (key_down(KEY_SPACE) && f.get_current_focus() == tile_ctrl)
+		{
+			int pos = f.get_list_position(tile_ctrl);
+			if (pos >= 0 && pos < int(all_platform_options.length()))
+			{
+				string opt_name = all_platform_options[pos];
+				string snd = get_platform_sound(opt_name, "step");
+				if (snd == "")
+				{
+					item_data@ it = get_item_data(opt_name);
+					if (it !is null && it.sound_pickup != "") snd = get_sound_path(it.sound_pickup);
+				}
+				if (snd == "") snd = get_platform_sound("stone", "step");
+				if (snd != "" && builder_preview_sound.load(snd))
+				{
+					builder_preview_sound.play();
+				}
+			}
+			wait(150);
+		}
+
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(btn_cancel))
+		{
+			builder_preview_sound.stop();
+			speak("canceled");
+			return;
+		}
+
+		if (f.is_pressed(btn_ok))
+		{
+			string tx1 = f.get_text(i_minx);
+			string tx2 = f.get_text(i_maxx);
+			string ty1 = f.get_text(i_miny);
+			string ty2 = f.get_text(i_maxy);
+			string tz1 = f.get_text(i_minz);
+			string tz2 = f.get_text(i_maxz);
+			if (tx1 == "" || tx2 == "" || ty1 == "" || ty2 == "" || tz1 == "" || tz2 == "")
+			{
+				speak("Coordinates cannot be empty.");
+				continue;
+			}
+			int x1 = int(string_to_number(tx1));
+			int x2 = int(string_to_number(tx2));
+			int y1 = int(string_to_number(ty1));
+			int y2 = int(string_to_number(ty2));
+			int z1 = int(string_to_number(tz1));
+			int z2 = int(string_to_number(tz2));
+			int pos = f.get_list_position(tile_ctrl);
+			string custom_mat = f.get_text(i_custom_tile).trim_whitespace();
+			string tile = (custom_mat != "") ? custom_mat : ((pos >= 0 && pos < int(all_platform_options.length())) ? all_platform_options[pos] : "grass");
+
+			builder_preview_sound.stop();
+			string line = "platform:" + x1 + ":" + x2 + ":" + y1 + ":" + y2 + ":" + z1 + ":" + z2 + ":" + tile;
+			save_to_map(line);
+			return;
+		}
+	}
+}
+
+void build_wall()
+{
+	string disallowed_nums = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ `!@#$%^&*()[]{};:'\"\\|,<>?_/.+=~";
+	string[] wall_dirs = get_map_sound_folders("builder/construction/walls/*");
+
+	audio_form f;
+	f.create_window("Add Wall", false, true, false);
+	int i_minx = f.create_input_box("Minimum X", "" + minx);
+	int i_maxx = f.create_input_box("Maximum X", "" + maxx);
+	int i_miny = f.create_input_box("Minimum Y", "" + miny);
+	int i_maxy = f.create_input_box("Maximum Y", "" + maxy);
+	int i_minz = f.create_input_box("Minimum Z", "" + minz);
+	int i_maxz = f.create_input_box("Maximum Z", "" + maxz);
+	f.set_disallowed_chars(i_minx, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_maxx, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_miny, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_maxy, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_minz, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_maxz, "0123456789-", true, "Numbers only.");
+
+	int wall_ctrl = f.create_list("Wall Texture (Space to preview)");
+	for (uint i = 0; i < wall_dirs.length(); i++)
+		f.add_list_item(wall_ctrl, wall_dirs[i]);
+
+	int btn_ok = f.create_button("Add Wall", true);
+	int btn_cancel = f.create_button("Cancel", false, true);
+	f.set_default_controls(btn_ok, btn_cancel);
+	f.focus_silently(i_minx);
+
+	int[] input_boxes = {i_minx, i_maxx, i_miny, i_maxy, i_minz, i_maxz};
+	while (true)
+	{
+		wait(5);
+		f.monitor();
+		update_form_input_keyboard_sound(f, input_boxes);
+		if (key_down(KEY_SPACE) && f.get_current_focus() == wall_ctrl)
+		{
+			int pos = f.get_list_position(wall_ctrl);
+			if (pos >= 0 && pos < int(wall_dirs.length()))
+			{
+				string snd = get_wall_sound(wall_dirs[pos], "bump");
+				if (snd != "" && builder_preview_sound.load(snd))
+				{
+					builder_preview_sound.play();
+				}
+			}
+			wait(150);
+		}
+
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(btn_cancel))
+		{
+			builder_preview_sound.stop();
+			speak("canceled");
+			return;
+		}
+
+		if (f.is_pressed(btn_ok))
+		{
+			string tx1 = f.get_text(i_minx);
+			string tx2 = f.get_text(i_maxx);
+			string ty1 = f.get_text(i_miny);
+			string ty2 = f.get_text(i_maxy);
+			string tz1 = f.get_text(i_minz);
+			string tz2 = f.get_text(i_maxz);
+			if (tx1 == "" || tx2 == "" || ty1 == "" || ty2 == "" || tz1 == "" || tz2 == "")
+			{
+				speak("Coordinates cannot be empty.");
+				continue;
+			}
+			int x1 = int(string_to_number(tx1));
+			int x2 = int(string_to_number(tx2));
+			int y1 = int(string_to_number(ty1));
+			int y2 = int(string_to_number(ty2));
+			int z1 = int(string_to_number(tz1));
+			int z2 = int(string_to_number(tz2));
+			int pos = f.get_list_position(wall_ctrl);
+			string wtile = (pos >= 0 && pos < int(wall_dirs.length())) ? wall_dirs[pos] : "wallconcrete";
+
+			builder_preview_sound.stop();
+			save_to_map("wall:" + x1 + ":" + x2 + ":" + y1 + ":" + y2 + ":" + z1 + ":" + z2 + ":" + wtile);
+			return;
+		}
+	}
+}
+
+void build_safe_zone()
+{
+	string disallowed_nums = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ `!@#$%^&*()[]{};:'\"\\|,<>?_/.+=~";
+
+	audio_form f;
+	f.create_window("Add Safe Zone", false, true, false);
+	int i_minx = f.create_input_box("Minimum X", "" + minx);
+	int i_maxx = f.create_input_box("Maximum X", "" + maxx);
+	int i_miny = f.create_input_box("Minimum Y", "" + miny);
+	int i_maxy = f.create_input_box("Maximum Y", "" + maxy);
+	int i_minz = f.create_input_box("Minimum Z", "" + minz);
+	int i_maxz = f.create_input_box("Maximum Z", "" + maxz);
+	f.set_disallowed_chars(i_minx, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_maxx, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_miny, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_maxy, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_minz, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_maxz, "0123456789-", true, "Numbers only.");
+	int btn_ok = f.create_button("Add Safe Zone", true);
+	int btn_cancel = f.create_button("Cancel", false, true);
+	f.set_default_controls(btn_ok, btn_cancel);
+	f.focus_silently(i_minx);
+
+	int[] input_boxes = {i_minx, i_maxx, i_miny, i_maxy, i_minz, i_maxz};
+	while (true)
+	{
+		wait(5);
+		f.monitor();
+		update_form_input_keyboard_sound(f, input_boxes);
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(btn_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+		if (f.is_pressed(btn_ok))
+		{
+			string tx1 = f.get_text(i_minx);
+			string tx2 = f.get_text(i_maxx);
+			string ty1 = f.get_text(i_miny);
+			string ty2 = f.get_text(i_maxy);
+			string tz1 = f.get_text(i_minz);
+			string tz2 = f.get_text(i_maxz);
+			if (tx1 == "" || tx2 == "" || ty1 == "" || ty2 == "" || tz1 == "" || tz2 == "")
+			{
+				speak("Coordinates cannot be empty.");
+				continue;
+			}
+			save_to_map("safezone:" + tx1 + ":" + tx2 + ":" + ty1 + ":" + ty2 + ":" + tz1 + ":" + tz2);
+			return;
+		}
+	}
+}
+
+void build_text_zone()
+{
+	string disallowed_nums = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ `!@#$%^&*()[]{};:'\"\\|,<>?_/.+=~";
+
+	audio_form f;
+	f.create_window("Add Text Zone", false, true, false);
+	int i_minx = f.create_input_box("Minimum X", "" + minx);
+	int i_maxx = f.create_input_box("Maximum X", "" + maxx);
+	int i_miny = f.create_input_box("Minimum Y", "" + miny);
+	int i_maxy = f.create_input_box("Maximum Y", "" + maxy);
+	int i_minz = f.create_input_box("Minimum Z", "" + minz);
+	int i_maxz = f.create_input_box("Maximum Z", "" + maxz);
+	int i_text = f.create_input_box("Zone Name / Announcement", "Town Square");
+	f.set_disallowed_chars(i_minx, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_maxx, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_miny, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_maxy, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_minz, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_maxz, "0123456789-", true, "Numbers only.");
+	int btn_ok = f.create_button("Add Zone", true);
+	int btn_cancel = f.create_button("Cancel", false, true);
+	f.set_default_controls(btn_ok, btn_cancel);
+	f.focus_silently(i_text);
+
+	int[] input_boxes = {i_minx, i_maxx, i_miny, i_maxy, i_minz, i_maxz, i_text};
+	while (true)
+	{
+		wait(5);
+		f.monitor();
+		update_form_input_keyboard_sound(f, input_boxes);
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(btn_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+		if (f.is_pressed(btn_ok))
+		{
+			string ztxt = f.get_text(i_text);
+			if (ztxt == "")
+			{
+				speak("Zone name cannot be empty.");
+				continue;
+			}
+			string tx1 = f.get_text(i_minx);
+			string tx2 = f.get_text(i_maxx);
+			string ty1 = f.get_text(i_miny);
+			string ty2 = f.get_text(i_maxy);
+			string tz1 = f.get_text(i_minz);
+			string tz2 = f.get_text(i_maxz);
+			if (tx1 == "" || tx2 == "" || ty1 == "" || ty2 == "" || tz1 == "" || tz2 == "")
+			{
+				speak("Coordinates cannot be empty.");
+				continue;
+			}
+			save_to_map("zone:" + tx1 + ":" + tx2 + ":" + ty1 + ":" + ty2 + ":" + tz1 + ":" + tz2 + ":" + ztxt);
+			return;
+		}
+	}
+}

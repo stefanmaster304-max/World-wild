@@ -1,0 +1,469 @@
+void push_playing_music_volume(sound@ snd)
+{
+	if (@snd == null) return;
+	if (!snd.active) return;
+	snd.set_position(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+}
+
+string menu_music_choice = "random";
+
+string[] get_menu_music_list()
+{
+	string[] list;
+	string[]@ files = find_files("sounds/menu sounds/*");
+	if (files !is null)
+	{
+		for (uint i = 0; i < files.length(); i++)
+		{
+			string fn = files[i];
+			string fn_lower = string_to_lower_case(fn);
+			if (string_starts_with(fn_lower, "menumus") || string_starts_with(fn_lower, "menu_mus") || string_starts_with(fn_lower, "menu music"))
+			{
+				if (string_ends_with(fn_lower, ".ogg") || string_ends_with(fn_lower, ".wav") || string_ends_with(fn_lower, ".mp3") || string_ends_with(fn_lower, ".flac") || string_ends_with(fn_lower, ".opus"))
+				{
+					if (list.find(fn) == -1)
+					{
+						list.insert_last(fn);
+					}
+				}
+			}
+		}
+	}
+	if (list.length() == 0 && file_exists("sounds/menu sounds/menumus.ogg"))
+	{
+		list.insert_last("menumus.ogg");
+	}
+	list.sort_ascending();
+	return list;
+}
+
+string get_active_menu_music()
+{
+	string[] tracks = get_menu_music_list();
+	if (tracks.length() == 0) return "";
+
+	if (menu_music_choice == "random" || menu_music_choice == "")
+	{
+		int idx = random(0, tracks.length() - 1);
+		return "sounds/menu sounds/" + tracks[idx];
+	}
+	else
+	{
+		string target = menu_music_choice;
+		if (string_starts_with(target, "sounds/menu sounds/"))
+		{
+			target = target.substr(19);
+		}
+		if (file_exists("sounds/menu sounds/" + target))
+		{
+			return "sounds/menu sounds/" + target;
+		}
+		if (tracks.length() > 0)
+		{
+			return "sounds/menu sounds/" + tracks[0];
+		}
+		return "";
+	}
+}
+
+void play_main_menu_music()
+{
+	string mpath = get_active_menu_music();
+	m.add_music(mpath);
+	m.play_music();
+}
+
+void fade_main_menu_music(double delay = 15)
+{
+	m.fade_music(int(delay));
+}
+
+void stop_main_menu_music()
+{
+	m.stop_music();
+}
+
+dynamic_menu_pro m;
+void setupmenu(bool music=false)
+{
+	m.reset(false);
+	m.wrap = (wrap_disabled == 0);
+	m.enable_up_and_down=true;
+	m.enable_home_and_end=true;
+	m.enable_first_letter_navigation=true;
+	if(music)
+	{
+		string mpath = get_active_menu_music();
+		m.add_music(mpath);
+		m.music.volume = float(menu_music_volume);
+	}
+	if(!music) m.add_music("");
+	m.click_sound="sounds/menu sounds/click.ogg";
+	m.enter_sound="sounds/menu sounds/enter.ogg";
+	m.open_sound="sounds/menu sounds/open.ogg";
+	m.edge_sound="sounds/menu sounds/edge.ogg";
+	m.wrap_sound="sounds/menu sounds/wrap.ogg";
+}
+
+void play_story_sequence()
+{
+	string story_path = find_sound_in_disk("sounds/misc/story.ogg");
+	if (story_path == "") story_path = get_sound_path("misc/story.ogg;story.ogg");
+	if (story_path == "" || !file_exists(story_path))
+	{
+		speak("Story audio file not found.");
+		return;
+	}
+
+	m.stop_music();
+	speak("Playing story. You cannot skip while the story is playing.");
+
+	sound story_snd;
+	if (story_snd.load(story_path))
+	{
+		story_snd.play();
+		while (story_snd.playing)
+		{
+			wait(10);
+		}
+	}
+	else
+	{
+		speak("Error loading story audio.");
+	}
+
+	speak("Story finished.");
+}
+
+void mainmenu()
+{
+	p.update_listener_3d(0, 0, 0, 0);
+	sp.update_listener_3d(0, 0, 0, 0);
+	itempool.update_listener_3d(0, 0, 0, 0);
+	dp.update_listener_3d(0, 0, 0, 0);
+
+	while (true)
+	{
+		setupmenu(true);
+		m.add_item_tts("Play","play");
+		m.add_item_tts("Listen to story","story");
+		m.add_item_tts("Options","options");
+		m.add_item_tts("Exit","exit");
+		int mres=m.run("Main Menu",true);
+		string menuitem=m.get_item_name(mres);
+		if (mres <= 0 or menuitem=="exit")
+		{
+			m.fade_music(15);
+			exit();
+			return;
+		}
+		if (menuitem=="play")
+		{
+			string[] available_maps = get_available_maps();
+			if (available_maps.length() == 0)
+			{
+				speak("No maps available.");
+				p.play_stationary(get_sound_path("misc/error.ogg"), false);
+				continue;
+			}
+
+			init();
+
+			string saved_map;
+			int lx = 0, ly = 0, lz = 0, lfacing = 0;
+			load_location(saved_map, lx, ly, lz, lfacing);
+
+			string target_map = "";
+			bool saved_map_valid = (saved_map != "" && available_maps.find(saved_map) >= 0 && map_exists_on_disk(saved_map));
+
+			if (saved_map_valid)
+			{
+				target_map = saved_map;
+			}
+			else
+			{
+				// Saved map does not exist or was deleted. Automatically select the next available map
+				target_map = available_maps[0];
+				mapname = target_map;
+				lx = 1;
+				ly = 0;
+				lz = 0;
+				lfacing = 0;
+				me.x = 1;
+				me.y = 0;
+				me.z = 0;
+				facing = 0;
+				save_location();
+			}
+
+			// Validate if player can enter target_map. If requirements are not met, cycle through available maps
+			if (!can_enter_map(target_map, false))
+			{
+				bool found_alternative = false;
+				for (uint mi = 0; mi < available_maps.length(); mi++)
+				{
+					if (can_enter_map(available_maps[mi], false))
+					{
+						target_map = available_maps[mi];
+						mapname = target_map;
+						lx = 1; ly = 0; lz = 0; lfacing = 0;
+						me.x = 1; me.y = 0; me.z = 0; facing = 0;
+						save_location();
+						found_alternative = true;
+						break;
+					}
+				}
+				if (!found_alternative)
+				{
+					speak("No maps available matching your level or resurrection requirements.");
+					continue;
+				}
+			}
+
+			m.fade_music(15);
+			play("spawn");
+			me.x = lx;
+			me.y = ly;
+			me.z = lz;
+			facing = lfacing;
+			p.update_listener_3d(me.x, me.y, me.z, double(facing));
+			sp.update_listener_3d(me.x, me.y, me.z, double(facing));
+			itempool.update_listener_3d(me.x, me.y, me.z, double(facing));
+			dp.update_listener_3d(me.x, me.y, me.z, double(facing));
+			initial_session_welcome_played = false;
+			draw_map(target_map);
+			announce_zone_on_load();
+			game();
+			p.update_listener_3d(0, 0, 0, 0);
+			sp.update_listener_3d(0, 0, 0, 0);
+			itempool.update_listener_3d(0, 0, 0, 0);
+			dp.update_listener_3d(0, 0, 0, 0);
+		}
+		else if (menuitem=="story")
+		{
+			play_story_sequence();
+		}
+		else if (menuitem=="options")
+		{
+			m.fade_music(15);
+			optionsmenu();
+		}
+	}
+}
+int menuquestion(string q)
+{
+setupmenu(false);
+m.add_item_tts("yes");
+m.add_item_tts("no");
+int mres=m.run(q,true);
+if (mres==1)
+{
+return 1;
+}
+else
+{
+return 2;
+}
+}
+
+void select_menu_music_dialog()
+{
+	string[] tracks = get_menu_music_list();
+
+	string cur = menu_music_choice;
+	if (string_starts_with(cur, "sounds/menu sounds/"))
+	{
+		cur = cur.substr(19);
+	}
+
+	audio_form mf;
+	mf.create_window("Select Menu Music", false, true, false);
+	int list = mf.create_list("Music tracks", 0, false, false);
+
+	mf.add_list_item(list, "Random music", "random");
+	int cur_pos = 0;
+	for (uint i = 0; i < tracks.length(); i++)
+	{
+		string fn = tracks[i];
+		mf.add_list_item(list, fn, fn);
+		if (cur == fn)
+		{
+			cur_pos = int(i + 1);
+		}
+	}
+	mf.set_list_position(list, cur_pos, false);
+
+	int b_ok = mf.create_button("&Select", true);
+	int b_cancel = mf.create_button("&Cancel", false, true);
+
+	sound preview_sound;
+	int last_focused_idx = -1;
+	mf.focus(list);
+
+	while (true)
+	{
+		wait(5);
+		mf.monitor();
+
+		int cur_idx = mf.get_list_position(list);
+		if (cur_idx >= 0 && cur_idx != last_focused_idx)
+		{
+			last_focused_idx = cur_idx;
+			preview_sound.close();
+			if (cur_idx > 0 && cur_idx <= int(tracks.length()))
+			{
+				string fn = tracks[cur_idx - 1];
+				string full_p = "sounds/menu sounds/" + fn;
+				if (file_exists(full_p))
+				{
+					preview_sound.load(full_p);
+					preview_sound.play_looped();
+				}
+			}
+		}
+
+		if (key_pressed(KEY_ESCAPE) || mf.is_pressed(b_cancel))
+		{
+			preview_sound.close();
+			speak("canceled");
+			return;
+		}
+
+		if (mf.is_pressed(b_ok) || key_pressed(KEY_RETURN) || key_pressed(KEY_NUMPAD_ENTER))
+		{
+			int pos = mf.get_list_position(list);
+			if (pos == 0)
+			{
+				menu_music_choice = "random";
+				speak("Menu music set to random.");
+			}
+			else if (pos > 0 && pos <= int(tracks.length()))
+			{
+				menu_music_choice = tracks[pos - 1];
+				speak("Menu music set to " + menu_music_choice + ".");
+			}
+			preview_sound.close();
+			writeprefs();
+			return;
+		}
+	}
+}
+
+void optionsmenu()
+{
+audio_form form;
+form.create_window("Options", false);
+int wrap_box = form.create_checkbox("Disable menu wrapping", wrap_disabled == 1);
+int footdrag_box = form.create_checkbox("Foot dragging sound when standing still", footdrag_enabled == 1);
+int confirm_exit_box = form.create_checkbox("Confirm before exiting with Escape", confirm_exit == 1);
+int pain_sounds_box = form.create_checkbox("Play pain sounds when receiving attacks or damage", enable_player_pain_sounds == 1);
+int music_btn = form.create_button("Select Menu Music", false);
+int kbsound_btn = form.create_button("Select keyboard typing sound theme", false);
+int kb_btn = form.create_button("Keybindings", false);
+int save_btn = form.create_button("Save", true);
+int cancel_btn = form.create_button("Cancel", false, true);
+
+form.focus(wrap_box);
+
+int last_wrap_box = form.is_checked(wrap_box) ? 1 : 0;
+int last_footdrag_box = form.is_checked(footdrag_box) ? 1 : 0;
+int last_confirm_exit_box = form.is_checked(confirm_exit_box) ? 1 : 0;
+int last_pain_box = form.is_checked(pain_sounds_box) ? 1 : 0;
+bool prefs_dirty = false;
+
+while (true)
+{
+wait(5);
+form.monitor();
+
+int cur_wrap = form.is_checked(wrap_box) ? 1 : 0;
+if (cur_wrap != last_wrap_box)
+{
+last_wrap_box = cur_wrap;
+wrap_disabled = cur_wrap;
+prefs_dirty = true;
+}
+int cur_footdrag = form.is_checked(footdrag_box) ? 1 : 0;
+if (cur_footdrag != last_footdrag_box)
+{
+last_footdrag_box = cur_footdrag;
+footdrag_enabled = cur_footdrag;
+prefs_dirty = true;
+}
+int cur_confirm = form.is_checked(confirm_exit_box) ? 1 : 0;
+if (cur_confirm != last_confirm_exit_box)
+{
+last_confirm_exit_box = cur_confirm;
+confirm_exit = cur_confirm;
+prefs_dirty = true;
+}
+int cur_pain = form.is_checked(pain_sounds_box) ? 1 : 0;
+if (cur_pain != last_pain_box)
+{
+last_pain_box = cur_pain;
+enable_player_pain_sounds = cur_pain;
+prefs_dirty = true;
+}
+if (prefs_dirty)
+{
+writeprefs();
+prefs_dirty = false;
+}
+
+if (form.is_pressed(music_btn))
+{
+form.reset();
+select_menu_music_dialog();
+optionsmenu();
+break;
+}
+
+if (form.is_pressed(kbsound_btn))
+{
+form.reset();
+select_keyboard_sound_theme_dialog();
+optionsmenu();
+break;
+}
+
+if (form.is_pressed(kb_btn))
+{
+form.reset();
+keybinds_menu();
+optionsmenu();
+break;
+}
+
+
+if (form.is_pressed(cancel_btn))
+{
+form.reset();
+return;
+}
+
+if (form.is_pressed(save_btn))
+{
+writeprefs();
+form.reset();
+return;
+}
+}
+}
+void storemenu()
+{
+	store_cfg@ s;
+	if (current_store_id != "")
+	{
+		@s = get_store(current_store_id);
+	}
+	if (s is null)
+	{
+		speak("Store not found: " + current_store_id);
+		return;
+	}
+	// TW-style cart store menu (offline): up/down navigate, right/left add or
+	// remove from the cart, shift+enter for exact quantity, F1 balances, F2 cart
+	// total, enter buys, escape exits. Each item pays in its own configured
+	// currency (gold / coins / dollars).
+	store_menu_cart(s);
+}

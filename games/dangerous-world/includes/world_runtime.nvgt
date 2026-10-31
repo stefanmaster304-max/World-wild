@@ -1,0 +1,37 @@
+// world_runtime.nvgt - Unified background world tick system.
+// Keeps the game world, audio sources, and environment
+// active and updating even when menus, construction dialogs, or submenus are open.
+
+bool is_in_game = false;
+
+void update_game_world()
+{
+	if (!is_in_game || mapname == "") return;
+	doorcheckloop();
+	staircasecheckloop();
+	szloop();
+	checkloc();
+	text_square_check();
+	checkpoints_check();
+	ground_item_loop();
+	map_item_spawner_loop();
+	bodyfallloop();
+	tracking_loop();
+	broadcast_loop();
+	update_sources();
+	if (autosave_timer.elapsed >= 30000)
+	{
+		autosave_timer.restart();
+		save_location();
+	}
+	p.update_listener_3d(me.x, me.y, me.z, double(facing));
+	sp.update_listener_3d(me.x, me.y, me.z, double(facing));
+	itempool.update_listener_3d(me.x, me.y, me.z, double(facing));
+	dp.update_listener_3d(me.x, me.y, me.z, double(facing));
+}
+
+void world_wait(int ms = 5)
+{
+	wait(ms);
+	update_game_world();
+}

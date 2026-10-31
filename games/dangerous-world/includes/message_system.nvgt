@@ -1,0 +1,59 @@
+// Periodic announcements, delivered every 15 minutes while the world is active.
+const string BROADCAST_FILE = "settings/broadcasts.txt";
+const int BROADCAST_INTERVAL_MS = 15 * 60 * 1000;
+
+timer broadcast_timer;
+string[] broadcast_messages;
+bool broadcast_initialized = false;
+sound broadcast_sound;
+
+void ensure_broadcast_file()
+{
+	if (!directory_exists("settings")) directory_create("settings");
+	if (file_exists(BROADCAST_FILE)) return;
+	file f;
+	if (f.open(BROADCAST_FILE, "w"))
+	{
+		f.write("Tip: Check the map and listen for nearby sounds before moving on.\r\n");
+		f.write("Announcement: Explore carefully and keep your equipment ready.\r\n");
+		f.write("Tip: Visit shops to restock useful equipment.\r\n");
+		f.close();
+	}
+}
+
+void load_broadcast_messages()
+{
+	broadcast_messages.resize(0);
+	ensure_broadcast_file();
+	file f;
+	if (!f.open(BROADCAST_FILE, "r")) return;
+	string content = f.read(f.get_size());
+	f.close();
+	string[]@ lines = string_split(string_replace(content, "\r", "", true), "\n", true);
+	if (lines is null) return;
+	for (uint i = 0; i < lines.length(); i++)
+	{
+		string line = lines[i].trim_whitespace();
+		if (line != "" && !string_starts_with(line, "#") && !string_starts_with(line, ";"))
+			broadcast_messages.insert_last(line);
+	}
+}
+
+void init_broadcast_system()
+{
+	load_broadcast_messages();
+	broadcast_timer.restart();
+	broadcast_initialized = true;
+}
+
+void broadcast_loop()
+{
+	if (!broadcast_initialized) init_broadcast_system();
+	if (broadcast_timer.elapsed < BROADCAST_INTERVAL_MS) return;
+	broadcast_timer.restart();
+	if (broadcast_messages.length() == 0) load_broadcast_messages();
+	if (broadcast_messages.length() == 0) return;
+	string notification = get_sound_path("misc/notify.ogg;notify.ogg");
+	if (notification != "" && broadcast_sound.load(notification)) broadcast_sound.play();
+	speak(broadcast_messages[random(0, int(broadcast_messages.length()) - 1)]);
+}

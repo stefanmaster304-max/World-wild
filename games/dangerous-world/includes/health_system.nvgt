@@ -1,0 +1,50 @@
+// Health-only survival and the central death sequence.
+bool check_and_use_anti_death_card()
+{
+	string[] keys = get_all_inv_keys();
+	for (uint i = 0; i < keys.length(); i++)
+	{
+		item_data@ item = get_item_data(keys[i]);
+		if (item is null || get_item_count(keys[i]) <= 0) continue;
+		if (item.subtype != "anti_death_card" && item.id != "anti_death_card") continue;
+		give(keys[i], -1);
+		health = maxhealth;
+		string sound_path = (item.sound_use != "") ? get_sound_path(item.sound_use) : get_sound_path("misc/deathfree.ogg");
+		if (sound_path != "" && file_exists(sound_path)) p.play_stationary(sound_path, false);
+		speak("You have consumed an anti-death card.");
+		save_location();
+		return true;
+	}
+	return false;
+}
+
+void player_die(const string&in cause_message)
+{
+	if (check_and_use_anti_death_card()) return;
+	if (cause_message != "") speak(cause_message);
+	string death_path = pick_player_death_sound();
+	sound death_sound;
+	if (death_path != "" && death_sound.load(death_path))
+	{
+		death_sound.play();
+		while (death_sound.playing) wait(5);
+	}
+	string fall_path = get_platform_sound(gmt(), "fall");
+	if (fall_path == "") fall_path = get_platform_sound(gmt(), "hardland");
+	if (fall_path == "") fall_path = get_player_sound("fall");
+	if (fall_path != "" && file_exists(fall_path))
+	{
+		sound fall_sound;
+		if (fall_sound.load(fall_path))
+		{
+			fall_sound.play();
+			while (fall_sound.playing) wait(5);
+		}
+	}
+	else wait(300);
+	sp.destroy_all();
+	dp.destroy_all();
+	clear_location();
+	reset();
+	mainmenu();
+}

@@ -1,0 +1,20 @@
+map: The North Ocean
+minx: 0
+maxx: 500
+miny: 0
+maxy: 500
+minz: 0
+maxz: 20
+minlevel: 0
+maxlevel: 0
+minresurrection: 0
+maxresurrection: 0
+travelpoint:0:500:0:0:0:10:main:0:500:500:500:0:0:none:1:0:0:0:1
+platform:0:500:0:10:0:0:mud
+platform:0:500:11:500:0:0:swimming
+zone:0:500:0:10:0:10:Mud near the North Ocean
+source:0:500:0:500:0:20:ocean:0:100:1:7:0:19:0:10
+source:0:500:0:500:0:20:deepocean:0:100:1:19:0:7:0:10
+zone:0:500:11:500:0:10:The North Ocean
+ambience:0:500:0:500:0:20:Folk Celtic Music - Vindsvept - Wildkin Glade:0:100:1:7:0:19:0:10
+ambience:0:500:0:500:0:20:Celtic Folk Music - Vindsvept - Mourning:0:100:1:19:0:7:0:10

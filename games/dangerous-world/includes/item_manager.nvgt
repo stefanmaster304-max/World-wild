@@ -1,0 +1,715 @@
+audio_form form;
+string string_trim_sides(string s) { return s.trim_whitespace(); }
+
+// item_manager.nvgt - Full GUI/Form management and creation interface for items
+// (Consumables, Ammo, Packages, Equipment).
+
+void item_chooser()
+{
+	while (true)
+	{
+		wait(5);
+		audio_form iform;
+		iform.create_window("items manager", false, true, false);
+		int list = iform.create_list("select an action", 0, false, true);
+		iform.add_list_item(list, "Create New Item", "add");
+		iform.add_list_item(list, "Edit Existing Item", "edit");
+		iform.add_list_item(list, "View Item Properties", "view");
+		iform.add_list_item(list, "Remove Item", "remove");
+		iform.add_list_item(list, "Give Item To Player Inventory", "give");
+		int b_select = iform.create_button("&select", true);
+		int b_back = iform.create_button("&back", false, true);
+		iform.focus(list);
+
+		while (true)
+		{
+			wait(5);
+			update_game_world();
+			iform.monitor();
+
+			if (key_pressed(KEY_ESCAPE) || iform.is_pressed(b_back))
+			{
+				return;
+			}
+
+			if (iform.is_pressed(b_select))
+			{
+				int pos = iform.get_list_position(list);
+				if (pos == 0) add_item_flow();
+				else if (pos == 1) item_list_flow(false);
+				else if (pos == 2) item_list_flow(true);
+				else if (pos == 3) remove_item_flow();
+				else if (pos == 4) give_item_flow();
+				break;
+			}
+		}
+	}
+}
+
+void item_list_flow(bool view_only)
+{
+	load_all_items_config();
+	if (item_registry.length() == 0)
+	{
+		dlg("No items found.");
+		return;
+	}
+
+	audio_form lf;
+	lf.create_window(view_only ? "view item" : "edit item", false, true, false);
+	int list = lf.create_list("available items", 0, false, true);
+
+	for (uint i = 0; i < item_registry.length(); i++)
+	{
+		string display = item_registry[i].name + " (" + item_registry[i].category + (item_registry[i].subtype != "" ? " - " + item_registry[i].subtype : "") + ")";
+		lf.add_list_item(list, display, item_registry[i].id, -1, false, (i == 0));
+	}
+	int b_ok = lf.create_button(view_only ? "&view" : "&edit", true);
+	int b_cancel = lf.create_button("&cancel", false, true);
+	lf.focus(list);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		lf.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || lf.is_pressed(b_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+
+		if (lf.is_pressed(b_ok))
+		{
+			int pos = lf.get_list_position(list);
+			if (pos >= 0 && pos < int(item_registry.length()))
+			{
+				if (!view_only && is_item_encrypted(item_registry[pos].id))
+				{
+					speak("This item is encrypted and cannot be edited. Please decrypt items first.");
+					dlg("This item is encrypted and cannot be edited. Please decrypt items first.");
+					continue;
+				}
+				item_edit_form(item_registry[pos].id, false, view_only);
+				return;
+			}
+		}
+	}
+}
+
+void remove_item_flow()
+{
+	if (is_item_encrypted())
+	{
+		speak("Items are encrypted and protected. You must decrypt items first.");
+		dlg("Items are encrypted and protected. You must decrypt items first.");
+		return;
+	}
+	load_all_items_config();
+	if (item_registry.length() == 0)
+	{
+		dlg("No items found.");
+		return;
+	}
+
+	audio_form rf;
+	rf.create_window("remove item", false, true, false);
+	int list = rf.create_list("select item to remove", 0, false, true);
+
+	for (uint i = 0; i < item_registry.length(); i++)
+	{
+		string display = item_registry[i].name + " (" + item_registry[i].category + ")";
+		rf.add_list_item(list, display, item_registry[i].id, -1, false, (i == 0));
+	}
+	int b_remove = rf.create_button("&remove", true);
+	int b_cancel = rf.create_button("&cancel", false, true);
+	rf.focus(list);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		rf.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || rf.is_pressed(b_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+
+		if (rf.is_pressed(b_remove))
+		{
+			int pos = rf.get_list_position(list);
+			if (pos >= 0 && pos < int(item_registry.length()))
+			{
+				string iid = item_registry[pos].id;
+				item_data@ it = get_item_data(iid);
+				if (it !is null && menuquestion("Are you sure you want to remove " + it.name + "?") == 1)
+				{
+					delete_item_file(it.id);
+					play("invdelete");
+					speak("Item " + it.name + " removed.");
+				}
+				return;
+			}
+		}
+	}
+}
+
+string item_pick_sound_immediate(string item_id, string action_key, string current_val)
+{
+	string def_cat = "items";
+	if (string_contains(item_id, "shield", 1) > -1 || string_contains(action_key, "shield", 1) > -1)
+	{
+		def_cat = "shield";
+	}
+	return select_sound_by_category_dialog(action_key, current_val, def_cat, true);
+}
+
+string get_snd_count_label(const string&in val)
+{
+	if (val == "") return "";
+	string[]@ parts = string_split(val, ";", true);
+	return " (" + (parts !is null ? string(parts.length()) : "1") + " selected)";
+}
+
+string package_pick_items_form(const string&in current_spec)
+{
+	load_all_items_config();
+
+	string[] item_ids;
+	string[] item_labels;
+
+	for (uint i = 0; i < item_registry.length(); i++)
+	{
+		string iid = item_registry[i].id;
+		if (item_registry[i].category != "packages" && item_ids.find(iid) == -1)
+		{
+			item_ids.insert_last(iid);
+			item_labels.insert_last("[" + item_registry[i].category + "] " + item_registry[i].name + " (" + iid + ")");
+		}
+	}
+
+	dictionary current_map;
+	string[]@ pairs = string_split(current_spec, ";", true);
+	if (pairs !is null)
+	{
+		for (uint p = 0; p < pairs.length(); p++)
+		{
+			string pair = string_trim_sides(pairs[p]);
+			if (pair == "") continue;
+			int col = string_contains(pair, ":", 1);
+			if (col > -1)
+			{
+				string kid = string_trim_sides(string_left(pair, col));
+				current_map.set(kid, true);
+			}
+			else
+			{
+				current_map.set(pair, true);
+			}
+		}
+	}
+
+	audio_form pf;
+	pf.create_window("select package items", false, true, false);
+	int list = pf.create_list("available items to pack", 0, true, true);
+
+	for (uint i = 0; i < item_ids.length(); i++)
+	{
+		string iid = item_ids[i];
+		bool is_checked = current_map.exists(iid);
+		pf.add_list_item(list, item_labels[i], iid, -1, is_checked, false);
+	}
+
+	int b_ok = pf.create_button("&save selection", true);
+	int b_cancel = pf.create_button("&cancel", false, true);
+	pf.focus(list);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		pf.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || pf.is_pressed(b_cancel))
+		{
+			speak("canceled");
+			return current_spec;
+		}
+
+		if (pf.is_pressed(b_ok))
+		{
+			int[]@ checked = pf.get_checked_list_items(list);
+			if (checked is null || checked.length() == 0)
+			{
+				speak("No items selected for package.");
+				return "";
+			}
+
+			string result = "";
+			for (uint c = 0; c < checked.length(); c++)
+			{
+				int idx = checked[c];
+				if (idx >= 0 && idx < int(item_ids.length()))
+				{
+					string id = item_ids[idx];
+					int count = 1;
+					if (result != "") result += ";";
+					result += id + ":" + count;
+				}
+			}
+			speak(checked.length() + " items saved to package.");
+			return result;
+		}
+	}
+	return current_spec;
+}
+
+bool item_edit_form(string item_id, bool is_new, bool view_only, string chosen_cat = "", string chosen_subtype = "")
+{
+	if (!is_new && !view_only && is_item_encrypted(item_id))
+	{
+		speak("This item is encrypted and cannot be edited. Please decrypt items first.");
+		dlg("This item is encrypted and cannot be edited. Please decrypt items first.");
+		return false;
+	}
+
+	item_data@ it = get_item_data(item_id);
+	if (it is null)
+	{
+		@it = @item_data();
+		it.id = item_id;
+		it.name = string_replace(item_id, "_", " ", true);
+		if (chosen_cat != "") it.category = chosen_cat;
+		if (chosen_subtype != "") it.subtype = chosen_subtype;
+	}
+
+	form.reset();
+	form.create_window((is_new ? "add " : (view_only ? "view " : "edit ")) + it.name, false, view_only, false);
+
+	int in_id = -1;
+	if (is_new)
+	{
+		in_id = form.create_input_box("item id (filename)", it.id);
+	}
+	int in_name = form.create_input_box("display name", it.name, "", 0, false, false, view_only);
+	int in_cat = form.create_input_box("category", it.category, "", 0, false, false, true);
+	int in_sub = form.create_input_box("subtype", it.subtype, "", 0, false, false, view_only);
+	int in_desc = form.create_input_box("description", it.description, "", 0, false, false, view_only);
+	int in_mstack = form.create_input_box("max stack", string(it.max_stack > 0 ? it.max_stack : 99), "", 0, false, false, view_only);
+
+	int in_heal = -1;
+	int in_cap = -1;
+	int in_atype = -1;
+	int in_contains = -1;
+	int in_currency_type = -1;
+	int cb_restore_health = -1;
+	int btn_pick_package_items = -1;
+
+	int btn_use = -1;
+	int btn_pickup = -1;
+	int btn_loot = -1;
+	int btn_draw = -1;
+	int btn_hit = -1;
+	int btn_break = -1;
+	int btn_dist_hit = -1;
+	int btn_open = -1;
+	int btn_close = -1;
+
+	if (it.category == "consumables")
+	{
+		cb_restore_health = form.create_checkbox("Restores health", it.restores_health, view_only);
+		in_heal = form.create_input_box("health restore amount", string(it.heal_amount), "", 0, false, false, view_only);
+		btn_use = form.create_button("&use sound" + get_snd_count_label(it.sound_use));
+		btn_open = form.create_button("&open sound" + get_snd_count_label(it.sound_open));
+		btn_close = form.create_button("&close sound" + get_snd_count_label(it.sound_close));
+		btn_loot = form.create_button("&loot sound" + get_snd_count_label(it.sound_loot != "" ? it.sound_loot : it.sound_pickup));
+		btn_draw = form.create_button("&draw sound" + get_snd_count_label(it.sound_draw));
+	}
+	else if (it.category == "ammo")
+	{
+		in_cap = form.create_input_box("ammo capacity (rounds / capacity count)", string(it.capacity), "", 0, false, false, view_only);
+		in_atype = form.create_input_box("ammo type name", it.ammo_type, "", 0, false, false, view_only);
+		btn_loot = form.create_button("&loot sound" + get_snd_count_label(it.sound_loot != "" ? it.sound_loot : it.sound_pickup));
+		btn_draw = form.create_button("&draw sound" + get_snd_count_label(it.sound_draw));
+	}
+	else if (it.category == "packages")
+	{
+		in_contains = form.create_input_box("package contents", it.contains_items, "", 0, false, false, view_only);
+		if (!view_only)
+		{
+			btn_pick_package_items = form.create_button("&select package items");
+		}
+		btn_use = form.create_button("&open sound" + get_snd_count_label(it.sound_use));
+		btn_loot = form.create_button("&loot sound" + get_snd_count_label(it.sound_loot != "" ? it.sound_loot : it.sound_pickup));
+		btn_draw = form.create_button("&draw sound" + get_snd_count_label(it.sound_draw));
+	}
+	else if (it.category == "equipment")
+	{
+		in_cap = form.create_input_box("shield block charges (hits before it breaks)", string(it.capacity > 0 ? it.capacity : 150), "", 0, false, false, view_only);
+		btn_use = form.create_button("&shield activate/equip sound" + get_snd_count_label(it.sound_use));
+		btn_hit = form.create_button("&shield impact/deflect sound" + get_snd_count_label(it.sound_hit));
+		btn_break = form.create_button("&shield break sound" + get_snd_count_label(it.sound_break));
+		btn_dist_hit = form.create_button("&shield distant break/impact sound" + get_snd_count_label(it.sound_distant_hit));
+		btn_loot = form.create_button("&loot sound" + get_snd_count_label(it.sound_loot != "" ? it.sound_loot : it.sound_pickup));
+		btn_draw = form.create_button("&draw sound" + get_snd_count_label(it.sound_draw));
+	}
+	else if (it.category == "currency")
+	{
+		in_currency_type = form.create_list("currency type", 0, false, false);
+		int cur_def = 0;
+		string cur_cur = normalize_currency(it.subtype);
+		if (!is_valid_store_currency(cur_cur)) cur_cur = normalize_currency(it.id);
+		for (uint c = 0; c < store_currencies.length(); c++)
+		{
+			form.add_list_item(in_currency_type, store_currencies[c], store_currencies[c]);
+			if (store_currencies[c] == cur_cur) cur_def = int(c);
+		}
+		form.set_list_position(in_currency_type, cur_def, false);
+		in_cap = form.create_input_box("quantity per pickup", string(it.quantity > 0 ? it.quantity : (it.capacity > 0 ? it.capacity : 100)), "", 0, false, false, view_only);
+		btn_loot = form.create_button("&loot sound" + get_snd_count_label(it.sound_loot != "" ? it.sound_loot : it.sound_pickup));
+		btn_draw = form.create_button("&draw sound" + get_snd_count_label(it.sound_draw));
+	}
+	else if (it.category == "materials")
+	{
+		btn_loot = form.create_button("&loot sound" + get_snd_count_label(it.sound_loot != "" ? it.sound_loot : it.sound_pickup));
+		btn_draw = form.create_button("&draw sound" + get_snd_count_label(it.sound_draw));
+	}
+
+	form.set_disallowed_chars(in_mstack, "0123456789", true, "Numbers only.");
+	if (in_heal != -1) form.set_disallowed_chars(in_heal, "0123456789", true, "Numbers only.");
+	if (in_cap != -1) form.set_disallowed_chars(in_cap, "0123456789", true, "Numbers only.");
+
+	int b_give = -1;
+	if (!view_only)
+	{
+		b_give = form.create_button("&give to inventory");
+	}
+
+	int b_ok = -1;
+	if (!view_only)
+	{
+		b_ok = form.create_button("&save item", true);
+	}
+	int b_cancel = form.create_button("&close", false, true);
+
+	form.focus(is_new ? in_id : in_name);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		form.monitor();
+
+		// Each restore amount field is only shown while its checkbox is
+		// checked. Unchecking a restore option hides the related amount box
+		// Health restoration is the only supported survival effect.
+		if (it.category == "consumables" && cb_restore_health != -1)
+		{
+			bool v_health = form.is_checked(cb_restore_health);
+			form.set_state(in_heal, v_health, v_health);
+		}
+
+		if (key_pressed(KEY_ESCAPE) || (b_cancel != -1 && form.is_pressed(b_cancel)))
+		{
+			speak("canceled");
+			return false;
+		}
+
+		if (form.is_pressed(b_give))
+		{
+			string iid_to_give = (is_new && in_id != -1) ? form.get_text(in_id) : it.id;
+			if (iid_to_give != "")
+			{
+				int amt = (it.category == "packages") ? 1 : 5;
+				give(iid_to_give, amt);
+				speak("Given " + amt + " " + it.name + " to your inventory.");
+			}
+		}
+
+		if (!view_only)
+		{
+			if (btn_pick_package_items != -1 && form.is_pressed(btn_pick_package_items))
+			{
+				string current_spec = form.get_text(in_contains);
+				string chosen_items = package_pick_items_form(current_spec);
+				if (chosen_items != "")
+				{
+					it.contains_items = chosen_items;
+					form.set_text(in_contains, chosen_items);
+					speak("Package items updated.");
+				}
+			}
+
+			if (btn_use != -1 && form.is_pressed(btn_use))
+			{
+				it.sound_use = item_pick_sound_immediate(it.id, "sound_use", it.sound_use);
+				form.set_text(btn_use, "&use sound" + get_snd_count_label(it.sound_use));
+			}
+			if (btn_pickup != -1 && form.is_pressed(btn_pickup))
+			{
+				it.sound_pickup = item_pick_sound_immediate(it.id, "sound_pickup", it.sound_pickup);
+				form.set_text(btn_pickup, "&pickup sound" + get_snd_count_label(it.sound_pickup));
+			}
+			if (btn_loot != -1 && form.is_pressed(btn_loot))
+			{
+				it.sound_loot = item_pick_sound_immediate(it.id, "sound_loot", (it.sound_loot != "" ? it.sound_loot : it.sound_pickup));
+				it.sound_pickup = it.sound_loot;
+				form.set_text(btn_loot, "&loot sound" + get_snd_count_label(it.sound_loot));
+			}
+			if (btn_draw != -1 && form.is_pressed(btn_draw))
+			{
+				it.sound_draw = item_pick_sound_immediate(it.id, "sound_draw", it.sound_draw);
+				form.set_text(btn_draw, "&draw sound" + get_snd_count_label(it.sound_draw));
+			}
+			if (btn_open != -1 && form.is_pressed(btn_open))
+			{
+				it.sound_open = item_pick_sound_immediate(it.id, "sound_open", it.sound_open);
+				form.set_text(btn_open, "&open sound" + get_snd_count_label(it.sound_open));
+			}
+			if (btn_close != -1 && form.is_pressed(btn_close))
+			{
+				it.sound_close = item_pick_sound_immediate(it.id, "sound_close", it.sound_close);
+				form.set_text(btn_close, "&close sound" + get_snd_count_label(it.sound_close));
+			}
+			if (btn_hit != -1 && form.is_pressed(btn_hit))
+			{
+				it.sound_hit = item_pick_sound_immediate(it.id, "sound_hit", it.sound_hit);
+				form.set_text(btn_hit, "&hit sound" + get_snd_count_label(it.sound_hit));
+			}
+			if (btn_break != -1 && form.is_pressed(btn_break))
+			{
+				it.sound_break = item_pick_sound_immediate(it.id, "sound_break", it.sound_break);
+				form.set_text(btn_break, "&break sound" + get_snd_count_label(it.sound_break));
+			}
+			if (btn_dist_hit != -1 && form.is_pressed(btn_dist_hit))
+			{
+				it.sound_distant_hit = item_pick_sound_immediate(it.id, "sound_distant_hit", it.sound_distant_hit);
+				form.set_text(btn_dist_hit, "&distant hit sound" + get_snd_count_label(it.sound_distant_hit));
+			}
+
+			if (b_ok != -1 && form.is_pressed(b_ok))
+			{
+				if (is_new)
+				{
+					string nid = string_trim_sides(form.get_text(in_id));
+					if (nid == "")
+					{
+						speak("Item id cannot be empty.");
+						form.focus(in_id);
+						continue;
+					}
+					it.id = nid;
+				}
+
+				it.name = string_trim_sides(form.get_text(in_name));
+				if (it.name == "") it.name = it.id;
+				it.subtype = string_trim_sides(form.get_text(in_sub));
+				it.description = form.get_text(in_desc);
+				it.max_stack = int(string_to_number(form.get_text(in_mstack)));
+
+				if (it.category == "consumables")
+				{
+					// Each restore amount is only kept for the restore type that is
+					// actually checked; unchecking a type zeroes its amount so a
+					// healing item never saves a hidden health effect.
+					if (cb_restore_health != -1)
+					{
+						it.restores_health = form.is_checked(cb_restore_health);
+						if (!it.restores_health) it.heal_amount = 0;
+					}
+					{
+					}
+					{
+					}
+					if (in_heal != -1 && it.restores_health) it.heal_amount = int(string_to_number(form.get_text(in_heal)));
+				}
+				else if (it.category == "ammo")
+				{
+					if (in_cap != -1) it.capacity = int(string_to_number(form.get_text(in_cap)));
+					if (in_atype != -1) it.ammo_type = form.get_text(in_atype);
+				}
+				else if (it.category == "packages")
+				{
+					if (in_contains != -1) it.contains_items = form.get_text(in_contains);
+				}
+				else if (it.category == "equipment")
+				{
+					// Shield durability is hit-based only (capacity); the
+					// absorption field is not used by equipment.
+					if (in_cap != -1) it.capacity = int(string_to_number(form.get_text(in_cap)));
+					it.heal_amount = 0;
+				}
+				else if (it.category == "currency")
+				{
+					int cpos = form.get_list_position(in_currency_type);
+					if (cpos >= 0 && cpos < int(store_currencies.length())) it.subtype = store_currencies[cpos];
+					if (in_cap != -1) it.quantity = int(string_to_number(form.get_text(in_cap)));
+				}
+
+				if (save_item_config(it))
+				{
+					load_all_items_config();
+					if (get_item_count(it.id) <= 0)
+					{
+						give(it.id, (it.category == "ammo" ? 20 : (it.category == "equipment" ? 1 : 3)));
+					}
+					speak("Item " + it.name + " saved successfully.");
+					return true;
+				}
+				else
+				{
+					speak("Failed to save item config.");
+				}
+			}
+		}
+	}
+	return false;
+}
+
+void add_item_flow()
+{
+	if (is_item_encrypted())
+	{
+		speak("Items are encrypted and protected. You must decrypt items first.");
+		dlg("Items are encrypted and protected. You must decrypt items first.");
+		return;
+	}
+	audio_form cf;
+	cf.create_window("select item category", false, true, false);
+	int list = cf.create_list("categories", 0, false, true);
+
+	for (uint i = 0; i < item_categories.length(); i++)
+	{
+		cf.add_list_item(list, item_categories[i], item_categories[i], -1, false, (i == 0));
+	}
+	int b_ok = cf.create_button("&next", true);
+	int b_cancel = cf.create_button("&cancel", false, true);
+	cf.focus(list);
+
+	string chosen_cat = "";
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		cf.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || cf.is_pressed(b_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+
+		if (cf.is_pressed(b_ok))
+		{
+			int pos = cf.get_list_position(list);
+			if (pos >= 0 && pos < int(item_categories.length()))
+			{
+				chosen_cat = item_categories[pos];
+				break;
+			}
+		}
+	}
+
+	item_data it;
+	it.category = chosen_cat;
+	it.id = "new_" + chosen_cat;
+	it.name = "New " + chosen_cat;
+	if (chosen_cat == "consumables") it.heal_amount = 250;
+	else if (chosen_cat == "ammo") { it.capacity = 30; it.ammo_type = "9x19mm"; }
+	else if (chosen_cat == "packages") { it.contains_items = "health_potion:2;medkit:1"; }
+	else if (chosen_cat == "equipment") { it.capacity = 150; it.heal_amount = 0; }
+
+	item_edit_form(it.id, true, false, chosen_cat, "");
+}
+
+void give_item_flow()
+{
+	load_all_items_config();
+	if (item_registry.length() == 0)
+	{
+		dlg("No items available to give.");
+		return;
+	}
+
+	audio_form gf;
+	gf.create_window("select items to give to inventory", false, true, false);
+	int list = gf.create_list("available items (Space to check/uncheck)", 0, true, true);
+
+	for (uint i = 0; i < item_registry.length(); i++)
+	{
+		string display = item_registry[i].name + " (" + item_registry[i].category + ")";
+		gf.add_list_item(list, display, item_registry[i].id, -1, false, (i == 0));
+	}
+	int b_give = gf.create_button("&give selected to inventory", true);
+	int b_cancel = gf.create_button("&cancel", false, true);
+	gf.focus(list);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		gf.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || gf.is_pressed(b_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+
+		if (gf.is_pressed(b_give))
+		{
+			int[]@ checked = gf.get_checked_list_items(list);
+			if (checked !is null && checked.length() > 0)
+			{
+				int given_count = 0;
+				int total_amt = 0;
+				string last_name = "";
+				int last_amt = 0;
+				for (uint c = 0; c < checked.length(); c++)
+				{
+					int idx = checked[c];
+					if (idx >= 0 && idx < int(item_registry.length()))
+					{
+						string iid = item_registry[idx].id;
+						item_data@ it = get_item_data(iid);
+						int amt = random(10, 20);
+						give(iid, amt);
+						last_name = (it !is null && it.name != "") ? it.name : iid;
+						last_amt = amt;
+						given_count++;
+						total_amt += amt;
+					}
+				}
+				if (given_count == 1)
+				{
+					speak("Given " + last_amt + " " + last_name + " to your inventory.");
+				}
+				else
+				{
+					speak("Given " + given_count + " items (" + total_amt + " total quantity) to your inventory.");
+				}
+				return;
+			}
+			else
+			{
+				// If no checkboxes were checked, give the currently highlighted item
+				int pos = gf.get_list_position(list);
+				if (pos >= 0 && pos < int(item_registry.length()))
+				{
+					string iid = item_registry[pos].id;
+					item_data@ it = get_item_data(iid);
+					int amt = random(10, 20);
+					give(iid, amt);
+					string iname = (it !is null && it.name != "") ? it.name : iid;
+					speak("Given " + amt + " " + iname + " to your inventory.");
+					return;
+				}
+				speak("No items selected.");
+				return;
+			}
+		}
+	}
+}

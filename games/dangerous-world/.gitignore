@@ -1,0 +1,7 @@
+# Local state and build output
+*.exe
+settings/settings.dat
+settings/location.dat
+/build/
+/dist/
+/tmp/

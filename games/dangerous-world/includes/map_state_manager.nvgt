@@ -1,0 +1,59 @@
+// Preserves ground items and item spawners when changing maps in-game.
+class map_persistent_state
+{
+	string map_name;
+	ground_item@[] items;
+	map_item_spawner@[] item_spawners;
+}
+
+dictionary g_map_states;
+
+bool has_saved_map_state(const string&in mname)
+{
+	return mname != "" && g_map_states.exists(mname);
+}
+
+void save_current_map_state()
+{
+	if (mapname == "") return;
+	map_persistent_state@ state = map_persistent_state();
+	state.map_name = mapname;
+	for (uint i = 0; i < ground_items.length(); i++)
+	{
+		if (ground_items[i] is null) continue;
+		ground_items[i].sound_slot = -1;
+		state.items.insert_last(ground_items[i]);
+	}
+	for (uint i = 0; i < map_item_spawners.length(); i++)
+		if (map_item_spawners[i] !is null) state.item_spawners.insert_last(map_item_spawners[i]);
+	g_map_states.set(mapname, @state);
+	ground_items.resize(0);
+	map_item_spawners.resize(0);
+}
+
+void restore_map_state(const string&in mname)
+{
+	if (mname != "" && g_map_states.exists(mname))
+	{
+		map_persistent_state@ state = null;
+		g_map_states.get(mname, @state);
+		if (state !is null)
+		{
+			ground_items = state.items;
+			map_item_spawners = state.item_spawners;
+			return;
+		}
+	}
+	ground_items.resize(0);
+	map_item_spawners.resize(0);
+}
+
+void clear_saved_map_state(const string&in mname)
+{
+	if (mname != "" && g_map_states.exists(mname)) g_map_states.delete(mname);
+}
+
+void clear_all_map_states()
+{
+	g_map_states.delete_all();
+}

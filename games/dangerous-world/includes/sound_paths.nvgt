@@ -1,0 +1,979 @@
+// sound_paths.nvgt - path resolution for NVGT audio assets.
+// Loose files remain supported for development and map-specific content.
+
+sound builder_preview_sound;
+
+bool sound_pack_active = false;
+
+void init_sound_package()
+{
+	// Direct disk folder loading is enforced.
+}
+
+bool string_starts_with(const string&in s, const string&in prefix)
+{
+	if (prefix.length() > s.length()) return false;
+	return s.find(prefix) == 0;
+}
+
+bool string_ends_with(const string&in s, const string&in suffix)
+{
+	if (suffix.length() > s.length()) return false;
+	return s.substr(s.length() - suffix.length()) == suffix;
+}
+
+bool pack_wildcard_match(const string&in text, const string&in pattern)
+{
+	if (pattern == "*" || pattern == "*.*") return true;
+	string cl_text = string_replace(text, "\\", "/", true);
+	string cl_pat = string_replace(pattern, "\\", "/", true);
+	string[] parts = string_split(cl_pat, "*", false);
+	if (parts.length() == 0) return true;
+	int pos = 0;
+	for (uint i = 0; i < parts.length(); i++)
+	{
+		if (parts[i] == "") continue;
+		int idx = cl_text.find(parts[i], pos);
+		if (idx == -1) return false;
+		if (i == 0 && !string_starts_with(cl_pat, "*") && idx != 0) return false;
+		pos = idx + parts[i].length();
+	}
+	if (!string_ends_with(cl_pat, "*") && parts.length() > 0)
+	{
+		string last_part = parts[parts.length() - 1];
+		if (!string_ends_with(cl_text, last_part)) return false;
+	}
+	return true;
+}
+
+dictionary disk_sound_list_cache;
+
+string find_sound_in_disk(string soundname)
+{
+	if (soundname == "" || soundname == "none") return "";
+	if (file_exists(soundname)) return soundname;
+
+	string check_name = soundname;
+	if (check_name.find("*") == -1 && check_name.find(".") == -1)
+		check_name += "*.ogg";
+
+	string[] files;
+	if (disk_sound_list_cache.exists(check_name))
+	{
+		disk_sound_list_cache.get(check_name, files);
+		if (files.length() > 0)
+		{
+			return files[random(0, files.length() - 1)];
+		}
+		return "";
+	}
+
+	string[] snd = find_files(check_name);
+	if (snd.length() > 0)
+	{
+		int last_slash = check_name.find_last("/");
+		int last_bslash = check_name.find_last("\\");
+		int slash_idx = (last_slash > last_bslash ? last_slash : last_bslash);
+		string path = (slash_idx > -1 ? check_name.substr(0, slash_idx + 1) : "");
+		for (uint i = 0; i < snd.length(); i++)
+		{
+			files.insert_last(path + snd[i]);
+		}
+		disk_sound_list_cache.set(check_name, files);
+		return files[random(0, files.length() - 1)];
+	}
+
+	disk_sound_list_cache.set(check_name, files);
+	return "";
+}
+
+string[] find_all_sounds_in_disk(string pattern)
+{
+	string[] result;
+	if (pattern == "" || pattern == "none") return result;
+
+	string check_name = pattern;
+	if (check_name.find("*") == -1 && check_name.find(".") == -1)
+		check_name += "*.ogg";
+
+	string[] snd = find_files(check_name);
+	if (snd.length() > 0)
+	{
+		string[] a_path = string_split(check_name, "/", true);
+		string path = string_replace(check_name, a_path[a_path.length() - 1], "", true);
+		for (uint i = 0; i < snd.length(); i++)
+		{
+			result.insert_last(path + snd[i]);
+		}
+		return result;
+	}
+
+	if (file_exists(pattern))
+	{
+		result.insert_last(pattern);
+	}
+	return result;
+}
+
+string translate_sound_path(const string&in path)
+{
+	if (string_starts_with(path, "menu/")) return "menu sounds/" + path.substr(5);
+	if (string_starts_with(path, "platforms/")) return "map platforms/" + path.substr(10);
+	if (string_starts_with(path, "builder/construction/platforms/")) return "map platforms/" + path.substr(31);
+	if (string_starts_with(path, "builder/construction/walls/")) return "walls/" + path.substr(27);
+	if (string_starts_with(path, "builder/transitions/doors/")) return "doors/" + path.substr(26);
+	if (string_starts_with(path, "builder/audio/musics/")) return "Musics/" + path.substr(21);
+	if (string_starts_with(path, "builder/audio/sources/")) return "anbients/" + path.substr(22);
+	if (string_starts_with(path, "builder/interaction/signs/")) return "interaction/signs/" + path.substr(26);
+	return path;
+}
+
+string get_pack_sound(const string&in path)
+{
+	if (path == "" || path == "none") return "";
+	if (file_exists(path)) return path;
+	string trans = translate_sound_path(path);
+	string fullpath = "sounds/" + trans;
+	string result = find_sound_in_disk(fullpath);
+	if (result != "") return result;
+	if (string_contains(trans, "/default/", 1) > -1)
+	{
+		string alt = string_replace(trans, "/signs/default/", "/signs/sign/", true);
+		result = find_sound_in_disk("sounds/" + alt);
+		if (result != "") return result;
+	}
+	result = find_sound_in_disk(path);
+	if (result != "") return result;
+	return "";
+}
+
+string[] list_sound_stems(const string&in folder)
+{
+	string[] result;
+	dictionary seen;
+	string[] folders_to_check;
+	folders_to_check.insert_last(folder);
+	if (folder == "anbients" || folder == "ambients")
+	{
+		folders_to_check.insert_last("ambients");
+		folders_to_check.insert_last("anbients");
+	}
+
+	for (uint fi = 0; fi < folders_to_check.length(); fi++)
+	{
+		string fld = folders_to_check[fi];
+		string[]@ files = find_files("sounds/" + fld + "/*");
+		if (files !is null && files.length() > 0)
+		{
+			for (uint i = 0; i < files.length(); i++)
+			{
+				string f = files[i];
+				int dot = f.find_last(".");
+				if (dot > -1) f = f.substr(0, dot);
+				if (!seen.exists(f))
+				{
+					seen[f] = true;
+					result.insert_last(f);
+				}
+			}
+		}
+	}
+	result.sort_ascending();
+	return result;
+}
+
+string[] get_map_sound_folders(const string&in path)
+{
+	dictionary seen;
+	string[] result;
+	if (string_starts_with(path, "builder/audio/musics/")) return list_sound_stems("Musics");
+	if (string_starts_with(path, "builder/audio/sources/")) return list_sound_stems("anbients");
+
+	string global_path = "sounds/" + translate_sound_path(path);
+	if (!string_ends_with(global_path, "/*")) global_path += "/*";
+	string[] global_dirs = find_directories(global_path);
+	for (uint i = 0; i < global_dirs.length(); i++)
+	{
+		if (!seen.exists(global_dirs[i]))
+		{
+			seen[global_dirs[i]] = true;
+			result.insert_last(global_dirs[i]);
+		}
+	}
+	result.sort_ascending();
+	return result;
+}
+
+// ---------------------------------------------------------------------------
+// Category-specific wildcard sound helpers (SF architecture)
+// ---------------------------------------------------------------------------
+
+string get_player_sound(string pattern)
+{
+	if (pattern == "") return "";
+	if (pattern.find("*") == -1 && pattern.find(".") == -1) pattern += "*.ogg";
+	string snd = find_sound_in_disk("sounds/player/" + pattern);
+	if (snd == "") snd = find_sound_in_disk("sounds/player/*" + pattern);
+	if (snd == "") snd = find_sound_in_disk("sounds/player/" + pattern + ".ogg");
+	if (snd == "") snd = find_sound_in_disk("sounds/player/*" + pattern + ".ogg");
+	return snd;
+}
+
+string pick_player_death_sound()
+{
+	string[] list;
+
+	string[]@ p_files = find_files("sounds/player/*");
+	if (p_files !is null)
+	{
+		for (uint i = 0; i < p_files.length(); i++)
+		{
+			string fn = string_to_lower_case(p_files[i]);
+			if (string_contains(fn, "death", 1) > -1 && string_ends_with(fn, ".ogg"))
+			{
+				string full_p = "sounds/player/" + p_files[i];
+				if (file_exists(full_p) && list.find(full_p) == -1) list.insert_last(full_p);
+			}
+		}
+	}
+
+	if (file_exists("sounds/player/death.ogg") && list.find("sounds/player/death.ogg") == -1)
+		list.insert_last("sounds/player/death.ogg");
+	if (file_exists("sounds/player/player health death.ogg") && list.find("sounds/player/player health death.ogg") == -1)
+		list.insert_last("sounds/player/player health death.ogg");
+
+	if (list.length() > 0)
+	{
+		return list[random(0, int(list.length()) - 1)];
+	}
+	return "sounds/player/death.ogg";
+}
+
+string pick_player_pain_sound()
+{
+	string[] list;
+
+	string[]@ p_files = find_files("sounds/player/*");
+	if (p_files !is null)
+	{
+		for (uint i = 0; i < p_files.length(); i++)
+		{
+			string fn = string_to_lower_case(p_files[i]);
+			if (string_contains(fn, "pain", 1) > -1 && string_ends_with(fn, ".ogg"))
+			{
+				string full_p = "sounds/player/" + p_files[i];
+				if (file_exists(full_p) && list.find(full_p) == -1) list.insert_last(full_p);
+			}
+		}
+	}
+
+	if (list.length() > 0)
+	{
+		return list[random(0, int(list.length()) - 1)];
+	}
+
+	string fallback_snd = get_player_sound("pain");
+	if (fallback_snd != "") return fallback_snd;
+	return "sounds/player/pain1.ogg";
+}
+
+dictionary platform_sound_list_cache;
+dictionary wall_sound_list_cache;
+dictionary sound_path_cache;
+dictionary ambience_path_cache;
+dictionary music_path_cache;
+dictionary misc_path_cache;
+
+string get_platform_sound(string tile, string kind = "step")
+{
+	if (tile == "") return "";
+	string key = tile + ":" + kind;
+	string[] files;
+	if (platform_sound_list_cache.exists(key))
+	{
+		platform_sound_list_cache.get(key, files);
+		if (files.length() > 0)
+		{
+			return files[random(0, files.length() - 1)];
+		}
+	}
+
+	files = find_all_sounds_in_disk("sounds/map platforms/" + tile + "/*" + kind + "*.ogg");
+	if (files.length() == 0) files = find_all_sounds_in_disk("sounds/map platforms/" + tile + "/" + kind + "*.ogg");
+	if (files.length() == 0) files = find_all_sounds_in_disk("sounds/map platforms/" + tile + "/" + kind + ".ogg");
+
+	if (files.length() == 0)
+	{
+		if (kind == "hardland")
+		{
+			files = find_all_sounds_in_disk("sounds/map platforms/" + tile + "/*fall*.ogg");
+			if (files.length() == 0) files = find_all_sounds_in_disk("sounds/map platforms/" + tile + "/*land*.ogg");
+			if (files.length() == 0) files = find_all_sounds_in_disk("sounds/map platforms/" + tile + "/*step*.ogg");
+		}
+		else if (kind == "land")
+		{
+			files = find_all_sounds_in_disk("sounds/map platforms/" + tile + "/*step*.ogg");
+		}
+		else if (kind == "fall")
+		{
+			files = find_all_sounds_in_disk("sounds/map platforms/" + tile + "/*hardland*.ogg");
+			if (files.length() == 0) files = find_all_sounds_in_disk("sounds/map platforms/" + tile + "/*land*.ogg");
+			if (files.length() == 0) files = find_all_sounds_in_disk("sounds/map platforms/" + tile + "/*step*.ogg");
+		}
+		else if (kind == "jump")
+		{
+			files = find_all_sounds_in_disk("sounds/map platforms/" + tile + "/*land*.ogg");
+			if (files.length() == 0) files = find_all_sounds_in_disk("sounds/map platforms/" + tile + "/*step*.ogg");
+		}
+	}
+
+	if (files.length() == 0) files = find_all_sounds_in_disk("sounds/map platforms/" + tile + "*.ogg");
+	if (files.length() == 0) files = find_all_sounds_in_disk("sounds/map platforms/" + tile + ".ogg");
+
+	if (files.length() > 0)
+	{
+		platform_sound_list_cache.set(key, files);
+		return files[random(0, files.length() - 1)];
+	}
+	return "";
+}
+
+string get_wall_sound(string wall, string kind = "bump")
+{
+	if (wall == "") return "";
+	string key = wall + ":" + kind;
+	string[] files;
+	if (wall_sound_list_cache.exists(key))
+	{
+		wall_sound_list_cache.get(key, files);
+		if (files.length() > 0)
+		{
+			return files[random(0, files.length() - 1)];
+		}
+	}
+
+	files = find_all_sounds_in_disk("sounds/walls/" + wall + "/*" + kind + "*.ogg");
+	if (files.length() == 0) files = find_all_sounds_in_disk("sounds/walls/wall" + wall + "/*" + kind + "*.ogg");
+	if (files.length() == 0) files = find_all_sounds_in_disk("sounds/walls/" + wall + "/" + kind + "*.ogg");
+	if (files.length() == 0) files = find_all_sounds_in_disk("sounds/walls/" + wall + "/" + kind + ".ogg");
+	if (files.length() == 0) files = find_all_sounds_in_disk("sounds/walls/" + wall + "*.ogg");
+	if (files.length() == 0) files = find_all_sounds_in_disk("sounds/walls/" + wall + ".ogg");
+
+	if (files.length() > 0)
+	{
+		wall_sound_list_cache.set(key, files);
+		return files[random(0, files.length() - 1)];
+	}
+	return "";
+}
+
+string get_misc_sound(string name)
+{
+	if (name == "") return "";
+	if (misc_path_cache.exists(name))
+	{
+		string cached = "";
+		misc_path_cache.get(name, cached);
+		if (cached == "__none__") return "";
+		return cached;
+	}
+	string snd = find_sound_in_disk("sounds/misc/" + name + ".ogg");
+	if (snd == "") snd = find_sound_in_disk("sounds/misc/" + name + "*.ogg");
+	if (snd != "") misc_path_cache.set(name, snd);
+	else misc_path_cache.set(name, "__none__");
+	return snd;
+}
+
+string get_ambience_sound(string name)
+{
+	if (name == "") return "";
+	if (ambience_path_cache.exists(name))
+	{
+		string cached = "";
+		ambience_path_cache.get(name, cached);
+		if (cached == "__none__") return "";
+		return cached;
+	}
+
+	string snd = "";
+	if (file_exists(name)) snd = name;
+	if (snd == "" && file_exists("sounds/anbients/" + name)) snd = "sounds/anbients/" + name;
+	if (snd == "" && file_exists("sounds/anbients/" + name + ".ogg")) snd = "sounds/anbients/" + name + ".ogg";
+	if (snd == "" && file_exists("sounds/anbients/" + name + ".OGG")) snd = "sounds/anbients/" + name + ".OGG";
+	if (snd == "" && file_exists("sounds/anbients/" + name + ".wav")) snd = "sounds/anbients/" + name + ".wav";
+	if (snd == "" && file_exists("sounds/anbients/" + name + ".mp3")) snd = "sounds/anbients/" + name + ".mp3";
+	if (snd == "" && file_exists("sounds/ambients/" + name)) snd = "sounds/ambients/" + name;
+	if (snd == "" && file_exists("sounds/ambients/" + name + ".ogg")) snd = "sounds/ambients/" + name + ".ogg";
+	if (snd == "" && file_exists("sounds/ambients/" + name + ".OGG")) snd = "sounds/ambients/" + name + ".OGG";
+	if (snd == "" && file_exists("sounds/ambients/" + name + ".wav")) snd = "sounds/ambients/" + name + ".wav";
+	if (snd == "" && file_exists("sounds/ambients/" + name + ".mp3")) snd = "sounds/ambients/" + name + ".mp3";
+
+	if (snd == "") snd = find_sound_in_disk("sounds/anbients/" + name);
+	if (snd == "") snd = find_sound_in_disk("sounds/anbients/" + name + ".*");
+	if (snd == "") snd = find_sound_in_disk("sounds/anbients/" + name + "*.ogg");
+	if (snd == "") snd = find_sound_in_disk("sounds/anbients/" + name + "*.wav");
+	if (snd == "") snd = find_sound_in_disk("sounds/anbients/*" + name + "*");
+	if (snd == "") snd = find_sound_in_disk("sounds/ambients/" + name);
+	if (snd == "") snd = find_sound_in_disk("sounds/ambients/" + name + ".*");
+	if (snd == "") snd = find_sound_in_disk("sounds/ambients/" + name + "*.ogg");
+	if (snd == "") snd = find_sound_in_disk("sounds/ambients/" + name + "*.wav");
+	if (snd == "") snd = find_sound_in_disk("sounds/ambients/*" + name + "*");
+
+	if (snd != "") ambience_path_cache.set(name, snd);
+	else ambience_path_cache.set(name, "__none__");
+	return snd;
+}
+
+string get_music_sound(string name)
+{
+	if (name == "" || name == "none") return "";
+	if (music_path_cache.exists(name))
+	{
+		string cached = "";
+		music_path_cache.get(name, cached);
+		if (cached == "__none__") return "";
+		return cached;
+	}
+
+	string snd = "";
+	if (file_exists(name)) snd = name;
+	if (snd == "" && file_exists("sounds/Musics/" + name)) snd = "sounds/Musics/" + name;
+	if (snd == "" && file_exists("sounds/Musics/" + name + ".ogg")) snd = "sounds/Musics/" + name + ".ogg";
+	if (snd == "" && file_exists("sounds/Musics/" + name + ".OGG")) snd = "sounds/Musics/" + name + ".OGG";
+	if (snd == "" && file_exists("sounds/Musics/" + name + ".wav")) snd = "sounds/Musics/" + name + ".wav";
+	if (snd == "" && file_exists("sounds/Musics/" + name + ".mp3")) snd = "sounds/Musics/" + name + ".mp3";
+	if (snd == "" && file_exists("sounds/Musics/" + name + ".flac")) snd = "sounds/Musics/" + name + ".flac";
+
+	if (snd == "") snd = find_sound_in_disk("sounds/Musics/" + name);
+	if (snd == "") snd = find_sound_in_disk("sounds/Musics/" + name + ".*");
+	if (snd == "") snd = find_sound_in_disk("sounds/Musics/" + name + "*.ogg");
+	if (snd == "") snd = find_sound_in_disk("sounds/Musics/" + name + "*.OGG");
+	if (snd == "") snd = find_sound_in_disk("sounds/Musics/" + name + "*.wav");
+	if (snd == "") snd = find_sound_in_disk("sounds/Musics/" + name + "*.mp3");
+	if (snd == "") snd = find_sound_in_disk("sounds/Musics/*" + name + "*");
+
+	if (snd != "") music_path_cache.set(name, snd);
+	else music_path_cache.set(name, "__none__");
+	return snd;
+}
+
+string get_sound_path(string path)
+{
+	if (path == "" || path == "none") return "";
+
+	if (string_contains(path, ";", 1) > -1)
+	{
+		string[]@ choices = string_split(path, ";", true);
+		if (choices !is null && choices.length() > 0)
+		{
+			string[] valid_choices;
+			for (uint i = 0; i < choices.length(); i++)
+			{
+				string c = choices[i].trim_whitespace();
+				if (c == "" || c == "none") continue;
+				string resolved = get_sound_path(c);
+				if (resolved != "") valid_choices.insert_last(resolved);
+			}
+			if (valid_choices.length() > 0)
+			{
+				return valid_choices[random(0, valid_choices.length() - 1)];
+			}
+			return "";
+		}
+	}
+
+	if (sound_path_cache.exists(path))
+	{
+		string cached = "";
+		sound_path_cache.get(path, cached);
+		if (cached == "__none__") return "";
+		return cached;
+	}
+
+	if (file_exists(path))
+	{
+		sound_path_cache.set(path, path);
+		return path;
+	}
+	if (file_exists("sounds/" + path))
+	{
+		sound_path_cache.set(path, "sounds/" + path);
+		return "sounds/" + path;
+	}
+
+	string res = get_pack_sound(path);
+	if (res != "" && file_exists(res))
+	{
+		sound_path_cache.set(path, res);
+		return res;
+	}
+
+	string[] folders = {
+		"sounds/items/",
+		"sounds/player/",
+		"sounds/weapons/",
+				"sounds/map platforms/",
+		"sounds/anbients/",
+		"sounds/Musics/",
+		"sounds/misc/",
+		"sounds/bullets/",
+		"sounds/doors/",
+		"sounds/walls/",
+		"sounds/interaction/",
+		"sounds/keyboards/",
+		"sounds/shield/",
+		"sounds/menu sounds/",
+		"sounds/welcome/",
+		"sounds/boas-vindas/",
+		"sounds/boas vindas/",
+		"sounds/boas_vindas/",
+		"sounds/"
+	};
+
+	string check_name = path;
+	if (string_starts_with(check_name, "items/")) check_name = check_name.substr(6);
+	if (string_starts_with(check_name, "player/")) check_name = check_name.substr(7);
+	if (string_starts_with(check_name, "weapons/")) check_name = check_name.substr(8);
+	if (string_starts_with(check_name, "shield/")) check_name = check_name.substr(7);
+	if (false) check_name = check_name.substr(5);
+
+	if (check_name == "buy" || check_name == "buy.ogg" || check_name == "purchase" || check_name == "purchase.ogg" || check_name == "storepurchase" || check_name == "storepurchase.ogg")
+	{
+		string sp = find_sound_in_disk("sounds/items/buy.ogg");
+		if (sp == "") sp = find_sound_in_disk("sounds/items/storepurchase.ogg");
+		if (sp == "") sp = find_sound_in_disk("sounds/items/purchase.ogg");
+		if (sp == "") sp = find_sound_in_disk("sounds/player/storepurchase.ogg");
+		if (sp == "") sp = find_sound_in_disk("sounds/player/buy.ogg");
+		if (sp != "" && file_exists(sp))
+		{
+			sound_path_cache.set(path, sp);
+			return sp;
+		}
+	}
+
+	for (uint i = 0; i < folders.length(); i++)
+	{
+		string cand = find_sound_in_disk(folders[i] + check_name);
+		if (cand != "" && file_exists(cand))
+		{
+			sound_path_cache.set(path, cand);
+			return cand;
+		}
+		if (check_name.find(".") == -1)
+		{
+			cand = find_sound_in_disk(folders[i] + check_name + "*.ogg");
+			if (cand != "" && file_exists(cand))
+			{
+				sound_path_cache.set(path, cand);
+				return cand;
+			}
+		}
+	}
+	if (file_exists("sounds/" + path))
+	{
+		sound_path_cache.set(path, "sounds/" + path);
+		return "sounds/" + path;
+	}
+	if (file_exists(path))
+	{
+		sound_path_cache.set(path, path);
+		return path;
+	}
+	sound_path_cache.set(path, "__none__");
+	return "";
+}
+
+bool sound_file_exists(const string&in path)
+{
+	return path != "" && file_exists(path);
+}
+
+// ---------------------------------------------------------------------------
+// Hierarchical / Categorized Sound Browser System
+// ---------------------------------------------------------------------------
+
+class sound_browser_item
+{
+	string display_name;
+	string relative_path;
+
+	sound_browser_item(const string&in d, const string&in p)
+	{
+		display_name = d;
+		relative_path = p;
+	}
+}
+
+void scan_sound_categories_recursive(const string&in rel_dir, string[]& categories, dictionary& seen)
+{
+	string[]@ subs = find_directories("sounds/" + rel_dir + "/*");
+	if (subs !is null)
+	{
+		for (uint s = 0; s < subs.length(); s++)
+		{
+			string sub_cat = (rel_dir == "" ? subs[s] : rel_dir + "/" + subs[s]);
+			string lsub = string_to_lower_case(sub_cat);
+			if (!seen.exists(lsub))
+			{
+				seen[lsub] = true;
+				categories.insert_last(sub_cat);
+				scan_sound_categories_recursive(sub_cat, categories, seen);
+			}
+		}
+	}
+}
+
+string[] get_all_sound_categories()
+{
+	string[] categories;
+	dictionary seen;
+
+	// Primary categories prioritized
+	string[] primary_roots = {"shield", "items", "weapons", "player", "misc", "doors", "walls", "map platforms", "interaction", "anbients", "Musics", "menu sounds", "keyboards", "welcome"};
+
+	for (uint i = 0; i < primary_roots.length(); i++)
+	{
+		string root = primary_roots[i];
+		string found_root = "";
+		if (directory_exists("sounds/" + root)) found_root = root;
+
+		if (found_root != "")
+		{
+			string lroot = string_to_lower_case(found_root);
+			if (!seen.exists(lroot))
+			{
+				seen[lroot] = true;
+				categories.insert_last(found_root);
+			}
+			scan_sound_categories_recursive(found_root, categories, seen);
+		}
+	}
+
+	// Other directory structures under sounds/
+	string[]@ all_dirs = find_directories("sounds/*");
+	if (all_dirs !is null)
+	{
+		for (uint d = 0; d < all_dirs.length(); d++)
+		{
+			string dir_name = all_dirs[d];
+			string ldir = string_to_lower_case(dir_name);
+			if (!seen.exists(ldir))
+			{
+				seen[ldir] = true;
+				categories.insert_last(dir_name);
+				scan_sound_categories_recursive(dir_name, categories, seen);
+			}
+		}
+	}
+
+	return categories;
+}
+
+sound_browser_item@[] get_sounds_in_category(const string&in category)
+{
+	sound_browser_item@[] items;
+	dictionary seen;
+
+	if (category == "" || category == "none") return items;
+
+	string target_dir = "sounds/" + category;
+	string[]@ files = find_files(target_dir + "/*");
+	if (files !is null)
+	{
+		for (uint f = 0; f < files.length(); f++)
+		{
+			string fn = files[f];
+			string lfn = string_to_lower_case(fn);
+			if (string_ends_with(lfn, ".ogg") || string_ends_with(lfn, ".wav") || string_ends_with(lfn, ".mp3"))
+			{
+				string rel = category + "/" + fn;
+				if (!seen.exists(rel))
+				{
+					seen[rel] = true;
+					items.insert_last(sound_browser_item(fn, rel));
+				}
+			}
+		}
+	}
+
+	// If the category has subdirectories (e.g. weapons and map platforms) and user picked root category,
+	// also scan subdirectories so they can see all sounds
+	string[]@ subdirs = find_directories(target_dir + "/*");
+	if (subdirs !is null && subdirs.length() > 0)
+	{
+		for (uint s = 0; s < subdirs.length(); s++)
+		{
+			string sub_dir = subdirs[s];
+			string[]@ subfiles = find_files(target_dir + "/" + sub_dir + "/*");
+			if (subfiles !is null)
+			{
+				for (uint sf = 0; sf < subfiles.length(); sf++)
+				{
+					string sfn = subfiles[sf];
+					string lsfn = string_to_lower_case(sfn);
+					if (string_ends_with(lsfn, ".ogg") || string_ends_with(lsfn, ".wav") || string_ends_with(lsfn, ".mp3"))
+					{
+						string rel = category + "/" + sub_dir + "/" + sfn;
+						if (!seen.exists(rel))
+						{
+							seen[rel] = true;
+							items.insert_last(sound_browser_item(sub_dir + "/" + sfn, rel));
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return items;
+}
+
+string select_sound_by_category_dialog(const string&in title, const string&in current_val, const string&in default_category = "", bool allow_multiple = true)
+{
+	string[] categories = get_all_sound_categories();
+	if (categories.length() == 0)
+	{
+		speak("No sound directories found in sounds folder.");
+		return current_val;
+	}
+
+	int default_cat_idx = 0;
+	if (default_category != "")
+	{
+		string def_lower = string_to_lower_case(default_category);
+		for (uint c = 0; c < categories.length(); c++)
+		{
+			string cat_lower = string_to_lower_case(categories[c]);
+			if (cat_lower == def_lower || string_starts_with(cat_lower, def_lower))
+			{
+				default_cat_idx = int(c);
+				break;
+			}
+		}
+	}
+	else if (current_val != "")
+	{
+		string cv_first = current_val;
+		int sc = string_contains(cv_first, ";", 1);
+		if (sc > -1) cv_first = string_left(cv_first, sc).trim_whitespace();
+		int slash = string_contains(cv_first, "/", 1);
+		if (slash > -1)
+		{
+			string found_cat = string_left(cv_first, slash);
+			string fcat_lower = string_to_lower_case(found_cat);
+			for (uint c = 0; c < categories.length(); c++)
+			{
+				if (string_to_lower_case(categories[c]) == fcat_lower)
+				{
+					default_cat_idx = int(c);
+					break;
+				}
+			}
+		}
+	}
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		audio_form cf;
+		cf.create_window("Sound Folders: " + title + " (Up/Down to choose folder, Enter to open, Escape to cancel)", false, true, false);
+
+		int l_cats = cf.create_list("Select Sound Folder / Category", 0, false, true);
+		for (uint i = 0; i < categories.length(); i++)
+		{
+			cf.add_list_item(l_cats, categories[i], categories[i], -1, false, (int(i) == default_cat_idx));
+		}
+		cf.set_list_position(l_cats, default_cat_idx, false);
+
+		int b_open = cf.create_button("&Open Folder (Enter)", true);
+		int b_clear = cf.create_button("&Clear Sound (None)");
+		int b_cancel = cf.create_button("&Cancel", false, true);
+
+		cf.focus(l_cats);
+
+		bool folder_chosen = false;
+		string chosen_category = "";
+
+		while (true)
+		{
+			wait(5);
+			update_game_world();
+			cf.monitor();
+
+			if (key_pressed(KEY_ESCAPE) || cf.is_pressed(b_cancel))
+			{
+				speak("Sound selection canceled.");
+				return current_val;
+			}
+
+			if (cf.is_pressed(b_clear))
+			{
+				speak("Sound cleared.");
+				return "";
+			}
+
+			if (cf.is_pressed(b_open) || cf.is_pressed(l_cats) || key_pressed(KEY_RETURN))
+			{
+				int pos = cf.get_list_position(l_cats);
+				if (pos >= 0 && pos < int(categories.length()))
+				{
+					chosen_category = categories[pos];
+					default_cat_idx = pos;
+					folder_chosen = true;
+					play("menuenter");
+					break;
+				}
+			}
+		}
+
+		if (!folder_chosen) return current_val;
+
+		// Step 2: Show sounds inside the selected category
+		sound_browser_item@[] sound_items = get_sounds_in_category(chosen_category);
+		if (sound_items.length() == 0)
+		{
+			speak("No audio files found in " + chosen_category + ". Please choose another folder.");
+			continue;
+		}
+
+		string[]@ existing_selections = string_split(current_val, ";", true);
+
+		audio_form sf;
+		sf.create_window("Sounds in [" + chosen_category + "] - " + title, false, true, false);
+		int l_sounds = sf.create_list("Available Sounds (Up/Down to preview, Space to check/uncheck, Enter to save)", 0, allow_multiple, true);
+
+		for (uint s = 0; s < sound_items.length(); s++)
+		{
+			bool is_sel = false;
+			if (existing_selections !is null)
+			{
+				for (uint e = 0; e < existing_selections.length(); e++)
+				{
+					string ex = existing_selections[e].trim_whitespace();
+					if (ex == sound_items[s].relative_path || ex == sound_items[s].display_name || ex == ("sounds/" + sound_items[s].relative_path))
+					{
+						is_sel = true;
+						break;
+					}
+				}
+			}
+			sf.add_list_item(l_sounds, sound_items[s].display_name, sound_items[s].relative_path, -1, is_sel, false);
+		}
+
+		int b_save = sf.create_button("&Save Selected (Enter)", true);
+		int b_back = sf.create_button("&Back to Folders (Escape)", false, true);
+
+		sf.focus(l_sounds);
+
+		int last_pos = -1;
+		timer preview_timer;
+
+		bool back_to_cats = false;
+
+		while (true)
+		{
+			wait(5);
+			update_game_world();
+			sf.monitor();
+
+			int pos = sf.get_list_position(l_sounds);
+			if (pos != last_pos)
+			{
+				last_pos = pos;
+				if (pos >= 0 && pos < int(sound_items.length()))
+				{
+					string full_snd = get_sound_path(sound_items[pos].relative_path);
+					if (full_snd != "")
+					{
+						builder_preview_sound.stop();
+						if (builder_preview_sound.load(full_snd))
+						{
+							builder_preview_sound.play();
+						}
+					}
+				}
+			}
+
+			if (key_pressed(KEY_SPACE) && preview_timer.elapsed >= 120)
+			{
+				preview_timer.restart();
+				if (pos >= 0 && pos < int(sound_items.length()))
+				{
+					string full_snd = get_sound_path(sound_items[pos].relative_path);
+					if (full_snd != "")
+					{
+						builder_preview_sound.stop();
+						if (builder_preview_sound.load(full_snd))
+						{
+							builder_preview_sound.play();
+						}
+					}
+				}
+			}
+
+			if (key_pressed(KEY_ESCAPE) || sf.is_pressed(b_back))
+			{
+				builder_preview_sound.stop();
+				back_to_cats = true;
+				break;
+			}
+
+			if (sf.is_pressed(b_save) || key_pressed(KEY_RETURN))
+			{
+				builder_preview_sound.stop();
+				if (allow_multiple)
+				{
+					int[]@ checked = sf.get_checked_list_items(l_sounds);
+					if (checked !is null && checked.length() > 0)
+					{
+						string res = "";
+						for (uint c = 0; c < checked.length(); c++)
+						{
+							int c_idx = checked[c];
+							if (c_idx >= 0 && c_idx < int(sound_items.length()))
+							{
+								if (res != "") res += ";";
+								res += sound_items[c_idx].relative_path;
+							}
+						}
+						play("menuenter");
+						speak(checked.length() + " sound(s) selected.");
+						return res;
+					}
+					else if (pos >= 0 && pos < int(sound_items.length()))
+					{
+						play("menuenter");
+						speak("Selected: " + sound_items[pos].display_name);
+						return sound_items[pos].relative_path;
+					}
+					else
+					{
+						speak("No sounds selected.");
+						continue;
+					}
+				}
+				else
+				{
+					if (pos >= 0 && pos < int(sound_items.length()))
+					{
+						play("menuenter");
+						speak("Selected: " + sound_items[pos].display_name);
+						return sound_items[pos].relative_path;
+					}
+					else
+					{
+						speak("No sound selected.");
+						continue;
+					}
+				}
+			}
+		}
+
+		if (back_to_cats)
+		{
+			continue;
+		}
+	}
+	return current_val;
+}

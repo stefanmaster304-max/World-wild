@@ -1,0 +1,103 @@
+// includes/builder/interaction/sign.nvgt - Sign interaction builder and runtime class
+
+class sign_obj
+{
+	int x, y, z;
+	string text;
+	string type;
+	int loop_sound;
+	sign_obj(int sx, int sy, int sz, string stext, string stype)
+	{
+		x = sx;
+		y = sy;
+		z = sz;
+		text = stext;
+		type = stype;
+		string lsound = get_pack_sound("builder/interaction/signs/" + type + "/*loop*");
+		if (lsound == "") lsound = get_pack_sound("builder/interaction/signs/sign/*loop*");
+		if (lsound != "")
+			loop_sound = sp.play_3d(lsound, me.x, me.y, me.z, x, y, z, double(facing), true);
+		else
+			loop_sound = -1;
+	}
+}
+sign_obj@[] signs;
+
+void spawn_sign(int x, int y, int z, string text, string type)
+{
+	sign_obj sg(x, y, z, text, type);
+	signs.insert_last(sg);
+}
+
+bool signcheck()
+{
+	int px = int(round(me.x, 0));
+	int py = int(round(me.y, 0));
+	int pz = int(round(me.z, 0));
+	for (uint i = 0; i < signs.length(); i++)
+	{
+		if (px == signs[i].x && py == signs[i].y && pz == signs[i].z)
+		{
+			string psnd = get_pack_sound("builder/interaction/signs/" + signs[i].type + "/*press*");
+			if (psnd == "") psnd = get_pack_sound("builder/interaction/signs/sign/*press*");
+			if (psnd == "") psnd = "sounds/interaction/signs/sign/press.ogg";
+			if (psnd != "" && file_exists(psnd)) p.play_stationary(psnd, false);
+			speak(signs[i].text);
+			return true;
+		}
+	}
+	return false;
+}
+
+void build_sign()
+{
+	string[] sgn_dirs = get_map_sound_folders("builder/interaction/signs/*");
+	if (sgn_dirs.length() == 0) sgn_dirs.insert_last("sign");
+
+	audio_form f;
+	f.create_window("Add Sign", false, true, false);
+	int i_x = f.create_input_box("X", "" + int(round(me.x, 0)));
+	int i_y = f.create_input_box("Y", "" + int(round(me.y, 0)));
+	int i_z = f.create_input_box("Z", "" + int(round(me.z, 0)));
+	int i_text = f.create_input_box("Sign Text", "Welcome to Dangerous World!");
+	int sgn_list = f.create_list("Sign Sound (Space to preview)");
+	for (uint i = 0; i < sgn_dirs.length(); i++)
+		f.add_list_item(sgn_list, sgn_dirs[i]);
+
+	int btn_ok = f.create_button("Add Sign", true);
+	int btn_cancel = f.create_button("Cancel", false, true);
+	f.set_default_controls(btn_ok, btn_cancel);
+	f.focus_silently(i_text);
+
+	int[] input_boxes = {i_x, i_y, i_z, i_text};
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		f.monitor();
+		update_form_input_keyboard_sound(f, input_boxes);
+		if (key_down(KEY_SPACE) && f.get_current_focus() == sgn_list)
+		{
+			int pos = f.get_list_position(sgn_list);
+			if (pos >= 0 && pos < int(sgn_dirs.length()))
+			{
+				string snd = get_pack_sound("builder/interaction/signs/" + sgn_dirs[pos] + "/*press*");
+				if (snd != "" && builder_preview_sound.load(snd)) builder_preview_sound.play();
+			}
+			wait(150);
+		}
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(btn_cancel))
+		{
+			builder_preview_sound.stop();
+			return;
+		}
+		if (f.is_pressed(btn_ok))
+		{
+			int pos = f.get_list_position(sgn_list);
+			string sel_type = (pos >= 0 && pos < int(sgn_dirs.length())) ? sgn_dirs[pos] : "sign";
+			builder_preview_sound.stop();
+			save_to_map("sign:" + f.get_text(i_x) + ":" + f.get_text(i_y) + ":" + f.get_text(i_z) + ":" + f.get_text(i_text) + ":" + sel_type);
+			return;
+		}
+	}
+}

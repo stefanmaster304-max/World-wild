@@ -1,0 +1,607 @@
+const string STORE_DIR = "settings/stores";
+const string STORE_ENC_KEY = "sT7#rE5!wE3$oL9@pY2&lK8^zX4*mN6+vB1?cF5/gH8*jR3=pL6+dS2-fG9_DWShopsPack2026";
+const string SHOPS_DAT_PATH = "settings/shops.dat";
+const string STORES_DAT_PATH = "settings/stores.dat";
+
+class store_cfg
+{
+	string name;
+	string display_name;
+	string currency; // the store's charging currency (payment_method); every item follows it
+	string[] accepted_currencies; // payment methods this store accepts (subset of gold/coins/dollars/credits)
+	string[] item_names;
+	string[] item_prices;
+
+	store_cfg()
+	{
+		name="";
+		display_name="";
+		currency="dollars";
+		accepted_currencies.resize(0);
+		item_names.resize(0);
+		item_prices.resize(0);
+	}
+}
+
+store_cfg@[] store_configs(0);
+
+void ensure_store_dir()
+{
+	if (!directory_exists("settings")) directory_create("settings");
+	if (!directory_exists(STORE_DIR)) directory_create(STORE_DIR);
+}
+
+string get_store_path(string name)
+{
+	if (SCRIPT_COMPILED)
+	{
+		return STORE_DIR+"/"+name+".dat";
+	}
+	return STORE_DIR+"/"+name+".st";
+}
+
+string get_store_content(string path)
+{
+	if (!file_exists(path)) return "";
+	string content = "";
+	file f;
+	f.open(path, "rb");
+	content = f.read();
+	f.close();
+	if (string_right(path, 4) == ".dat") content = string_decrypt(content, STORE_ENC_KEY);
+	return content;
+}
+
+void put_store_content(string path, string content)
+{
+	if (string_right(path, 4) == ".dat") content = string_encrypt(content, STORE_ENC_KEY);
+	file f;
+	f.open(path, "wb");
+	f.write(content);
+	f.close();
+}
+
+// The four native payment methods, in canonical order.
+string[] store_all_payment_methods()
+{
+	string[] all;
+	all.insert_last("gold");
+	all.insert_last("dollars");
+	all.insert_last("credits");
+	all.insert_last("coins");
+	return all;
+}
+
+bool store_payment_accepted(const string[]&in accepted, string cur)
+{
+	cur = normalize_currency(cur);
+	for (uint i = 0; i < accepted.length(); i++)
+	{
+		if (normalize_currency(accepted[i]) == cur) return true;
+	}
+	return false;
+}
+
+void store_accept_all_payments(store_cfg@ s)
+{
+	if (s is null) return;
+	s.accepted_currencies = store_all_payment_methods();
+}
+
+// Keeps the store's fallback currency inside its accepted payment methods.
+void store_finalize_currencies(store_cfg@ s)
+{
+	if (s is null) return;
+	if (s.accepted_currencies.length() == 0) store_accept_all_payments(s);
+	if (!is_valid_store_currency(s.currency)) s.currency = "dollars";
+	if (!store_payment_accepted(s.accepted_currencies, s.currency))
+	{
+		s.currency = (s.accepted_currencies.length() > 0) ? normalize_currency(s.accepted_currencies[0]) : "dollars";
+	}
+}
+
+// TW store format: colon-separated key:value lines
+string serialize_store_st(store_cfg@ s)
+{
+	string nl = "\r\n";
+	string cfg = "name:" + s.name + nl;
+	if (s.display_name != "" && s.display_name != s.name) cfg += "display_name:" + s.display_name + nl;
+	// The store charges everything in one currency (payment_method). The
+	// payment_methods list holds the OTHER accepted currencies only, so the
+	// charging currency never appears twice in the file.
+	string prim = normalize_currency(s.currency);
+	if (!is_valid_store_currency(prim)) prim = "dollars";
+	cfg += "payment_method:" + prim + nl;
+	if (s.accepted_currencies.length() > 0)
+	{
+		string acc = "";
+		string[] all = store_all_payment_methods();
+		for (uint a = 0; a < all.length(); a++)
+		{
+			if (all[a] != prim && store_payment_accepted(s.accepted_currencies, all[a]))
+			{
+				if (acc != "") acc += ";";
+				acc += all[a];
+			}
+		}
+		if (acc != "") cfg += "payment_methods:" + acc + nl;
+	}
+	if (s.item_names.length() > 0)
+	{
+		string inv = "";
+		for (uint i = 0; i < s.item_names.length(); i++)
+		{
+			if (i > 0) inv += ";";
+			inv += s.item_names[i] + "=" + s.item_prices[i];
+		}
+		cfg += "inventory:" + inv + nl;
+	}
+	return cfg;
+}
+
+string[] DEFAULT_SHOP_NAMES = {
+	"Corner Shop", "Supply Outpost", "Quick Mart", "Trader's Depot", "Frontier General Store", "Wanderer's Goods"
+};
+
+string[] DEFAULT_MALL_NAMES = {
+	"Central Mall", "Grand Plaza Mall", "Metro Shopping Mall", "Commercial Center Mall", "Megamart Mall"
+};
+
+void normalize_store_naming(store_cfg@ sc)
+{
+	if (sc is null) return;
+	if (sc.name == "")
+	{
+		bool is_mall = (sc.item_names.length() > 8);
+		if (is_mall)
+			sc.name = "mall_" + random(100, 999);
+		else
+			sc.name = "shop_" + random(100, 999);
+	}
+	if (sc.display_name == "" || sc.display_name == sc.name)
+	{
+		bool is_mall = (sc.item_names.length() > 8 || string_contains(string_to_lower_case(sc.name), "mall", 1) > -1);
+		if (is_mall)
+			sc.display_name = DEFAULT_MALL_NAMES[random(0, DEFAULT_MALL_NAMES.length() - 1)];
+		else
+			sc.display_name = DEFAULT_SHOP_NAMES[random(0, DEFAULT_SHOP_NAMES.length() - 1)];
+	}
+}
+
+string serialize_all_stores_bundle()
+{
+	string nl = "\r\n";
+	string s = "# Shooter Unified Shops Bundle v1.0" + nl + nl;
+	for (uint i = 0; i < store_configs.length(); i++)
+	{
+		store_cfg@ sc = @store_configs[i];
+		normalize_store_naming(sc);
+		s += "[store:" + sc.name + "]" + nl;
+		s += serialize_store_st(sc) + nl;
+	}
+	return s;
+}
+
+
+void parse_store_key_value(store_cfg@ s, string key, string val)
+{
+	key = string_to_lower_case(key);
+	if (key == "name")
+	{
+		s.name = val;
+		if (s.display_name == "") s.display_name = val;
+	}
+	else if (key == "display_name" || key == "title")
+	{
+		s.display_name = val;
+	}
+	else if (key == "payment_method" || key == "currency")
+	{
+		s.currency = normalize_currency(val);
+		if (!store_payment_accepted(s.accepted_currencies, s.currency))
+		{
+			s.accepted_currencies.insert_last(s.currency);
+		}
+	}
+	else if (key == "payment_methods" || key == "currencies" || key == "accepted_currencies")
+	{
+		// Append, never replace: payment_method may already have added the
+		// charging currency to the list, and payment_methods only carries the
+		// other accepted currencies.
+		string[] parts = string_split(val, ";", false);
+		if (parts.length() == 1 && string_contains(val, ",", 1) > -1) parts = string_split(val, ",", false);
+		for (uint p = 0; p < parts.length(); p++)
+		{
+			string c = normalize_currency(string_trim_sides(parts[p]));
+			if (is_valid_store_currency(c) && !store_payment_accepted(s.accepted_currencies, c))
+			{
+				s.accepted_currencies.insert_last(c);
+			}
+		}
+	}
+	else if (key == "inventory" || key == "items")
+	{
+		string[] parts = string_split(val, ";", false);
+		for (uint p = 0; p < parts.length(); p++)
+		{
+			string part = string_trim_sides(parts[p]);
+			if (part == "") continue;
+			int eq = string_contains(part, "=", 1);
+			if (eq > -1)
+			{
+				s.item_names.insert_last(string_trim_sides(string_left(part, eq)));
+				s.item_prices.insert_last(string_trim_sides(part.substr(eq + 1)));
+			}
+			else
+			{
+				s.item_names.insert_last(part);
+				s.item_prices.insert_last("0");
+			}
+		}
+	}
+	else if (key == "item")
+	{
+		int sep = string_contains(val, ":", 1);
+		if (sep > -1)
+		{
+			s.item_names.insert_last(string_left(val, sep));
+			string rest = string_right(val, val.length() - sep - 1);
+			int sep2 = string_contains(rest, ":", 1);
+			s.item_prices.insert_last((sep2 > -1) ? string_left(rest, sep2) : rest);
+		}
+		else
+		{
+			s.item_names.insert_last(val);
+			s.item_prices.insert_last("0");
+		}
+	}
+}
+
+void parse_stores_bundle(const string&in content)
+{
+	string cleaned = string_replace(content, "\r", "", true);
+	string[]@ lines = string_split(cleaned, "\n", true);
+	if (lines is null) return;
+	store_cfg@ current = null;
+
+	for (uint i = 0; i < lines.length(); i++)
+	{
+		string line = string_trim_sides(lines[i]);
+		if (line == "" || string_starts_with(line, "#")) continue;
+
+		if (string_starts_with(line, "[store:") && string_ends_with(line, "]"))
+		{
+			string name = line.substr(7, line.length() - 8);
+			@current = @find_store(name);
+			if (current is null)
+			{
+				@current = @store_cfg();
+				current.name = name;
+				current.display_name = name;
+				current.currency = "dollars";
+				store_configs.insert_last(current);
+			}
+			continue;
+		}
+
+		if (current is null) continue;
+
+		int colon = string_contains(line, ":", 1);
+		int eq = string_contains(line, "=", 1);
+		if (colon > -1 && (eq == -1 || eq > colon))
+		{
+			string key = string_trim_sides(string_left(line, colon));
+			string val = string_trim_sides(string_right(line, line.length() - colon - 1));
+			parse_store_key_value(current, key, val);
+		}
+		else if (eq > -1)
+		{
+			string key = string_trim_sides(string_left(line, eq));
+			string val = string_trim_sides(string_right(line, line.length() - eq - 1));
+			parse_store_key_value(current, key, val);
+		}
+	}
+	for (uint i = 0; i < store_configs.length(); i++)
+	{
+		store_finalize_currencies(store_configs[i]);
+	}
+}
+
+bool load_store_config(string name, string force_path = "")
+{
+	store_cfg@ s;
+	string path = (force_path != "") ? force_path : get_store_path(name);
+	if (!file_exists(path) && string_right(path, 4) != ".dat")
+	{
+		string legacy = STORE_DIR+"/"+name+".txt";
+		if (file_exists(legacy)) path = legacy;
+	}
+	if (!file_exists(path)) return false;
+
+	string content = get_store_content(path);
+	content = string_replace(content, "\r", "", true);
+	string[] lines = string_split(content, "\n", false);
+
+	@s = @store_cfg();
+	s.name = name;
+	s.display_name = name;
+	s.currency = "dollars";
+	s.item_names.resize(0);
+	s.item_prices.resize(0);
+
+	for (uint i = 0; i < lines.length(); i++)
+	{
+		string line = string_trim_sides(lines[i]);
+		if (line == "" || string_starts_with(line, "#")) continue;
+		int colon = string_contains(line, ":", 1);
+		int eq = string_contains(line, "=", 1);
+		if (colon > -1 && (eq == -1 || eq > colon))
+		{
+			string key = string_trim_sides(string_left(line, colon));
+			string val = string_trim_sides(string_right(line, line.length() - colon - 1));
+			parse_store_key_value(s, key, val);
+		}
+		else if (eq > -1)
+		{
+			string key = string_trim_sides(string_left(line, eq));
+			string val = string_trim_sides(string_right(line, line.length() - eq - 1));
+			parse_store_key_value(s, key, val);
+		}
+	}
+
+	store_finalize_currencies(s);
+
+	for (uint i = 0; i < store_configs.length(); i++)
+	{
+		if (store_configs[i].name == s.name)
+		{
+			@store_configs[i] = s;
+			return true;
+		}
+	}
+	store_configs.insert_last(s);
+	return true;
+}
+
+store_cfg@ find_store(string name)
+{
+	for (uint i = 0; i < store_configs.length(); i++)
+	{
+		if (store_configs[i].name == name) return store_configs[i];
+	}
+	return null;
+}
+
+store_cfg@ get_store(string name)
+{
+	store_cfg@ s = find_store(name);
+	if (s !is null) return s;
+	if (load_store_config(name)) return find_store(name);
+	return null;
+}
+
+void encrypt_all_stores_silent()
+{
+	if (store_configs.length() == 0) return;
+	ensure_store_dir();
+	string bundle = serialize_all_stores_bundle();
+	string enc = string_encrypt(bundle, STORE_ENC_KEY);
+	file f;
+	if (f.open(SHOPS_DAT_PATH, "wb"))
+	{
+		f.write(enc);
+		f.close();
+	}
+	if (file_exists(STORES_DAT_PATH)) file_delete(STORES_DAT_PATH);
+	if (file_exists("data/stores.dat")) file_delete("data/stores.dat");
+	if (file_exists("stores.dat")) file_delete("stores.dat");
+}
+
+void save_store_config(string name, store_cfg@ s = null)
+{
+	if (is_store_encrypted(name)) return;
+	if (s is null)
+	{
+		@s = find_store(name);
+	}
+	if (s is null) return;
+	store_finalize_currencies(s);
+	ensure_store_dir();
+	string cfg = serialize_store_st(s);
+	string path = get_store_path(name);
+	put_store_content(path, cfg);
+	string legacy = STORE_DIR+"/"+name+".txt";
+	if (file_exists(legacy) && string_right(path, 4) != ".dat") file_delete(legacy);
+}
+
+string[]@ list_store_files()
+{
+	string[] result;
+	result.resize(0);
+	if (directory_exists(STORE_DIR))
+	{
+		string[]@ files = find_files(STORE_DIR+"/*.st");
+		if (files !is null)
+		{
+			for (uint i = 0; i < files.length(); i++)
+			{
+				string name = files[i];
+				int slash = string_contains(name, "/", 1);
+				if (slash > -1) name = name.substr(slash + 1);
+				if (string_ends_with(name, ".st")) name = string_left(name, name.length() - 3);
+				if (result.find(name) < 0) result.insert_last(name);
+			}
+		}
+	}
+	if (directory_exists("stores"))
+	{
+		string[]@ files = find_files("stores/*.st");
+		if (files !is null)
+		{
+			for (uint i = 0; i < files.length(); i++)
+			{
+				string name = files[i];
+				int slash = string_contains(name, "/", 1);
+				if (slash > -1) name = name.substr(slash + 1);
+				if (string_ends_with(name, ".st")) name = string_left(name, name.length() - 3);
+				if (result.find(name) < 0) result.insert_last(name);
+			}
+		}
+	}
+	return result;
+}
+
+void init_stores()
+{
+	store_configs.resize(0);
+	ensure_store_dir();
+
+	// 1. Primary: Load single unified encrypted shops.dat / stores.dat
+	string bundle_path = file_exists(SHOPS_DAT_PATH) ? SHOPS_DAT_PATH : (file_exists(STORES_DAT_PATH) ? STORES_DAT_PATH : (file_exists("data/shops.dat") ? "data/shops.dat" : (file_exists("data/stores.dat") ? "data/stores.dat" : (file_exists("shops.dat") ? "shops.dat" : (file_exists("stores.dat") ? "stores.dat" : "")))));
+	if (bundle_path != "")
+	{
+		file f;
+		if (f.open(bundle_path, "rb"))
+		{
+			string enc = f.read();
+			f.close();
+			string decrypted = string_decrypt(enc, STORE_ENC_KEY);
+			if (decrypted.length() > 0)
+			{
+				parse_stores_bundle(decrypted);
+				if (store_configs.length() > 0) return;
+			}
+		}
+	}
+
+	// 2. Fallback: Scan loose store files
+	string[]@ names = list_store_files();
+	for (uint i = 0; i < names.length(); i++)
+	{
+		load_store_config(names[i]);
+	}
+
+	if (directory_exists(STORE_DIR))
+	{
+		string[]@ files = find_files(STORE_DIR+"/*.dat");
+		if (files !is null)
+		{
+			for (uint i = 0; i < files.length(); i++)
+			{
+				string name = files[i];
+				int slash = string_contains(name, "/", 1);
+				if (slash > -1) name = name.substr(slash + 1);
+				if (string_ends_with(name, ".dat")) name = string_left(name, name.length() - 4);
+				if (find_store(name) is null) load_store_config(name);
+			}
+		}
+	}
+
+	if (directory_exists("data/stores"))
+	{
+		string[]@ files = find_files("data/stores/*.dat");
+		if (files !is null)
+		{
+			for (uint i = 0; i < files.length(); i++)
+			{
+				string name = files[i];
+				int slash = string_contains(name, "/", 1);
+				if (slash > -1) name = name.substr(slash + 1);
+				if (string_ends_with(name, ".dat")) name = string_left(name, name.length() - 4);
+				if (find_store(name) is null) load_store_config(name);
+			}
+		}
+	}
+
+	if (store_configs.length() == 0)
+	{
+		create_default_stores();
+	}
+}
+
+void encrypt_stores()
+{
+	if (store_configs.length() == 0)
+	{
+		init_stores();
+	}
+	if (store_configs.length() == 0)
+	{
+		speak("No stores found to encrypt.");
+		return;
+	}
+	encrypt_all_stores_silent();
+	if (directory_exists(STORE_DIR))
+	{
+		string[]@ files = find_files(STORE_DIR + "/*.st");
+		if (files !is null)
+		{
+			for (uint i = 0; i < files.length(); i++)
+			{
+				file_delete(STORE_DIR + "/" + files[i]);
+			}
+		}
+	}
+	if (directory_exists("stores"))
+	{
+		string[]@ files = find_files("stores/*.st");
+		if (files !is null)
+		{
+			for (uint i = 0; i < files.length(); i++)
+			{
+				file_delete("stores/" + files[i]);
+			}
+		}
+	}
+	speak(store_configs.length() + " stores encrypted into shops.dat.");
+}
+
+void decrypt_stores()
+{
+	init_stores();
+	ensure_store_dir();
+	int count = 0;
+	for (uint i = 0; i < store_configs.length(); i++)
+	{
+		store_cfg@ s = @store_configs[i];
+		string plain = STORE_DIR + "/" + s.name + ".st";
+		put_store_content(plain, serialize_store_st(s));
+		count++;
+	}
+	if (file_exists(SHOPS_DAT_PATH)) file_delete(SHOPS_DAT_PATH);
+	if (file_exists(STORES_DAT_PATH)) file_delete(STORES_DAT_PATH);
+	if (file_exists("data/shops.dat")) file_delete("data/shops.dat");
+	if (file_exists("data/stores.dat")) file_delete("data/stores.dat");
+	if (file_exists("shops.dat")) file_delete("shops.dat");
+	if (file_exists("stores.dat")) file_delete("stores.dat");
+	speak(count + " stores decrypted.");
+}
+
+bool is_store_encrypted(const string&in name = "")
+{
+	return file_exists(SHOPS_DAT_PATH) || file_exists(STORES_DAT_PATH) || file_exists("data/shops.dat") || file_exists("data/stores.dat") || file_exists("shops.dat") || file_exists("stores.dat");
+}
+
+void create_default_stores()
+{
+	ensure_store_dir();
+
+	string[] defaults = {"general"};
+	for (uint i = 0; i < defaults.length(); i++)
+	{
+		string st = STORE_DIR+"/"+defaults[i]+".st";
+		if (find_store(defaults[i]) !is null) continue;
+		store_cfg@ s;
+		@s = @store_cfg();
+		s.name = defaults[i];
+		s.display_name = "General Store";
+		s.currency = "dollars";
+		s.item_names.insert_last("health_potion");
+		s.item_prices.insert_last("100");
+		s.item_names.insert_last("medkit");
+		s.item_prices.insert_last("100");
+		store_configs.insert_last(s);
+		string cfg = serialize_store_st(s);
+		put_store_content(st, cfg);
+	}
+}

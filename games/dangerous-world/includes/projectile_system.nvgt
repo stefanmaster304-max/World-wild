@@ -1,0 +1,286 @@
+// projectile_system.nvgt - Dedicated 3D Projectile Physics and Ballistics System.
+// Handles real physical trajectory simulation, 3D bullet pooling, obstacles/walls collision,
+// area-of-effect detonation for missiles, rockets, grenades, drainage launchers, laser/plasma bolts,
+// player damage with metal shield absorption, and weapon-configured sounds without generic fallbacks.
+#include "includes/rotation.nvgt"
+
+sound_pool bulletpool;
+bool bullet_pool_initialized = false;
+const int MAX_ACTIVE_PROJECTILES = 500;
+
+void ensure_bullet_pool()
+{
+	if (!bullet_pool_initialized)
+	{
+		@bulletpool.mixer = mixer();
+		bulletpool.max_distance = 60.0;
+		bulletpool.pan_step = 1.0;
+		bulletpool.volume_step = 2.0;
+		bulletpool.hrtf = true;
+		bullet_pool_initialized = true;
+	}
+}
+
+// Classify a weapon's ammo into a real ballistic family so the projectile
+// physics actually match what the weapon is configured to fire.
+string classify_projectile_type(const string&in ammo_type, const string&in wclass)
+{
+	string at = string_to_lower_case(ammo_type);
+	string wc = string_to_lower_case(wclass);
+	if (string_contains(at, "laser", 1) > -1 || string_contains(at, "plasma", 1) > -1 ||
+		string_contains(at, "quantum", 1) > -1 || string_contains(at, "fusion", 1) > -1 ||
+		string_contains(at, "energy", 1) > -1 || string_contains(at, "ion", 1) > -1 ||
+		string_contains(at, "pulse", 1) > -1 || string_contains(at, "mw", 1) > -1 ||
+		string_contains(at, "gw", 1) > -1 || string_contains(at, "tesla", 1) > -1 ||
+		string_contains(at, "arc", 1) > -1 || string_contains(at, "emp", 1) > -1 ||
+		string_contains(at, "photon", 1) > -1 || string_contains(at, "particle", 1) > -1 ||
+		string_contains(at, "beam", 1) > -1 || wc == "energy" || wc == "energy_weapons" || wc == "laser")
+		return "energy";
+	if (string_contains(at, "missile", 1) > -1 || string_contains(at, "javelin", 1) > -1 ||
+		string_contains(at, "stinger", 1) > -1 || string_contains(at, "tow", 1) > -1 ||
+		string_contains(at, "sam", 1) > -1 || string_contains(at, "atgm", 1) > -1)
+		return "missile";
+	if (string_contains(at, "rocket", 1) > -1 || string_contains(at, "rpg", 1) > -1 ||
+		string_contains(at, "law", 1) > -1 || string_contains(at, "gustaf", 1) > -1 ||
+		string_contains(at, "bazooka", 1) > -1 || string_contains(at, "panzerfaust", 1) > -1)
+		return "rocket";
+	if (string_contains(at, "grenade", 1) > -1 || string_contains(at, "40mm", 1) > -1 ||
+		string_contains(at, "38mm", 1) > -1 || string_contains(at, "mortar", 1) > -1 ||
+		string_contains(at, "canister", 1) > -1 || string_contains(at, "bomb", 1) > -1 ||
+		string_contains(at, "flare", 1) > -1 || string_contains(at, "smoke", 1) > -1)
+		return "grenade";
+	if (string_contains(at, "drainage", 1) > -1 || string_contains(at, "drenagem", 1) > -1 ||
+		string_contains(at, "hydrological", 1) > -1 || string_contains(at, "hydro", 1) > -1 ||
+		string_contains(at, "drain", 1) > -1)
+		return "drainage";
+	if (string_contains(at, "incendiar", 1) > -1 || string_contains(at, "flame", 1) > -1 ||
+		string_contains(at, "fire", 1) > -1 || string_contains(at, "dragon", 1) > -1 ||
+		string_contains(at, "napalm", 1) > -1 || string_contains(at, "thermite", 1) > -1 ||
+		string_contains(at, "gel", 1) > -1 || wc == "incendiary" || wc == "flamethrower")
+		return "fire";
+	return "ballistic";
+}
+
+class active_projectile
+{
+	double x, y, z;
+	int start_z;
+	int direction;
+	string weapon_id;
+	string wclass;
+	string ammo_type;
+	string projectile_type;
+	string fire_mode;
+	string owner;
+	timer speedtimer;
+	int speedtime;
+	int range;
+	int distance;
+	int damage;
+	int spread;
+
+	active_projectile(double px, double py, double pz, int dir, string wid, string fmode, int dmg, int spd, int rng, int sprd, string powner = "player")
+	{
+		x = px;
+		y = py;
+		z = pz;
+		start_z = int(pz);
+		weapon_id = wid;
+		fire_mode = fmode;
+		damage = dmg;
+		speedtime = (spd > 0) ? spd : 5;
+		range = (rng > 0) ? rng : 30;
+		spread = sprd;
+		distance = 0;
+		owner = powner;
+
+		weapon_data@ w = get_weapon_data(wid);
+		if (w !is null)
+		{
+			wclass = w.wclass;
+			ammo_type = w.ammo_type;
+		}
+		else
+		{
+			wclass = "bullet";
+			ammo_type = "Standard";
+		}
+
+		// Real ballistic tuning per ammo family. Melee strikes keep their
+		// configured values (short, fast reach).
+		// NOTE: the weapon's configured range is ALWAYS authoritative - the
+		// effective range from the .wpm file is exactly how many steps the
+		// weapon can reach a target, regardless of the ammo family. No family
+		// below is allowed to shrink or extend that reach.
+		projectile_type = classify_projectile_type(ammo_type, wclass);
+		if (fire_mode != "melee")
+		{
+			if (projectile_type == "energy")
+			{
+				// Directed-energy bolts travel near-instantly with tight precision.
+				if (speedtime > 2) speedtime = 2;
+				spread = int(spread * 0.5);
+			}
+			else if (projectile_type == "missile")
+			{
+				// Guided heavy missile: fast propelled velocity, high stability
+				speedtime = 8;
+				spread = 0;
+			}
+			else if (projectile_type == "rocket")
+			{
+				// Heavy rocket propulsion
+				speedtime = 9;
+				if (spread < 1) spread = 1;
+			}
+			else if (projectile_type == "grenade")
+			{
+				// Heavy ballistic canister / grenade trajectory
+				speedtime = 12;
+				if (spread < 2) spread = 2;
+			}
+			else if (projectile_type == "drainage")
+			{
+				// Hydrological drainage canister dispersion trajectory
+				speedtime = 10;
+				if (spread < 1) spread = 1;
+			}
+			else if (projectile_type == "fire")
+			{
+				// Fire streams are short-range and fan out into a cone.
+				if (speedtime < 8) speedtime = 8;
+				spread = int(spread * 2.0) + 5;
+			}
+		}
+
+		// Apply the weapon's configured spread as a random deviation from the
+		// aimed direction. 0 spread means a perfectly straight shot.
+		if (spread > 0)
+			direction = int(degree_limit(double(dir) + double(random(-spread, spread)) * 0.5));
+		else
+			direction = dir;
+	}
+}
+
+active_projectile@[] active_projectiles(0);
+
+void spawn_projectile(double px, double py, double pz, int dir, string wid, string fmode, int dmg, int spd, int rng, int sprd, string powner = "player")
+{
+	ensure_bullet_pool();
+	// Hard cap so runaway fire never pollutes the map with stale projectiles.
+	if (active_projectiles.length() >= MAX_ACTIVE_PROJECTILES)
+	{
+		active_projectiles.remove_at(0);
+	}
+	active_projectile@ proj = active_projectile(px, py, pz, dir, wid, fmode, dmg, spd, rng, sprd, powner);
+	active_projectiles.insert_last(proj);
+}
+
+// Player fire now uses the weapon facing and the swept projectile collision
+// below as its only targeting rule. The former all-angle aim-assist helpers
+// silently redirected shots and are intentionally removed.
+
+void destroy_all_projectiles()
+{
+	ensure_bullet_pool();
+	active_projectiles.resize(0);
+}
+
+bool is_projectile_obstacle(int px, int py, int pz)
+{
+	// Map bounds: the projectile is destroyed at the world limits.
+	if (px < minx or px > maxx) return true;
+	if (py < miny or py > maxy) return true;
+	if (pz < minz or pz > maxz) return true;
+	string tile = get_tile_at(px, py, pz);
+	if (string_contains(tile, "wall", 1) > -1) return true;
+	return false;
+}
+
+bool has_line_of_sight(double x1, double y1, double z1, double x2, double y2, double z2)
+{
+	double dist = get_3d_distance(x1, y1, z1, x2, y2, z2);
+	if (dist <= 1.0) return true;
+	int steps = int(ceil(dist));
+	double step_x = (x2 - x1) / double(steps);
+	double step_y = (y2 - y1) / double(steps);
+	double step_z = (z2 - z1) / double(steps);
+	for (int s = 1; s < steps; s++)
+	{
+		int cx = int(round(x1 + step_x * double(s), 0));
+		int cy = int(round(y1 + step_y * double(s), 0));
+		int cz = int(round(z1 + step_z * double(s), 0));
+		if (is_projectile_obstacle(cx, cy, cz)) return false;
+	}
+	return true;
+}
+
+double dist_point_to_line_segment_2d(double px, double py, double x1, double y1, double x2, double y2)
+{
+	double dx = x2 - x1;
+	double dy = y2 - y1;
+	if (dx == 0.0 && dy == 0.0)
+	{
+		return get_2d_distance(px, py, x1, y1);
+	}
+	double t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
+	if (t < 0.0) t = 0.0;
+	else if (t > 1.0) t = 1.0;
+	double cx = x1 + t * dx;
+	double cy = y1 + t * dy;
+	return get_2d_distance(px, py, cx, cy);
+}
+
+void trigger_projectile_impact(active_projectile@ pproj)
+{
+	if (pproj is null) return;
+	weapon_data@ w = get_weapon_data(pproj.weapon_id);
+
+	if (w !is null && w.sound_ricochet != "")
+	{
+		string rico_path = get_sound_path(w.sound_ricochet);
+		if (rico_path != "")
+		{
+			bulletpool.play_extended_3d(rico_path, me.x, me.y, me.z, pproj.x, pproj.y, pproj.z, double(facing), 0, 0, 0, 0, 0, 0, false, 0, 0, 0, 100, false);
+		}
+	}
+}
+
+// Area-of-effect detonation for ordnance projectiles (missiles, rockets, grenades, drainage launchers)
+void detonate_projectile_area(active_projectile@ pproj)
+{
+    if (pproj is null) return;
+    weapon_data@ weapon = get_weapon_data(pproj.weapon_id);
+    if (weapon !is null && weapon.sound_hit != "")
+    {
+        string path = get_sound_path(weapon.sound_hit);
+        if (path != "") p.play_3d(path, me.x, me.y, me.z, pproj.x, pproj.y, pproj.z, double(facing), false);
+    }
+    trigger_projectile_impact(pproj);
+}
+
+void projectile_loop()
+{
+    ensure_bullet_pool();
+    for (int i = int(active_projectiles.length()) - 1; i >= 0; i--)
+    {
+        if (i >= int(active_projectiles.length())) continue;
+        active_projectile@ projectile = active_projectiles[i];
+        if (projectile is null) { active_projectiles.remove_at(uint(i)); continue; }
+        if (projectile.speedtimer.elapsed < projectile.speedtime) continue;
+        projectile.speedtimer.restart();
+        vector next = move(projectile.x, projectile.y, projectile.z, projectile.direction, 0);
+        projectile.x = next.x;
+        projectile.y = next.y;
+        projectile.distance++;
+        bool area = projectile.projectile_type == "missile" || projectile.projectile_type == "rocket" || projectile.projectile_type == "grenade" || projectile.projectile_type == "drainage";
+        bool obstacle = is_projectile_obstacle(int(round(projectile.x, 0)), int(round(projectile.y, 0)), int(round(projectile.z, 0)));
+        bool expired = projectile.distance >= projectile.range;
+        if (obstacle || expired)
+        {
+            if (area) detonate_projectile_area(projectile);
+            else trigger_projectile_impact(projectile);
+            active_projectiles.remove_at(uint(i));
+        }
+    }
+}

@@ -1,0 +1,248 @@
+bool dmoving;
+door@[] doors(0);
+class door
+{
+string ds, ds2, ds3, ds4;
+int doorsound, doorsound2;
+int dx;
+int dy;
+int dz;
+int finishx;
+int finishy;
+int finishz;
+int movetime=150;
+bool moving;
+timer movetimer;
+door(int doorx, int doory, int doorz,int doorfinishx, int doorfinishy, int doorfinishz,int speed, string doorsnd, string doorsnd2, string doorsnd3, string doorsnd4)
+{
+ds=doorsnd;
+ds2=doorsnd2;
+ds3=doorsnd3;
+ds4=doorsnd4;
+dx=doorx;
+dy=doory;
+dz=doorz;
+finishx=doorfinishx;
+finishy=doorfinishy;
+finishz=doorfinishz;
+movetime=speed;
+// NOTE: the door's opening sound is NOT played here. Doors must stay silent
+// until the player actually presses Shift+Enter while standing on the door
+// tile (see doorcheck()); playing at construction made every door announce
+// itself the moment the map loaded.
+doorsound=-1;
+doorsound2=-1;
+}
+}
+// Activates a door. Returns true when a door at the player's exact coordinate
+// was triggered this call. Called ONLY from the Shift+Enter branch of the game
+// loop, so a door can never move the player without an explicit key press:
+// simply walking onto the door tile does nothing.
+bool doorcheck()
+{
+	int rx = int(round(me.x, 0));
+	int ry = int(round(me.y, 0));
+	int rz = int(round(me.z, 0));
+	for (uint i=0; i<doors.length(); i++)
+	{
+		if (rx==doors[i].dx and ry==doors[i].dy and rz==doors[i].dz and dmoving==false and doors[i].moving==false)
+		{
+			dmoving=true;
+			doors[i].moving=true;
+			doors[i].movetimer.restart();
+			// Opening sound as a stationary one-shot: the player is standing
+			// exactly ON the door tile, so it is heard from the player's own
+			// position (no per-frame 3D tracking needed, no slot aliasing).
+			if (doors[i].ds!="" and doors[i].ds!="none")
+			{
+				string open_snd = get_sound_path(doors[i].ds);
+				if (open_snd != "") doors[i].doorsound = p.play_stationary(open_snd, false);
+				else doors[i].doorsound = -1;
+			}
+			else doors[i].doorsound = -1;
+			// Movement loop while the door carries the player to the destination.
+			if (doors[i].ds2!="" and doors[i].ds2!="none")
+			{
+				string move_snd = get_sound_path(doors[i].ds2);
+				if (move_snd != "") doors[i].doorsound2 = p.play_stationary(move_snd, true);
+				else doors[i].doorsound2 = -1;
+			}
+			else doors[i].doorsound2 = -1;
+			return true;
+		}
+	}
+	return false;
+}
+void doorcheckloop()
+{
+for (uint i=0; i<doors.length(); i++)
+{
+if (doors[i].moving==true and doors[i].movetimer.elapsed>=doors[i].movetime)
+{
+doors[i].movetimer.restart();
+if (me.x>doors[i].finishx)
+{
+me.x-=1;
+}
+else if (me.x<doors[i].finishx)
+{
+me.x+=1;
+}
+if (me.y>doors[i].finishy)
+{
+me.y-=1;
+}
+else if (me.y<doors[i].finishy)
+{
+me.y+=1;
+}
+if (me.z>doors[i].finishz)
+{
+me.z-=1;
+}
+else if (me.z<doors[i].finishz)
+{
+me.z+=1;
+}
+}
+if (doors[i].finishx==me.x and doors[i].finishy==me.y and doors[i].finishz==me.z and doors[i].moving==true)
+{
+if (doors[i].doorsound2>=0)
+{
+p.destroy_sound(doors[i].doorsound2);
+doors[i].doorsound2=-1;
+}
+if (doors[i].ds3!="" and doors[i].ds3!="none")
+{
+string close_snd = get_sound_path(doors[i].ds3);
+if (close_snd != "") p.play_stationary(close_snd, false);
+}
+if (doors[i].ds4!="" and doors[i].ds4!="none")
+{
+string arrival_snd = get_sound_path(doors[i].ds4);
+if (arrival_snd != "") p.play_stationary(arrival_snd, false);
+}
+// NOTE: the opening one-shot is fire-and-forget; non-looping non-persistent
+// pool slots are auto-cleaned, and destroying by a possibly-recycled slot
+// number could kill an unrelated sound. Only the persistent movement loop
+// needs an explicit destroy (done above).
+dmoving=false;
+doors[i].moving=false;
+}
+}
+}
+void destroy_all_doors()
+{
+for(uint i=0; i<doors.length(); i++)
+{
+// Only the persistent movement loop holds a slot that must be released;
+// one-shot sounds are cleaned automatically by the sound pool.
+if (doors[i].doorsound2>=0) p.destroy_sound(doors[i].doorsound2);
+}
+doors.resize(0);
+}
+void spawn_door(int doorx, int doory, int doorz, int finishx, int finishy, int finishz, int speed, string doorsnd, string doorsnd2, string doorsnd3, string doorsnd4)
+{
+door door1(doorx, doory, doorz,finishx, finishy, finishz,speed, doorsnd, doorsnd2, doorsnd3, doorsnd4);
+doors.insert_last(door1);
+}
+
+void build_door()
+{
+	string disallowed_nums = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ `!@#$%^&*()[]{};:'\"\\|,<>?_/.+=~";
+
+	audio_form f;
+	f.create_window("Add Door", false, true, false);
+	int i_minx = f.create_input_box("Door X", "" + int(round(me.x, 0)));
+	int i_miny = f.create_input_box("Door Y", "" + int(round(me.y, 0)));
+	int i_minz = f.create_input_box("Door Z", "" + int(round(me.z, 0)));
+	int i_finx = f.create_input_box("Finish Destination X", "" + int(round(me.x + 5, 0)));
+	int i_finy = f.create_input_box("Finish Destination Y", "" + int(round(me.y, 0)));
+	int i_finz = f.create_input_box("Finish Destination Z", "" + int(round(me.z, 0)));
+	int i_speed = f.create_input_box("Move Speed (ms)", "150");
+	f.set_disallowed_chars(i_minx, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_miny, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_minz, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_finx, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_finy, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_finz, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_speed, "0123456789", true, "Numbers only.");
+
+	// Sound selection buttons: each opens the categorized sound browser so the
+	// builder can pick a real file from disk (or clear the sound entirely).
+	string s1 = "dooropen.ogg";
+	string s2 = "doormove.ogg";
+	string s3 = "doorclose.ogg";
+	string s4 = "doorclose.ogg";
+	int btn_snd1 = f.create_button("Select Opening Sound: " + (s1 != "" ? s1 : "None"));
+	int btn_snd2 = f.create_button("Select Movement Sound: " + (s2 != "" ? s2 : "None"));
+	int btn_snd3 = f.create_button("Select Closing Sound: " + (s3 != "" ? s3 : "None"));
+	int btn_snd4 = f.create_button("Select Arrival Sound: " + (s4 != "" ? s4 : "None"));
+
+	int btn_ok = f.create_button("Add Door", true);
+	int btn_cancel = f.create_button("Cancel", false, true);
+	f.set_default_controls(btn_ok, btn_cancel);
+	f.focus_silently(i_minx);
+
+	int[] input_boxes = {i_minx, i_miny, i_minz, i_finx, i_finy, i_finz, i_speed};
+	while (true)
+	{
+		wait(5);
+		f.monitor();
+		update_form_input_keyboard_sound(f, input_boxes);
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(btn_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+		if (f.is_pressed(btn_snd1))
+		{
+			s1 = select_sound_by_category_dialog("Door Opening Sound", s1, "", true);
+			f.set_text(btn_snd1, "Select Opening Sound: " + (s1 != "" ? s1 : "None"));
+			speak("Opening sound: " + (s1 != "" ? s1 : "none"));
+		}
+		if (f.is_pressed(btn_snd2))
+		{
+			s2 = select_sound_by_category_dialog("Door Movement Sound", s2, "", true);
+			f.set_text(btn_snd2, "Select Movement Sound: " + (s2 != "" ? s2 : "None"));
+			speak("Movement sound: " + (s2 != "" ? s2 : "none"));
+		}
+		if (f.is_pressed(btn_snd3))
+		{
+			s3 = select_sound_by_category_dialog("Door Closing Sound", s3, "", true);
+			f.set_text(btn_snd3, "Select Closing Sound: " + (s3 != "" ? s3 : "None"));
+			speak("Closing sound: " + (s3 != "" ? s3 : "none"));
+		}
+		if (f.is_pressed(btn_snd4))
+		{
+			s4 = select_sound_by_category_dialog("Door Arrival Sound", s4, "", true);
+			f.set_text(btn_snd4, "Select Arrival Sound: " + (s4 != "" ? s4 : "None"));
+			speak("Arrival sound: " + (s4 != "" ? s4 : "none"));
+		}
+		if (f.is_pressed(btn_ok))
+		{
+			string tx = f.get_text(i_minx);
+			string ty = f.get_text(i_miny);
+			string tz = f.get_text(i_minz);
+			string tfx = f.get_text(i_finx);
+			string tfy = f.get_text(i_finy);
+			string tfz = f.get_text(i_finz);
+			if (tx == "" || ty == "" || tz == "" || tfx == "" || tfy == "" || tfz == "")
+			{
+				speak("Coordinates cannot be empty.");
+				continue;
+			}
+			int dx = int(string_to_number(tx));
+			int dy = int(string_to_number(ty));
+			int dz = int(string_to_number(tz));
+			int fx = int(string_to_number(tfx));
+			int fy = int(string_to_number(tfy));
+			int fz = int(string_to_number(tfz));
+			int spd = int(string_to_number(f.get_text(i_speed)));
+			if (spd <= 0) spd = 150;
+
+			save_to_map("door:" + dx + ":" + dy + ":" + dz + ":" + fx + ":" + fy + ":" + fz + ":" + spd + ":" + s1 + ":" + s2 + ":" + s3 + ":" + s4);
+			return;
+		}
+	}
+}

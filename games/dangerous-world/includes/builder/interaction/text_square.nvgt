@@ -1,0 +1,74 @@
+// includes/builder/interaction/text_square.nvgt - Text square area builder and runtime class
+
+class text_square_obj
+{
+	int minx, maxx, miny, maxy, minz, maxz;
+	string text;
+	bool was_inside;
+	text_square_obj(int x1, int x2, int y1, int y2, int z1, int z2, string t)
+	{
+		minx = x1; maxx = x2;
+		miny = y1; maxy = y2;
+		minz = z1; maxz = z2;
+		text = t;
+		was_inside = false;
+	}
+}
+text_square_obj@[] text_squares;
+
+void spawn_text_square(int minx, int maxx, int miny, int maxy, int minz, int maxz, string text)
+{
+	text_square_obj sq(minx, maxx, miny, maxy, minz, maxz, text);
+	text_squares.insert_last(sq);
+}
+
+void text_square_check()
+{
+	for (uint i = 0; i < text_squares.length(); i++)
+	{
+		bool inside = (me.x >= text_squares[i].minx && me.x <= text_squares[i].maxx &&
+		               me.y >= text_squares[i].miny && me.y <= text_squares[i].maxy &&
+		               me.z >= text_squares[i].minz && me.z <= text_squares[i].maxz);
+		if (inside && !text_squares[i].was_inside)
+		{
+			speak(text_squares[i].text);
+			text_squares[i].was_inside = true;
+		}
+		else if (!inside && text_squares[i].was_inside)
+		{
+			text_squares[i].was_inside = false;
+		}
+	}
+}
+
+void build_text_square()
+{
+	audio_form f;
+	f.create_window("Add Text Square Area", false, true, false);
+	int i_minx = f.create_input_box("Minimum X", "" + minx);
+	int i_maxx = f.create_input_box("Maximum X", "" + maxx);
+	int i_miny = f.create_input_box("Minimum Y", "" + miny);
+	int i_maxy = f.create_input_box("Maximum Y", "" + maxy);
+	int i_minz = f.create_input_box("Minimum Z", "" + minz);
+	int i_maxz = f.create_input_box("Maximum Z", "" + maxz);
+	int i_text = f.create_input_box("Area Announcement Text", "Entering combat district.");
+	int btn_ok = f.create_button("Add Text Square", true);
+	int btn_cancel = f.create_button("Cancel", false, true);
+	f.set_default_controls(btn_ok, btn_cancel);
+	f.focus_silently(i_text);
+
+	int[] input_boxes = {i_minx, i_maxx, i_miny, i_maxy, i_minz, i_maxz, i_text};
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		f.monitor();
+		update_form_input_keyboard_sound(f, input_boxes);
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(btn_cancel)) return;
+		if (f.is_pressed(btn_ok))
+		{
+			save_to_map("text_square:" + f.get_text(i_minx) + ":" + f.get_text(i_maxx) + ":" + f.get_text(i_miny) + ":" + f.get_text(i_maxy) + ":" + f.get_text(i_minz) + ":" + f.get_text(i_maxz) + ":" + f.get_text(i_text));
+			return;
+		}
+	}
+}

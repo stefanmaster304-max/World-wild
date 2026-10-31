@@ -1,0 +1,31 @@
+# Dangerous World - keybindings
+# Format: action=key name
+# To restore the default for an action, delete its line.
+
+move_forward=Up Arrow
+move_back=Down Arrow
+move_left=Left Arrow
+move_right=Right Arrow
+jump=Space
+pause=P
+inventory=I
+drop_item=Delete
+use=Enter
+cycle_inv=Tab
+coordinates=C
+location=Z
+health_status=H
+level_status=L
+kills=K
+quest=U
+facing=F
+builder=B
+tracking_query=W
+tracking_prev=-
+tracking_next==
+tracking_startstop=Backspace
+volume_up=Home
+volume_down=End
+stairs_up=Page Up
+stairs_down=Page Down
+exit_game=Escape

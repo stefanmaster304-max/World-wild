@@ -1,0 +1,78 @@
+store@ [] stores(0);
+string current_store_id = "";
+class store
+{
+int minx, maxx, miny, maxy, minz, maxz;
+string store_id;
+store(int fminx, int fmaxx, int fminy, int fmaxy, int fminz, int fmaxz, string fid)
+{
+minx=fminx;
+maxx=fmaxx;
+miny=fminy;
+maxy=fmaxy;
+minz=fminz;
+maxz=fmaxz;
+store_id=fid;
+}
+}
+void spawn_store(int fminx, int fmaxx, int fminy, int fmaxy, int fminz, int fmaxz, string fid)
+{
+	int x1 = (fminx < fmaxx ? fminx : fmaxx);
+	int x2 = (fminx < fmaxx ? fmaxx : fminx);
+	int y1 = (fminy < fmaxy ? fminy : fmaxy);
+	int y2 = (fminy < fmaxy ? fmaxy : fminy);
+	int z1 = (fminz < fmaxz ? fminz : fmaxz);
+	int z2 = (fminz < fmaxz ? fmaxz : fminz);
+	store st1(x1, x2, y1, y2, z1, z2, fid);
+	stores.insert_last(st1);
+}
+void killstores()
+{
+stores.resize(0);
+}
+bool is_store_at(int x1, int x2, int y1, int y2, int z1, int z2)
+{
+	int nx1 = (x1 < x2 ? x1 : x2);
+	int nx2 = (x1 < x2 ? x2 : x1);
+	int ny1 = (y1 < y2 ? y1 : y2);
+	int ny2 = (y1 < y2 ? y2 : y1);
+	int nz1 = (z1 < z2 ? z1 : z2);
+	int nz2 = (z1 < z2 ? z2 : z1);
+	for(uint i=0; i<stores.length(); i++)
+	{
+		int sx1 = (stores[i].minx < stores[i].maxx ? stores[i].minx : stores[i].maxx);
+		int sx2 = (stores[i].minx < stores[i].maxx ? stores[i].maxx : stores[i].minx);
+		int sy1 = (stores[i].miny < stores[i].maxy ? stores[i].miny : stores[i].maxy);
+		int sy2 = (stores[i].miny < stores[i].maxy ? stores[i].maxy : stores[i].miny);
+		int sz1 = (stores[i].minz < stores[i].maxz ? stores[i].minz : stores[i].maxz);
+		int sz2 = (stores[i].minz < stores[i].maxz ? stores[i].maxz : stores[i].minz);
+		if (nx1 <= sx2 && nx2 >= sx1 && ny1 <= sy2 && ny2 >= sy1 && nz1 <= sz2 && nz2 >= sz1)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool checkstores()
+{
+	int px = int(round(me.x, 0));
+	int py = int(round(me.y, 0));
+	int pz = int(round(me.z, 0));
+	for(uint i=0; i<stores.length(); i++)
+	{
+		int sx1 = (stores[i].minx < stores[i].maxx ? stores[i].minx : stores[i].maxx);
+		int sx2 = (stores[i].minx < stores[i].maxx ? stores[i].maxx : stores[i].minx);
+		int sy1 = (stores[i].miny < stores[i].maxy ? stores[i].miny : stores[i].maxy);
+		int sy2 = (stores[i].miny < stores[i].maxy ? stores[i].maxy : stores[i].miny);
+		int sz1 = (stores[i].minz < stores[i].maxz ? stores[i].minz : stores[i].maxz);
+		int sz2 = (stores[i].minz < stores[i].maxz ? stores[i].maxz : stores[i].minz);
+		if (px >= sx1 && px <= sx2 && py >= sy1 && py <= sy2 && pz >= sz1 && pz <= sz2)
+		{
+			current_store_id = stores[i].store_id;
+			storemenu();
+			return true;
+		}
+	}
+	return false;
+}

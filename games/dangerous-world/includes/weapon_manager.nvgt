@@ -1,0 +1,799 @@
+// weapon_manager.nvgt - Full GUI/Form management and creation interface for weapons.
+// Renders specific fields belonging to weapons without explosives or silencers.
+
+string[] get_all_weapon_subclasses()
+{
+	string[] subclasses;
+	ensure_weapon_directories();
+	string[]@ folders = find_directories(WEAPON_DIR + "/*");
+	if (folders !is null)
+	{
+		for (uint i = 0; i < folders.length(); i++)
+		{
+			if (subclasses.find(folders[i]) == -1)
+				subclasses.insert_last(folders[i]);
+		}
+	}
+	for (uint c = 0; c < weapon_class_folders.length(); c++)
+	{
+		if (subclasses.find(weapon_class_folders[c]) == -1)
+			subclasses.insert_last(weapon_class_folders[c]);
+	}
+	subclasses.sort_ascending();
+	return subclasses;
+}
+
+void weapon_chooser()
+{
+	while (true)
+	{
+		wait(5);
+		audio_form wform;
+		wform.create_window("weapon manager", false, true, false);
+		int list = wform.create_list("select an action", 0, false, true);
+		wform.add_list_item(list, "Create New Weapon", "add");
+		wform.add_list_item(list, "Edit Existing Weapon", "edit");
+		wform.add_list_item(list, "View Weapon Properties", "view");
+		wform.add_list_item(list, "Remove Weapon", "remove");
+		wform.add_list_item(list, "Create New Weapon Subclass / Class", "create_subclass");
+		wform.add_list_item(list, "Remove Weapon Subclass", "remove_subclass");
+		wform.add_list_item(list, "Give Weapon To Player Inventory", "give");
+		int b_select = wform.create_button("&select", true);
+		int b_back = wform.create_button("&back", false, true);
+		wform.focus(list);
+
+		while (true)
+		{
+			wait(5);
+			update_game_world();
+			wform.monitor();
+
+			if (key_pressed(KEY_ESCAPE) || wform.is_pressed(b_back))
+			{
+				return;
+			}
+
+			if (wform.is_pressed(b_select))
+			{
+				int pos = wform.get_list_position(list);
+				if (pos == 0) add_weapon_flow();
+				else if (pos == 1) weapon_list_flow(false);
+				else if (pos == 2) weapon_list_flow(true);
+				else if (pos == 3) remove_weapon_flow();
+				else if (pos == 4) create_subclass_flow();
+				else if (pos == 5) remove_subclass_flow();
+				else if (pos == 6) give_weapon_flow();
+				break;
+			}
+		}
+	}
+}
+
+void create_subclass_flow()
+{
+	if (is_weapon_encrypted())
+	{
+		speak("Weapons are encrypted and protected. You must decrypt weapons first.");
+		dlg("Weapons are encrypted and protected. You must decrypt weapons first.");
+		return;
+	}
+	audio_form cf;
+	cf.create_window("Create New Weapon Class", false, true, false);
+	int in_name = cf.create_input_box("Class name (lowercase, no spaces, e.g. laser_rifles)", "");
+	int b_ok = cf.create_button("&create", true);
+	int b_can = cf.create_button("&cancel", false, true);
+	cf.set_default_controls(b_ok, b_can);
+	cf.focus(in_name);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		cf.monitor();
+		if (key_pressed(KEY_ESCAPE) || cf.is_pressed(b_can)) break;
+		if (cf.is_pressed(b_ok))
+		{
+			string cname = string_to_lower_case(cf.get_text(in_name).trim_whitespace());
+			if (cname == "")
+			{
+				speak("Class name cannot be empty.");
+				continue;
+			}
+			cname = string_replace(cname, " ", "_", true);
+			string dir = WEAPON_DIR + "/" + cname;
+			if (!directory_exists(dir)) directory_create(dir);
+			if (weapon_class_folders.find(cname) == -1) weapon_class_folders.insert_last(cname);
+			speak("Weapon class " + cname + " created successfully.");
+			break;
+		}
+	}
+}
+
+void remove_subclass_flow()
+{
+	if (is_weapon_encrypted())
+	{
+		speak("Weapons are encrypted and protected. You must decrypt weapons first.");
+		dlg("Weapons are encrypted and protected. You must decrypt weapons first.");
+		return;
+	}
+	string[] classes = get_all_weapon_subclasses();
+	if (classes.length() == 0)
+	{
+		dlg("No weapon classes found.");
+		return;
+	}
+
+	audio_form rf;
+	rf.create_window("Remove Weapon Class", false, true, false);
+	int list = rf.create_list("Select class to remove", 0, false, true);
+	for (uint i = 0; i < classes.length(); i++)
+	{
+		rf.add_list_item(list, classes[i], classes[i], -1, false, (i == 0));
+	}
+	int b_rem = rf.create_button("&remove", true);
+	int b_can = rf.create_button("&cancel", false, true);
+	rf.focus(list);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		rf.monitor();
+		if (key_pressed(KEY_ESCAPE) || rf.is_pressed(b_can)) break;
+		if (rf.is_pressed(b_rem))
+		{
+			int pos = rf.get_list_position(list);
+			if (pos >= 0 && pos < int(classes.length()))
+			{
+				string cname = classes[pos];
+				string dir = WEAPON_DIR + "/" + cname;
+				string[]@ files = find_files(dir + "/*");
+				if (files !is null && files.length() > 0)
+				{
+					dlg("Cannot remove class " + cname + " because it contains weapon files. Remove weapons first.");
+					break;
+				}
+				if (directory_exists(dir)) directory_delete(dir);
+				for (int j = int(weapon_class_folders.length()) - 1; j >= 0; j--)
+				{
+					if (weapon_class_folders[j] == cname) weapon_class_folders.remove_at(uint(j));
+				}
+				speak("Weapon class " + cname + " removed.");
+				break;
+			}
+		}
+	}
+}
+
+void weapon_list_flow(bool view_only)
+{
+	load_all_weapons_wpm();
+	if (weapon_registry.length() == 0)
+	{
+		dlg("No weapons found. Please create a new weapon.");
+		return;
+	}
+
+	audio_form lf;
+	lf.create_window(view_only ? "view weapon" : "edit weapon", false, true, false);
+	int list = lf.create_list("available weapons", 0, false, true);
+
+	for (uint i = 0; i < weapon_registry.length(); i++)
+	{
+		string display = weapon_registry[i].name + " (" + weapon_registry[i].wclass + ")";
+		lf.add_list_item(list, display, weapon_registry[i].id, -1, false, (i == 0));
+	}
+	int b_ok = lf.create_button(view_only ? "&view" : "&edit", true);
+	int b_cancel = lf.create_button("&cancel", false, true);
+	lf.focus(list);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		lf.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || lf.is_pressed(b_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+
+		if (lf.is_pressed(b_ok))
+		{
+			int pos = lf.get_list_position(list);
+			if (pos >= 0 && pos < int(weapon_registry.length()))
+			{
+				if (!view_only && is_weapon_encrypted(weapon_registry[pos].id))
+				{
+					dlg("This weapon is encrypted and cannot be edited.");
+					continue;
+				}
+				weapon_edit_form(weapon_registry[pos].id, false, view_only);
+				return;
+			}
+		}
+	}
+}
+
+void remove_weapon_flow()
+{
+	if (is_weapon_encrypted())
+	{
+		speak("Weapons are encrypted and protected. You must decrypt weapons first.");
+		dlg("Weapons are encrypted and protected. You must decrypt weapons first.");
+		return;
+	}
+	load_all_weapons_wpm();
+	if (weapon_registry.length() == 0)
+	{
+		dlg("No weapons found.");
+		return;
+	}
+
+	audio_form rf;
+	rf.create_window("remove weapon", false, true, false);
+	int list = rf.create_list("select weapon to remove", 0, false, true);
+
+	for (uint i = 0; i < weapon_registry.length(); i++)
+	{
+		string display = weapon_registry[i].name + " (" + weapon_registry[i].wclass + ")";
+		rf.add_list_item(list, display, weapon_registry[i].id, -1, false, (i == 0));
+	}
+	int b_remove = rf.create_button("&remove", true);
+	int b_cancel = rf.create_button("&cancel", false, true);
+	rf.focus(list);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		rf.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || rf.is_pressed(b_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+
+		if (rf.is_pressed(b_remove))
+		{
+			int pos = rf.get_list_position(list);
+			if (pos >= 0 && pos < int(weapon_registry.length()))
+			{
+				string wid = weapon_registry[pos].id;
+				weapon_data@ w = get_weapon_data(wid);
+				if (w !is null && menuquestion("Are you sure you want to remove " + w.name + "?") == 1)
+				{
+					delete_weapon_wpm(w.id);
+					load_all_weapons_wpm();
+					speak("Weapon removed.");
+				}
+				return;
+			}
+		}
+	}
+}
+
+// Button label helper: shows how many sound variants a weapon field holds.
+string weapon_sound_count_label(const string&in val)
+{
+	if (val == "") return " (none)";
+	string[]@ parts = string_split(val, ";", true);
+	if (parts !is null && parts.length() > 1) return " (" + ("" + parts.length()) + " sounds)";
+	return " (1 sound)";
+}
+
+string weapon_pick_sound_dialog(string action_key, string current_val)
+{
+	return select_sound_by_category_dialog(action_key, current_val, "weapons", true);
+}
+
+string[] available_fire_mode_keys = {
+	"semi",
+	"auto",
+	"burst",
+	"semi;auto",
+	"semi;burst;auto",
+	"burst;auto",
+	"scattershot",
+	"focused",
+	"semi;burst;auto;scattershot;focused"
+};
+
+string[] available_fire_mode_names = {
+	"Semi-Automatic (semi)",
+	"Full Automatic (auto)",
+	"Burst Fire (burst)",
+	"Semi and Full Auto (semi;auto)",
+	"Semi, Burst and Auto (semi;burst;auto)",
+	"Burst and Auto (burst;auto)",
+	"Scattershot (scattershot)",
+	"Focused (focused)",
+	"All Modes (semi;burst;auto;scattershot;focused)"
+};
+
+void pick_weapon_ammo_dialog(weapon_data@ w, audio_form@ parent_form, int in_reserve, int in_type, int in_cap, int in_label, int in_mag, int in_disp)
+{
+	load_all_items_config();
+	string[] ammo_ids;
+	string[] ammo_labels;
+
+	for (uint i = 0; i < item_registry.length(); i++)
+	{
+		if (item_registry[i].category == "ammo")
+		{
+			string aid = item_registry[i].id;
+			string aname = item_registry[i].name;
+			string asub = item_registry[i].subtype;
+			string cap_str = (item_registry[i].capacity > 0) ? " [" + item_registry[i].capacity + " cap]" : "";
+			ammo_ids.insert_last(aid);
+			ammo_labels.insert_last(aname + (asub != "" ? " (" + asub + ")" : "") + cap_str + " - " + aid);
+		}
+	}
+
+	if (ammo_ids.length() == 0)
+	{
+		speak("No ammunition items found in settings/items/ammo.");
+		return;
+	}
+
+	audio_form af;
+	af.create_window("select ammunition type or magazine", false, true, false);
+	int list = af.create_list("available ammunition and magazines", 0, false, true);
+
+	for (uint i = 0; i < ammo_ids.length(); i++)
+	{
+		af.add_list_item(list, ammo_labels[i], ammo_ids[i], -1, false, (ammo_ids[i] == w.reserve_item));
+	}
+	int b_ok = af.create_button("&select", true);
+	int b_can = af.create_button("&cancel", false, true);
+	af.focus(list);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		af.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || af.is_pressed(b_can))
+		{
+			speak("canceled");
+			return;
+		}
+
+		if (af.is_pressed(b_ok))
+		{
+			int pos = af.get_list_position(list);
+			if (pos >= 0 && pos < int(ammo_ids.length()))
+			{
+				string picked_id = ammo_ids[pos];
+				item_data@ it = get_item_data(picked_id);
+				w.reserve_item = picked_id;
+				if (it !is null)
+				{
+					if (it.ammo_type != "") w.ammo_type = it.ammo_type;
+					else w.ammo_type = it.name;
+					if (it.capacity > 0) w.capacity = it.capacity;
+
+					bool is_mag = (string_contains(picked_id, "mag", 1) > -1 || string_contains(picked_id, "clip", 1) > -1 || string_contains(picked_id, "drum", 1) > -1);
+					w.is_magazine = is_mag;
+					if (string_contains(picked_id, "drum", 1) > -1) w.reserve_label = "drum";
+					else if (string_contains(picked_id, "clip", 1) > -1) w.reserve_label = "clip";
+					else if (string_contains(picked_id, "mag", 1) > -1) w.reserve_label = "magazine";
+					else if (string_contains(picked_id, "bandolier", 1) > -1) w.reserve_label = "bandolier";
+					else if (string_contains(picked_id, "box", 1) > -1 || string_contains(picked_id, "belt", 1) > -1) w.reserve_label = "box";
+					else if (string_contains(picked_id, "cell", 1) > -1 || string_contains(picked_id, "battery", 1) > -1) w.reserve_label = "cell";
+					else if (string_contains(picked_id, "canister", 1) > -1 || string_contains(picked_id, "fuel", 1) > -1) w.reserve_label = "canister";
+					else if (string_contains(picked_id, "speedloader", 1) > -1) w.reserve_label = "speedloader";
+					else if (string_contains(picked_id, "quiver", 1) > -1 || string_contains(picked_id, "rack", 1) > -1) w.reserve_label = "quiver";
+					else w.reserve_label = "magazine";
+
+					if (string_contains(picked_id, "shell", 1) > -1 || string_contains(picked_id, "12_gauge", 1) > -1 || string_contains(picked_id, "12g", 1) > -1 || string_contains(picked_id, "10_gauge", 1) > -1 || string_contains(picked_id, "16_gauge", 1) > -1 || string_contains(picked_id, "20_gauge", 1) > -1 || string_contains(picked_id, "410_bore", 1) > -1) w.ammo_display = "shells";
+					else if (string_contains(picked_id, "cell", 1) > -1 || string_contains(picked_id, "battery", 1) > -1 || string_contains(picked_id, "fusion", 1) > -1 || string_contains(picked_id, "laser", 1) > -1 || string_contains(picked_id, "plasma", 1) > -1 || string_contains(picked_id, "capacitor", 1) > -1) w.ammo_display = "cells";
+					else if (string_contains(picked_id, "missile", 1) > -1) w.ammo_display = "missiles";
+					else if (string_contains(picked_id, "rocket", 1) > -1) w.ammo_display = "rockets";
+					else if (string_contains(picked_id, "grenade", 1) > -1) w.ammo_display = "grenades";
+					else if (string_contains(picked_id, "drainage", 1) > -1 || string_contains(picked_id, "canister", 1) > -1) w.ammo_display = "canisters";
+					else if (string_contains(picked_id, "bolt", 1) > -1 || string_contains(picked_id, "arrow", 1) > -1) w.ammo_display = "arrows";
+					else if (string_contains(picked_id, "fuel", 1) > -1) w.ammo_display = "fuel units";
+					else w.ammo_display = "rounds";
+				}
+
+
+				if (in_reserve != -1) parent_form.set_text(in_reserve, w.reserve_item);
+				if (in_type != -1) parent_form.set_text(in_type, w.ammo_type);
+				if (in_cap != -1) parent_form.set_text(in_cap, string(w.capacity));
+				if (in_label != -1) parent_form.set_text(in_label, w.reserve_label);
+				if (in_disp != -1) parent_form.set_text(in_disp, w.ammo_display);
+
+				speak("Selected " + (it !is null ? it.name : picked_id) + " for weapon ammo.");
+				return;
+			}
+		}
+	}
+}
+
+bool weapon_edit_form(string weapon_id, bool is_new, bool view_only, string chosen_class = "")
+{
+	weapon_data@ w = get_weapon_data(weapon_id);
+	if (w is null)
+	{
+		@w = @weapon_data();
+		w.id = weapon_id;
+		w.name = string_replace(weapon_id, "_", " ", true);
+		if (chosen_class != "") w.wclass = chosen_class;
+	}
+
+	form.reset();
+	form.create_window((is_new ? "add " : (view_only ? "view " : "edit ")) + w.name, false, view_only, false);
+
+	int in_id = -1;
+	if (is_new)
+	{
+		in_id = form.create_input_box("weapon id (filename)", w.id);
+	}
+	int in_name = form.create_input_box("display name", w.name, "", 0, false, false, view_only);
+	int in_desc = form.create_input_box("description", w.description, "", 0, false, false, view_only);
+	int in_class = form.create_input_box("weapon class", w.wclass, "", 0, false, false, view_only);
+	int in_melee = form.create_checkbox("melee weapon (no ammo required)", w.melee, view_only);
+	int in_firetime = form.create_input_box("fire interval (ms)", string(w.firetime), "", 0, false, false, view_only);
+	int in_walktime = form.create_input_box("walk interval while holding (ms)", string(w.walktime > 0 ? w.walktime : 200), "", 0, false, false, view_only);
+	int in_speedtime = form.create_input_box("bullet speed (ms per tile)", string(w.speedtime > 0 ? w.speedtime : 5), "", 0, false, false, view_only);
+	int in_range = form.create_input_box("effective range (tiles)", string(w.range), "", 0, false, false, view_only);
+	int in_min_dmg = form.create_input_box("minimum damage", string(w.min_damage), "", 0, false, false, view_only);
+	int in_max_dmg = form.create_input_box("maximum damage", string(w.max_damage), "", 0, false, false, view_only);
+	int in_spread = form.create_input_box("spread accuracy (0 for perfect)", string(w.spread), "", 0, false, false, view_only);
+	int in_capacity = form.create_input_box("magazine/chamber capacity", string(w.capacity), "", 0, false, false, view_only);
+	form.set_disallowed_chars(in_firetime, "0123456789", true, "Numbers only.");
+	form.set_disallowed_chars(in_walktime, "0123456789", true, "Numbers only.");
+	form.set_disallowed_chars(in_speedtime, "0123456789", true, "Numbers only.");
+	form.set_disallowed_chars(in_range, "0123456789", true, "Numbers only.");
+	form.set_disallowed_chars(in_min_dmg, "0123456789", true, "Numbers only.");
+	form.set_disallowed_chars(in_max_dmg, "0123456789", true, "Numbers only.");
+	form.set_disallowed_chars(in_spread, "0123456789", true, "Numbers only.");
+	form.set_disallowed_chars(in_capacity, "0123456789", true, "Numbers only.");
+	int in_ammo_type = form.create_input_box("ammo type description", w.ammo_type, "", 0, false, false, view_only);
+	int in_reserve_item = form.create_input_box("reserve ammunition item id", w.reserve_item, "", 0, false, false, view_only);
+
+	int btn_pick_ammo = -1;
+	if (!view_only)
+	{
+		btn_pick_ammo = form.create_button("&select ammunition / magazine from list" + (w.reserve_item != "" ? " (" + w.reserve_item + ")" : ""));
+	}
+
+	int in_reserve_label = form.create_input_box("reserve ammunition unit label (magazine, clip, box)", w.reserve_label, "", 0, false, false, view_only);
+	int in_is_mag = form.create_checkbox("is magazine based reload", w.is_magazine, view_only);
+	// No reload-time field: reload duration is the length of the weapon's
+	// reload sound. The weapon cannot fire while that sound is playing.
+	int in_ammo_display = form.create_input_box("ammo display unit (rounds, shells, cells)", w.ammo_display, "", 0, false, false, view_only);
+
+	int in_fire_modes_list = form.create_list("available fire modes (use arrow keys to focus and select)", 0, false, true);
+	for (uint mi = 0; mi < available_fire_mode_keys.length(); mi++)
+	{
+		bool is_sel = (w.fire_modes == available_fire_mode_keys[mi]);
+		form.add_list_item(in_fire_modes_list, available_fire_mode_names[mi], available_fire_mode_keys[mi], -1, false, is_sel);
+	}
+
+	// Sound buttons
+	int btn_fire = form.create_button("&fire sound" + weapon_sound_count_label(w.sound_fire));
+	int btn_dist_fire = form.create_button("&distant fire sound" + weapon_sound_count_label(w.sound_distant_fire));
+	int btn_reload = form.create_button("&reload sound" + weapon_sound_count_label(w.sound_reload));
+	int btn_empty = form.create_button("&empty magazine sound" + weapon_sound_count_label(w.sound_empty_mag));
+	int btn_draw = form.create_button("&draw sound" + weapon_sound_count_label(w.sound_draw));
+	int btn_hit = form.create_button("&impact sound" + weapon_sound_count_label(w.sound_hit));
+	int btn_ricochet = form.create_button("&ricochet sound" + weapon_sound_count_label(w.sound_ricochet));
+
+	int b_give = -1;
+	if (!view_only) b_give = form.create_button("&give to inventory");
+	int b_save = -1;
+	if (!view_only) b_save = form.create_button("&save weapon", true);
+	int b_cancel = form.create_button("&close", false, true);
+
+	form.focus(is_new ? in_id : in_name);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		form.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || form.is_pressed(b_cancel))
+		{
+			speak("canceled");
+			return false;
+		}
+
+		if (form.is_pressed(b_give))
+		{
+			string wid_to_give = (is_new && in_id != -1) ? form.get_text(in_id) : w.id;
+			if (wid_to_give != "")
+			{
+				give(wid_to_give, 1);
+				speak("Given 1 " + w.name + " to your inventory.");
+			}
+		}
+
+		if (!view_only)
+		{
+			if (btn_pick_ammo != -1 && form.is_pressed(btn_pick_ammo))
+			{
+				pick_weapon_ammo_dialog(w, form, in_reserve_item, in_ammo_type, in_capacity, in_reserve_label, in_is_mag, in_ammo_display);
+				form.set_text(btn_pick_ammo, "&select ammunition / magazine from list (" + w.reserve_item + ")");
+			}
+
+			if (form.is_pressed(btn_fire))
+			{
+				w.sound_fire = weapon_pick_sound_dialog("fire", w.sound_fire);
+				form.set_text(btn_fire, "&fire sound" + weapon_sound_count_label(w.sound_fire));
+			}
+			if (form.is_pressed(btn_dist_fire))
+			{
+				w.sound_distant_fire = weapon_pick_sound_dialog("distant fire", w.sound_distant_fire);
+				form.set_text(btn_dist_fire, "&distant fire sound" + weapon_sound_count_label(w.sound_distant_fire));
+			}
+			if (form.is_pressed(btn_reload))
+			{
+				w.sound_reload = weapon_pick_sound_dialog("reload", w.sound_reload);
+				form.set_text(btn_reload, "&reload sound" + weapon_sound_count_label(w.sound_reload));
+			}
+			if (form.is_pressed(btn_empty))
+			{
+				w.sound_empty_mag = weapon_pick_sound_dialog("empty mag", w.sound_empty_mag);
+				form.set_text(btn_empty, "&empty magazine sound" + weapon_sound_count_label(w.sound_empty_mag));
+			}
+			if (form.is_pressed(btn_draw))
+			{
+				w.sound_draw = weapon_pick_sound_dialog("draw", w.sound_draw);
+				form.set_text(btn_draw, "&draw sound" + weapon_sound_count_label(w.sound_draw));
+			}
+			if (form.is_pressed(btn_hit))
+			{
+				w.sound_hit = weapon_pick_sound_dialog("impact", w.sound_hit);
+				form.set_text(btn_hit, "&impact sound" + weapon_sound_count_label(w.sound_hit));
+			}
+			if (form.is_pressed(btn_ricochet))
+			{
+				w.sound_ricochet = weapon_pick_sound_dialog("ricochet", w.sound_ricochet);
+				form.set_text(btn_ricochet, "&ricochet sound" + weapon_sound_count_label(w.sound_ricochet));
+			}
+
+			if (b_save != -1 && form.is_pressed(b_save))
+			{
+				if (is_new)
+				{
+					string nid = string_trim_sides(form.get_text(in_id));
+					if (nid == "")
+					{
+						speak("Weapon id cannot be empty.");
+						form.focus(in_id);
+						continue;
+					}
+					w.id = nid;
+				}
+
+				w.name = string_trim_sides(form.get_text(in_name));
+				if (w.name == "") w.name = w.id;
+				w.description = form.get_text(in_desc);
+				w.wclass = string_trim_sides(form.get_text(in_class));
+				if (w.wclass == "") w.wclass = "pistols";
+				w.melee = form.is_checked(in_melee);
+				w.firetime = int(string_to_number(form.get_text(in_firetime)));
+				if (w.firetime < 4) w.firetime = 4;
+				w.firetime_min = w.firetime;
+				w.firetime_max = w.firetime;
+				w.walktime = int(string_to_number(form.get_text(in_walktime)));
+				w.speedtime = int(string_to_number(form.get_text(in_speedtime)));
+				w.range = int(string_to_number(form.get_text(in_range)));
+				w.min_damage = int(string_to_number(form.get_text(in_min_dmg)));
+				w.max_damage = int(string_to_number(form.get_text(in_max_dmg)));
+				w.spread = int(string_to_number(form.get_text(in_spread)));
+				w.capacity = int(string_to_number(form.get_text(in_capacity)));
+				w.ammo_type = form.get_text(in_ammo_type);
+				w.reserve_item = form.get_text(in_reserve_item);
+				w.reserve_label = form.get_text(in_reserve_label);
+				w.is_magazine = form.is_checked(in_is_mag);
+				w.ammo_display = form.get_text(in_ammo_display);
+
+				int mode_pos = form.get_list_position(in_fire_modes_list);
+				if (mode_pos >= 0 && mode_pos < int(available_fire_mode_keys.length()))
+				{
+					w.fire_modes = available_fire_mode_keys[mode_pos];
+				}
+				else if (w.fire_modes == "")
+				{
+					w.fire_modes = "semi";
+				}
+
+
+
+				if (save_weapon_wpm(w))
+
+				{
+					load_all_weapons_wpm();
+					speak("Weapon " + w.name + " saved successfully.");
+					return true;
+				}
+				else
+				{
+					speak("Failed to save weapon config.");
+				}
+			}
+		}
+	}
+	return false;
+}
+
+
+void add_weapon_flow()
+{
+	if (is_weapon_encrypted())
+	{
+		speak("Weapons are encrypted and protected. You must decrypt weapons first.");
+		dlg("Weapons are encrypted and protected. You must decrypt weapons first.");
+		return;
+	}
+	string[] subclasses = get_all_weapon_subclasses();
+
+	audio_form cf;
+	cf.create_window("select weapon class", false, true, false);
+	int list = cf.create_list("classes", 0, false, true);
+
+	cf.add_list_item(list, "[Create New Class...]", "new_class", -1, false, true);
+	for (uint i = 0; i < subclasses.length(); i++)
+	{
+		cf.add_list_item(list, subclasses[i], subclasses[i], -1, false, false);
+	}
+	int b_ok = cf.create_button("&next", true);
+	int b_cancel = cf.create_button("&cancel", false, true);
+	cf.focus(list);
+
+	string chosen_class = "";
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		cf.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || cf.is_pressed(b_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+
+		if (cf.is_pressed(b_ok))
+		{
+			int pos = cf.get_list_position(list);
+			if (pos == 0)
+			{
+				// Create new class inline
+				audio_form ncf;
+				ncf.create_window("New Weapon Class Name", false, true, false);
+				int in_cname = ncf.create_input_box("Class name (e.g. laser_rifles)", "");
+				int b_cok = ncf.create_button("&create", true);
+				int b_ccan = ncf.create_button("&cancel", false, true);
+				ncf.set_default_controls(b_cok, b_ccan);
+				ncf.focus(in_cname);
+
+				while (true)
+				{
+					wait(5);
+					update_game_world();
+					ncf.monitor();
+					if (key_pressed(KEY_ESCAPE) || ncf.is_pressed(b_ccan)) break;
+					if (ncf.is_pressed(b_cok))
+					{
+						chosen_class = string_to_lower_case(ncf.get_text(in_cname).trim_whitespace());
+						chosen_class = string_replace(chosen_class, " ", "_", true);
+						if (chosen_class != "")
+						{
+							string dir = WEAPON_DIR + "/" + chosen_class;
+							if (!directory_exists(dir)) directory_create(dir);
+							if (weapon_class_folders.find(chosen_class) == -1) weapon_class_folders.insert_last(chosen_class);
+						}
+						break;
+					}
+				}
+				if (chosen_class != "") break;
+				continue;
+			}
+			else if (pos > 0 && pos <= int(subclasses.length()))
+			{
+				chosen_class = subclasses[pos - 1];
+				break;
+			}
+		}
+	}
+
+	if (chosen_class == "") return;
+
+	weapon_data w;
+	w.wclass = chosen_class;
+	w.id = "new_" + chosen_class;
+	w.name = "New " + chosen_class;
+	weapon_edit_form(w.id, true, false, chosen_class);
+}
+
+void give_weapon_flow()
+{
+	load_all_weapons_wpm();
+	if (weapon_registry.length() == 0)
+	{
+		dlg("No weapons available to give.");
+		return;
+	}
+
+	audio_form gf;
+	gf.create_window("select weapons to give to inventory", false, true, false);
+	int list = gf.create_list("available weapons (Space to check/uncheck)", 0, true, true);
+
+	for (uint i = 0; i < weapon_registry.length(); i++)
+	{
+		string display = weapon_registry[i].name + " (" + weapon_registry[i].wclass + ")";
+		gf.add_list_item(list, display, weapon_registry[i].id, -1, false, (i == 0));
+	}
+	int b_give = gf.create_button("&give selected to inventory", true);
+	int b_cancel = gf.create_button("&cancel", false, true);
+	gf.focus(list);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		gf.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || gf.is_pressed(b_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+
+		if (gf.is_pressed(b_give))
+		{
+			int[]@ checked = gf.get_checked_list_items(list);
+			if (checked !is null && checked.length() > 0)
+			{
+				int given_count = 0;
+				string last_name = "";
+				for (uint c = 0; c < checked.length(); c++)
+				{
+					int idx = checked[c];
+					if (idx >= 0 && idx < int(weapon_registry.length()))
+					{
+						string wid = weapon_registry[idx].id;
+						weapon_data@ w = get_weapon_data(wid);
+						give(wid, 1);
+						last_name = (w !is null && w.name != "") ? w.name : wid;
+						given_count++;
+					}
+				}
+				if (given_count == 1)
+				{
+					speak("Given 1 " + last_name + " to your inventory.");
+				}
+				else
+				{
+					speak("Given " + given_count + " weapons to your inventory.");
+				}
+				return;
+			}
+			else
+			{
+				// If no checkboxes were checked, give the currently highlighted weapon
+				int pos = gf.get_list_position(list);
+				if (pos >= 0 && pos < int(weapon_registry.length()))
+				{
+					string wid = weapon_registry[pos].id;
+					weapon_data@ w = get_weapon_data(wid);
+					give(wid, 1);
+					string iname = (w !is null && w.name != "") ? w.name : wid;
+					speak("Given 1 " + iname + " to your inventory.");
+					return;
+				}
+				speak("No weapons selected.");
+				return;
+			}
+		}
+	}
+}

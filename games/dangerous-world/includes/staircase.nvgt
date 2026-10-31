@@ -1,0 +1,175 @@
+int abletojump2;
+staircase@[] staircases;
+bool onstaircase;
+class staircase
+{
+bool abletojump;
+int minx, maxx, miny, maxy, minz, maxz;
+string tile;
+int staircasesound;
+staircase(int cx, int cx2, int fminy,int fmaxy,int sminz, int smaxz, string playsound)
+{
+minx=cx;
+maxx=cx2;
+miny=fminy;
+maxy=fmaxy;
+minz=sminz;
+maxz=smaxz;
+tile=playsound;
+spawn_platform(minx,maxx,miny,maxy,minz,maxz,tile);
+}
+}
+void staircasecheckloop()
+{
+onstaircase=false;
+for (uint i=0; i<staircases.length(); i++)
+{
+bool on_this=(me.x>=staircases[i].minx&&me.x<=staircases[i].maxx&&me.y>=staircases[i].miny&&me.y<=staircases[i].maxy and me.z>=staircases[i].minz and me.z<=staircases[i].maxz);
+if (on_this)
+{
+onstaircase=true;
+if (me.z==staircases[i].maxz)staircases[i].abletojump=true;
+else staircases[i].abletojump=false;
+}
+else
+{
+staircases[i].abletojump=true;
+}
+if (on_this&&(kb_down("stairs_up")||kb_down("stairs_down")))
+{
+	if (is_sitting)
+	{
+		speak("You are sitting. Press Q to stand up.");
+	}		else if (kb_down("stairs_up"))
+		{
+			if (movetimer.elapsed>=movetime&&me.z<staircases[i].maxz)
+			{
+				movetimer.restart();
+				me.z+=1;
+				// Footstep resolved exactly like normal platform walking
+				// (get_platform_sound -> sounds/map platforms/<tile>/step*.ogg).
+				// The old legacy name "tile+step+N" no longer exists on disk,
+				// which made stairs completely silent.
+				string stair_step_snd = get_platform_sound(staircases[i].tile, "step");
+				if (stair_step_snd != "") p.play_stationary(stair_step_snd, false);
+			}
+		}		else if (kb_down("stairs_down"))
+		{
+			if (movetimer.elapsed>=movetime&&me.z>staircases[i].minz)
+			{
+				movetimer.restart();
+				me.z-=1;
+				string stair_step_snd = get_platform_sound(staircases[i].tile, "step");
+				if (stair_step_snd != "") p.play_stationary(stair_step_snd, false);
+			}
+		}
+}
+}
+}
+void spawn_staircase(int fminx, int fmaxx, int fminy, int fmaxy, int fminz, int fmaxz, string stile)
+{
+staircase staircase1(fminx,fmaxx,fminy, fmaxy,fminz,fmaxz,stile);
+staircases.insert_last(staircase1);
+}
+void destroy_all_staircases()
+{
+staircases.resize(0);
+}
+void sjumpcheck()
+{
+if (staircases.length()<=0)abletojump2=1;
+else
+{
+for (uint i=0; i<staircases.length(); i++)
+{
+if (staircases[i].abletojump==false)
+{
+abletojump2=0;
+break;
+}
+else if (staircases[i].abletojump==true||onstaircase==false)
+{
+abletojump2+=1;
+}
+else if (i>=staircases.length()-1&&staircases.length()>0&&staircases[i].abletojump==true)
+{
+abletojump2=1;
+break;
+}
+else if (i>=staircases.length()-1&&staircases.length()>0&&staircases[i].abletojump==false)
+{
+abletojump2=0;
+break;
+}
+}
+}
+}
+
+void build_staircase()
+{
+	string disallowed_nums = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ `!@#$%^&*()[]{};:'\"\\|,<>?_/.+=~";
+	string[] platform_dirs = get_map_sound_folders("builder/construction/platforms/*");
+
+	audio_form f;
+	f.create_window("Add Staircase", false, true, false);
+	int i_minx = f.create_input_box("Minimum X", "" + minx);
+	int i_maxx = f.create_input_box("Maximum X", "" + maxx);
+	int i_miny = f.create_input_box("Minimum Y", "" + miny);
+	int i_maxy = f.create_input_box("Maximum Y", "" + maxy);
+	int i_minz = f.create_input_box("Minimum Z", "" + minz);
+	int i_maxz = f.create_input_box("Maximum Z", "" + maxz);
+	f.set_disallowed_chars(i_minx, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_maxx, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_miny, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_maxy, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_minz, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_maxz, "0123456789-", true, "Numbers only.");
+
+	int tile_ctrl = f.create_list("Stair Surface Texture");
+	for (uint i = 0; i < platform_dirs.length(); i++)
+		f.add_list_item(tile_ctrl, platform_dirs[i]);
+
+	int btn_ok = f.create_button("Add Staircase", true);
+	int btn_cancel = f.create_button("Cancel", false, true);
+	f.set_default_controls(btn_ok, btn_cancel);
+	f.focus_silently(i_minx);
+
+	int[] input_boxes = {i_minx, i_maxx, i_miny, i_maxy, i_minz, i_maxz};
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		f.monitor();
+		update_form_input_keyboard_sound(f, input_boxes);
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(btn_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+		if (f.is_pressed(btn_ok))
+		{
+			string tx1 = f.get_text(i_minx);
+			string tx2 = f.get_text(i_maxx);
+			string ty1 = f.get_text(i_miny);
+			string ty2 = f.get_text(i_maxy);
+			string tz1 = f.get_text(i_minz);
+			string tz2 = f.get_text(i_maxz);
+			if (tx1 == "" || tx2 == "" || ty1 == "" || ty2 == "" || tz1 == "" || tz2 == "")
+			{
+				speak("Coordinates cannot be empty.");
+				continue;
+			}
+			int x1 = int(string_to_number(tx1));
+			int x2 = int(string_to_number(tx2));
+			int y1 = int(string_to_number(ty1));
+			int y2 = int(string_to_number(ty2));
+			int z1 = int(string_to_number(tz1));
+			int z2 = int(string_to_number(tz2));
+			int pos = f.get_list_position(tile_ctrl);
+			string stile = (pos >= 0 && pos < int(platform_dirs.length())) ? platform_dirs[pos] : "concrete";
+
+			save_to_map("staircase:" + x1 + ":" + x2 + ":" + y1 + ":" + y2 + ":" + z1 + ":" + z2 + ":" + stile);
+			return;
+		}
+	}
+}

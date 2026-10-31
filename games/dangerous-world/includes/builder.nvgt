@@ -1,0 +1,756 @@
+
+#include "weapon_data_saver.nvgt"
+#include "ammo_system.nvgt"
+#include "projectile_system.nvgt"
+#include "weapon_system.nvgt"
+#include "weapon_manager.nvgt"
+#include "item_data_saver.nvgt"
+#include "item_manager.nvgt"
+#include "package_manager.nvgt"
+#include "item_spawner.nvgt"
+#include "builder/misc/item_spawner_builder.nvgt"
+
+// Misc Builders & Runtime
+#include "builder/misc/spawnpoint.nvgt"
+#include "builder/misc/checkpoint.nvgt"
+
+// Interaction Builders & Runtime
+#include "builder/interaction/sign.nvgt"
+#include "builder/interaction/text_square.nvgt"
+
+void destroy_all_builder_objects()
+{
+	for (uint i = 0; i < signs.length(); i++)
+	{
+		if (signs[i].loop_sound != -1) sp.destroy_sound(signs[i].loop_sound);
+	}
+	signs.resize(0);
+	text_squares.resize(0);
+	checkpoints.resize(0);
+	destroy_all_ground_items();
+	destroy_all_map_spawners();
+	destroy_all_projectiles();
+	has_map_spawnpoint = false;
+}
+
+void buildmenu()
+{
+	if (SCRIPT_COMPILED || is_map_encrypted(mapname))
+	{
+		speak("Cannot build on an encrypted map.");
+		return;
+	}
+	string[] entry_names = {
+		"create new map - build a new map from scratch",
+		"map editor - edit the lines of the current map you are in",
+		"sound ambience - add ambient environmental background audio to your map",
+		"sound source - add positional 3D sound sources to your map",
+		"platform - add platforms and walkable surfaces to your map",
+		"staircase - add staircases to connect different elevations",
+		"wall - add solid blocking walls to your map",
+		"door - add interactive doors with open, close and lock states",
+		"safe zone - add safe zones where combat damage is disabled",
+		"text zone - add trigger zones that display or speak text when entered",
+		"travelpoint - add teleportation and map transition points",
+		"spawnpoint - set the default player spawn coordinates on this map",
+		"checkpoint - add checkpoints to save player position and progress",
+		"sign - add readable signs and bulletin boards",
+		"text square - add text zones that speak text on specific coordinates",
+		"items manager - add, edit, remove and create new items",
+		"package manager - create, edit, view and delete packages",
+		"item spawner - configure item drops and map pickup spawners",
+		"weapon manager - add, edit, remove and create new weapons",
+		"store manager - add, remove and edit existing shops or create new ones",
+		"map manager and tools - manage maps, properties, backup and tools",
+		"delete current map - permanently delete the active map file"
+	};
+	string[] entry_ids = {
+		"create_map",
+		"map_editor",
+		"sound_ambience",
+		"sound_source",
+		"platform",
+		"staircase",
+		"wall",
+		"door",
+		"safe_zone",
+		"text_zone",
+		"travelpoint",
+		"spawnpoint",
+		"checkpoint",
+		"sign",
+		"text_square",
+		"items_manager",
+		"package_manager",
+		"item_spawner",
+		"weapon_manager",
+		"store_manager",
+		"map_manager_tools",
+		"delete_map"
+	};
+
+	audio_form f;
+	f.create_window("build menu", true, true, false);
+	int[] buttons(entry_names.length());
+	for (uint i = 0; i < entry_names.length(); i++)
+		buttons[i] = f.create_button(entry_names[i]);
+	int b_cancel = f.create_button("&cancel", false, true);
+	f.focus_silently(buttons[0]);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		f.monitor();
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(b_cancel))
+		{
+			speak("canceled");
+			break;
+		}
+		string picked = "";
+		for (uint i = 0; i < buttons.length() && i < entry_ids.length(); i++)
+		{
+			if (f.is_pressed(buttons[i]))
+			{
+				picked = entry_ids[i];
+				break;
+			}
+		}
+		if (picked != "")
+		{
+			if (picked == "create_map")
+			{
+				new_map_form();
+				return;
+			}
+			else if (picked == "map_editor")
+			{
+				map_editor_menu();
+				return;
+			}
+			else if (picked == "package_manager")
+			{
+				package_manager_menu();
+				return;
+			}
+			else if (picked == "delete_map")
+			{
+				if (SCRIPT_COMPILED || is_map_encrypted(mapname))
+				{
+					speak("Cannot delete an encrypted map.");
+					return;
+				}
+				setupmenu(false);
+				m.add_item_tts("yes, delete map " + mapname, "yes");
+				m.add_item_tts("no, cancel", "no");
+				int conf = m.run("Are you sure you want to delete the current map: " + mapname + "? This action cannot be undone.", true);
+				if (conf == 1)
+				{
+					string deleted_map = mapname;
+					remove_map_from_disk_and_memory(deleted_map);
+					speak("Map " + deleted_map + " deleted.");
+
+					string[] av = get_available_maps();
+					if (av.length() > 0)
+					{
+						mapname = av[0];
+						me.x = 0; me.y = 0; me.z = 0; facing = 0;
+						save_location();
+					}
+					else
+					{
+						mapname = "";
+					}
+					tempreset();
+					mainmenu();
+				}
+				return;
+			}
+			else if (picked == "store_manager")
+			{
+				store_manager_menu();
+				return;
+			}
+			else if (picked == "map_manager_tools")
+			{
+				maptoolmenu();
+				return;
+			}
+			else
+			{
+				buildobj(picked);
+				return;
+			}
+		}
+	}
+}
+
+void buildobj(string buildtype)
+{
+	if (buildtype == "sound_source") build_sound_source();
+	else if (buildtype == "sound_ambience") build_sound_ambience();
+	else if (buildtype == "platform") build_platform();
+	else if (buildtype == "wall") build_wall();
+	else if (buildtype == "staircase") build_staircase();
+	else if (buildtype == "door") build_door();
+	else if (buildtype == "safe_zone") build_safe_zone();
+	else if (buildtype == "text_zone") build_text_zone();
+	else if (buildtype == "travelpoint") build_travelpoint();
+	else if (buildtype == "spawnpoint") build_spawnpoint();
+	else if (buildtype == "checkpoint") build_checkpoint();
+	else if (buildtype == "sign") build_sign();
+	else if (buildtype == "text_square") build_text_square();
+	else if (buildtype == "items_manager") item_chooser();
+	else if (buildtype == "package_manager") package_manager_menu();
+	else if (buildtype == "item_spawner") build_item_spawner();
+	else if (buildtype == "weapon_manager") weapon_chooser();
+}
+
+void save_to_map(string line)
+{
+	if (SCRIPT_COMPILED || is_map_encrypted(mapname))
+	{
+		speak("Cannot edit or save to an encrypted map.");
+		return;
+	}
+	string path = MAP_DIR + "/" + mapname + ".map";
+	if (!directory_exists(MAP_DIR)) directory_create(MAP_DIR);
+	string content = get_map_content_by_name(mapname);
+	if (content != "" && string_right(content, 1) != "\n") content += "\n";
+	content += line + "\n";
+	file_put_contents(path, content);
+	map_bundle_cache[mapname] = content;
+	invalidate_map_lines_cache(mapname);
+	speak("map updated");
+	tempreset();
+	draw_map(mapname);
+}
+
+// ---------------------------------------------------------------------------
+// NEW MAP FORM WITH DESCRIPTION & REQUIREMENTS
+// ---------------------------------------------------------------------------
+bool new_map_form()
+{
+	if (SCRIPT_COMPILED || is_map_encrypted(mapname))
+	{
+		speak("Cannot create maps in encrypted mode.");
+		return false;
+	}
+	string disallowed_nums = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ `!@#$%^&*()[]{};:'\"\\|,<>?_/.+=~";
+	string[] platform_dirs = get_map_sound_folders("builder/construction/platforms/*");
+	load_all_items_config();
+	for (uint i = 0; i < item_registry.length(); i++)
+	{
+		if (item_registry[i].category == "materials" && platform_dirs.find(item_registry[i].id) == -1)
+		{
+			platform_dirs.insert_last(item_registry[i].id);
+		}
+	}
+	platform_dirs.sort_ascending();
+
+	audio_form f;
+	f.create_window("Create New Map", false, true, false);
+	int nm_name = f.create_input_box("Map Name", "");
+	int nm_minx = f.create_input_box("Minimum X", "0");
+	int nm_maxx = f.create_input_box("Maximum X", "100");
+	int nm_miny = f.create_input_box("Minimum Y", "0");
+	int nm_maxy = f.create_input_box("Maximum Y", "100");
+	int nm_minz = f.create_input_box("Minimum Z", "0");
+	int nm_maxz = f.create_input_box("Maximum Z", "20");
+	int nm_min_lvl = f.create_input_box("Minimum Level", "1");
+	int nm_max_lvl = f.create_input_box("Maximum Level (0 for unlimited)", "0");
+	int nm_min_res = f.create_input_box("Minimum Resurrection", "0");
+	int nm_max_res = f.create_input_box("Maximum Resurrection (0 for unlimited)", "0");
+	f.set_disallowed_chars(nm_minx, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(nm_maxx, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(nm_miny, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(nm_maxy, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(nm_minz, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(nm_maxz, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(nm_min_lvl, "0123456789", true, "Numbers only.");
+	f.set_disallowed_chars(nm_max_lvl, "0123456789", true, "Numbers only.");
+	f.set_disallowed_chars(nm_min_res, "0123456789", true, "Numbers only.");
+	f.set_disallowed_chars(nm_max_res, "0123456789", true, "Numbers only.");
+	int tile_list = f.create_list("Default Floor Platform Sound");
+	for (uint i = 0; i < platform_dirs.length(); i++)
+		f.add_list_item(tile_list, platform_dirs[i]);
+	int nm_ok = f.create_button("&Create Map", true);
+	int nm_cn = f.create_button("&Cancel", false, true);
+	f.set_default_controls(nm_ok, nm_cn);
+	f.focus_silently(nm_name);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		f.monitor();
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(nm_cn))
+		{
+			speak("canceled");
+			return false;
+		}
+		if (f.is_pressed(nm_ok))
+		{
+			string name = f.get_text(nm_name).trim_whitespace();
+			if (name == "")
+			{
+				speak("Name is required.");
+				f.focus(nm_name);
+				continue;
+			}
+			int min_x = int(string_to_number(f.get_text(nm_minx)));
+			int max_x = int(string_to_number(f.get_text(nm_maxx)));
+			int min_y = int(string_to_number(f.get_text(nm_miny)));
+			int max_y = int(string_to_number(f.get_text(nm_maxy)));
+			int min_z = int(string_to_number(f.get_text(nm_minz)));
+			int max_z = int(string_to_number(f.get_text(nm_maxz)));
+			if (min_x > max_x) { int tmp = min_x; min_x = max_x; max_x = tmp; }
+			if (min_y > max_y) { int tmp = min_y; min_y = max_y; max_y = tmp; }
+			if (min_z > max_z) { int tmp = min_z; min_z = max_z; max_z = tmp; }
+			if (max_x <= min_x) max_x = min_x + 100;
+			if (max_y <= min_y) max_y = min_y + 100;
+			if (max_z <= min_z) max_z = min_z + 20;
+
+			int min_lvl = int(string_to_number(f.get_text(nm_min_lvl)));
+			if (min_lvl < 1) min_lvl = 1;
+			int max_lvl = int(string_to_number(f.get_text(nm_max_lvl)));
+			if (max_lvl < 0) max_lvl = 0;
+
+			int min_res = int(string_to_number(f.get_text(nm_min_res)));
+			if (min_res < 0) min_res = 0;
+			int max_res = int(string_to_number(f.get_text(nm_max_res)));
+			if (max_res < 0) max_res = 0;
+
+			int t_idx = f.get_list_position(tile_list);
+			string tile = (t_idx >= 0 && t_idx < int(platform_dirs.length())) ? platform_dirs[t_idx] : "concrete";
+
+			if (!directory_exists(MAP_DIR)) directory_create(MAP_DIR);
+			string path = MAP_DIR + "/" + name + ".map";
+			if (file_exists(path) || file_exists(MAP_DIR + "/" + name + ".map.dat") || file_exists("maps/" + name + ".map"))
+			{
+				dlg("A map with this name already exists.");
+				f.focus(nm_name);
+				continue;
+			}
+
+			string content = "map: " + name + "\r\n";
+			content += "minx: " + min_x + "\r\n";
+			content += "maxx: " + max_x + "\r\n";
+			content += "miny: " + min_y + "\r\n";
+			content += "maxy: " + max_y + "\r\n";
+			content += "minz: " + min_z + "\r\n";
+			content += "maxz: " + max_z + "\r\n";
+			content += "minlevel: " + min_lvl + "\r\n";
+			content += "maxlevel: " + max_lvl + "\r\n";
+			content += "minresurrection: " + min_res + "\r\n";
+			content += "maxresurrection: " + max_res + "\r\n";
+			content += "platform:" + min_x + ":" + max_x + ":" + min_y + ":" + max_y + ":" + min_z + ":" + min_z + ":" + tile + "\r\n";
+			file_put_contents(path, content);
+			map_bundle_cache[name] = content;
+			if (ask_go_to_new_map_dialog(name))
+			{
+				if (!can_enter_map(name, true))
+				{
+					// Entry restricted (e.g. level/resurrection), message spoken by can_enter_map
+				}
+				else
+				{
+					mapname = name;
+					tempreset();
+					draw_map(name);
+					speak("Moved to " + name + ".");
+				}
+			}
+			else
+			{
+				speak("Map " + name + " created.");
+			}
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ask_go_to_new_map_dialog(const string&in name)
+{
+	string msg = "Map " + name + " was created successfully. Do you want to go to it now? Press Enter or Y to confirm, or Escape to cancel.";
+	speak(msg);
+	while(true)
+	{
+		wait(5);
+		update_game_world();
+		if (key_pressed(KEY_LEFT) or key_pressed(KEY_RIGHT) or key_pressed(KEY_UP) or key_pressed(KEY_DOWN) or kb_pressed("menu_left") or kb_pressed("menu_right") or kb_pressed("menu_up") or kb_pressed("menu_down"))
+		{
+			speak(msg);
+		}
+		if (key_pressed(KEY_RETURN) or key_pressed(KEY_NUMPAD_ENTER) or key_pressed(KEY_Y) or kb_pressed("menu_activate"))
+		{
+			return true;
+		}
+		if (key_pressed(KEY_ESCAPE) or key_pressed(KEY_N) or kb_pressed("menu_back"))
+		{
+			return false;
+		}
+	}
+	return false;
+}
+
+// ---------------------------------------------------------------------------
+// NOTEPAD-STYLE FORM MAP EDITOR (Form List Editor)
+// ---------------------------------------------------------------------------
+void map_editor_menu()
+{
+	if (SCRIPT_COMPILED || is_map_encrypted(mapname))
+	{
+		speak("Cannot edit an encrypted map.");
+		return;
+	}
+	string path = MAP_DIR + "/" + mapname + ".map";
+	if (!file_exists(path) && file_exists("maps/" + mapname + ".map")) path = "maps/" + mapname + ".map";
+	if (!file_exists(path))
+	{
+		dlg("Error: Map file not found: " + path);
+		return;
+	}
+
+	while (true)
+	{
+		string content = file_get_contents(path);
+		content = string_replace(content, "\r\n", "\n", true);
+		content = string_replace(content, "\r", "\n", true);
+		string[] raw_lines = string_split(content, "\n", false);
+		string[] lines;
+		for (uint i = 0; i < raw_lines.length(); i++)
+		{
+			string l = raw_lines[i].trim_whitespace();
+			if (l != "") lines.insert_last(l);
+		}
+
+		audio_form f;
+		f.create_window("Map Editor - " + mapname, false, true, false);
+
+		int list_lines = f.create_list("Map Lines (Use Up/Down arrows)");
+		for (uint i = 0; i < lines.length(); i++)
+		{
+			f.add_list_item(list_lines, lines[i]);
+		}
+
+		int btn_add = f.create_button("Add Line");
+		int btn_edit = f.create_button("Edit Line");
+		int btn_delete = f.create_button("Delete Line");
+		int btn_copy = f.create_button("Copy Line");
+		int btn_paste = f.create_button("Paste Line");
+		int btn_ren = f.create_button("Rename Map");
+		int btn_copy_all = f.create_button("Copy All to Clipboard");
+		int btn_close = f.create_button("Close", false, true);
+
+		f.set_default_controls(btn_edit, btn_close);
+		f.focus_silently(list_lines);
+
+		bool reload_editor = false;
+
+		while (!reload_editor)
+		{
+			wait(5);
+			update_game_world();
+			f.monitor();
+
+			if (key_pressed(KEY_ESCAPE) || f.is_pressed(btn_close))
+			{
+				return;
+			}
+
+			if (f.is_pressed(btn_add))
+			{
+				audio_form af;
+				af.create_window("Add Line to Map", false, true, false);
+				int in_add = af.create_input_box("Line content", "");
+				int b_ok = af.create_button("&add", true);
+				int b_can = af.create_button("&cancel", false, true);
+				af.set_default_controls(b_ok, b_can);
+				af.focus(in_add);
+
+				while (true)
+				{
+					wait(5);
+					update_game_world();
+					af.monitor();
+					update_form_input_keyboard_sound(af, in_add);
+					if (key_pressed(KEY_ESCAPE) || af.is_pressed(b_can)) break;
+					if (af.is_pressed(b_ok))
+					{
+						string newline = af.get_text(in_add).trim_whitespace();
+						if (newline != "")
+						{
+							lines.insert_last(newline);
+							string new_content = "";
+							for (uint j = 0; j < lines.length(); j++)
+								new_content += lines[j] + "\r\n";
+							file_put_contents(path, new_content);
+							map_bundle_cache[mapname] = new_content;
+							map_parsed_lines_cache.delete(mapname);
+							if (file_exists(MAPS_DAT_PATH) || file_exists("maps.dat")) encrypt_all_maps();
+							speak("Line added.");
+							tempreset();
+							draw_map(mapname);
+							reload_editor = true;
+						}
+						break;
+					}
+				}
+				if (reload_editor) break;
+			}
+
+			if (f.is_pressed(btn_edit))
+			{
+				int sel_pos = f.get_list_position(list_lines);
+				if (sel_pos >= 0 && sel_pos < int(lines.length()))
+				{
+					string old_line = lines[sel_pos];
+					audio_form ef;
+					ef.create_window("Edit Map Line", false, true, false);
+					int in_edit = ef.create_input_box("Line content", old_line);
+					int b_save = ef.create_button("&save", true);
+					int b_can = ef.create_button("&cancel", false, true);
+					ef.set_default_controls(b_save, b_can);
+					ef.focus(in_edit);
+
+					while (true)
+					{
+						wait(5);
+						update_game_world();
+						ef.monitor();
+						update_form_input_keyboard_sound(ef, in_edit);
+						if (key_pressed(KEY_ESCAPE) || ef.is_pressed(b_can)) break;
+						if (ef.is_pressed(b_save))
+						{
+							string edited = ef.get_text(in_edit).trim_whitespace();
+							if (edited != "")
+							{
+								lines[sel_pos] = edited;
+								string new_content = "";
+								for (uint j = 0; j < lines.length(); j++)
+									new_content += lines[j] + "\r\n";
+								file_put_contents(path, new_content);
+								map_bundle_cache[mapname] = new_content;
+								map_parsed_lines_cache.delete(mapname);
+								if (file_exists(MAPS_DAT_PATH) || file_exists("maps.dat")) encrypt_all_maps();
+								speak("Line updated.");
+								tempreset();
+								draw_map(mapname);
+								reload_editor = true;
+							}
+							break;
+						}
+					}
+					if (reload_editor) break;
+				}
+				else
+				{
+					speak("No line selected.");
+				}
+			}
+
+			if (f.is_pressed(btn_delete) || (f.get_current_focus() == list_lines && key_pressed(KEY_DELETE)))
+			{
+				int sel_pos = f.get_list_position(list_lines);
+				if (sel_pos >= 0 && sel_pos < int(lines.length()))
+				{
+					string line_check = lines[sel_pos].trim_whitespace();
+					if (string_starts_with(line_check, "map:") || string_starts_with(line_check, "map ") ||
+						string_starts_with(line_check, "size:") || string_starts_with(line_check, "size ") ||
+						string_starts_with(line_check, "minx") || string_starts_with(line_check, "maxx") ||
+						string_starts_with(line_check, "miny") || string_starts_with(line_check, "maxy") ||
+						string_starts_with(line_check, "minz") || string_starts_with(line_check, "maxz") ||
+						string_starts_with(line_check, "minlevel") || string_starts_with(line_check, "min_level") ||
+						string_starts_with(line_check, "maxlevel") || string_starts_with(line_check, "max_level") ||
+						string_starts_with(line_check, "minresurrection") || string_starts_with(line_check, "min_resurrection") ||
+						string_starts_with(line_check, "maxresurrection") || string_starts_with(line_check, "max_resurrection") ||
+						string_starts_with(line_check, "desc:") || string_starts_with(line_check, "description:"))
+					{
+						speak("This line cannot be removed.");
+					}
+					else
+					{
+						lines.remove_at(sel_pos);
+						string new_content = "";
+						for (uint j = 0; j < lines.length(); j++)
+							new_content += lines[j] + "\r\n";
+						file_put_contents(path, new_content);
+						map_bundle_cache[mapname] = new_content;
+						map_parsed_lines_cache.delete(mapname);
+						if (file_exists(MAPS_DAT_PATH) || file_exists("maps.dat")) encrypt_all_maps();
+						speak("Line removed.");
+						tempreset();
+						draw_map(mapname);
+						reload_editor = true;
+						break;
+					}
+				}
+				else
+				{
+					speak("No line selected.");
+				}
+			}
+
+			if (f.is_pressed(btn_copy))
+			{
+				int sel_pos = f.get_list_position(list_lines);
+				if (sel_pos >= 0 && sel_pos < int(lines.length()))
+				{
+					clipboard_copy_text(lines[sel_pos]);
+					speak("Line copied to clipboard.");
+				}
+			}
+
+			if (f.is_pressed(btn_paste))
+			{
+				string pasted = clipboard_read_text().trim_whitespace();
+				if (pasted != "")
+				{
+					lines.insert_last(pasted);
+					string new_content = "";
+					for (uint j = 0; j < lines.length(); j++)
+						new_content += lines[j] + "\r\n";
+					file_put_contents(path, new_content);
+					map_bundle_cache[mapname] = new_content;
+					map_parsed_lines_cache.delete(mapname);
+					if (file_exists(MAPS_DAT_PATH) || file_exists("maps.dat")) encrypt_all_maps();
+					speak("Line pasted from clipboard.");
+					tempreset();
+					draw_map(mapname);
+					reload_editor = true;
+					break;
+				}
+				else
+				{
+					speak("Clipboard is empty.");
+				}
+			}
+
+			if (f.is_pressed(btn_ren))
+			{
+				string newname = v.input("Rename Map", mapname);
+				if (newname != "" && newname != mapname)
+				{
+					string newpath = MAP_DIR + "/" + newname + ".map";
+					if (file_exists(newpath) || file_exists(MAP_DIR + "/" + newname + ".map.dat") || file_exists("maps/" + newname + ".map"))
+					{
+						dlg("A map with this name already exists.");
+					}
+					else
+					{
+						if (!directory_exists(MAP_DIR)) directory_create(MAP_DIR);
+						file_put_contents(newpath, content);
+						file_delete(path);
+						map_bundle_cache.delete(mapname);
+						map_bundle_cache[newname] = content;
+						mapname = newname;
+						path = newpath;
+						speak("Map renamed to " + mapname);
+						tempreset();
+						draw_map(mapname);
+						reload_editor = true;
+						break;
+					}
+				}
+			}
+
+			if (f.is_pressed(btn_copy_all))
+			{
+				clipboard_copy_text(content);
+				speak("All map data copied to clipboard.");
+			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// MAP AND STORE TOOLS MENU (Encrypt and Decrypt Maps, Stores, Items, Weapons, Packages)
+// ---------------------------------------------------------------------------
+void encrypt_everything()
+{
+	encrypt_maps();
+	encrypt_stores();
+	encrypt_all_items();
+	encrypt_all_weapons();
+	encrypt_all_packages();
+	speak("Everything compiled and encrypted.");
+}
+
+void decrypt_everything()
+{
+	decrypt_maps();
+	decrypt_stores();
+	decrypt_all_items();
+	decrypt_all_weapons();
+	decrypt_all_packages();
+	speak("Everything decompiled and decrypted.");
+}
+
+void maptoolmenu()
+{
+	if (SCRIPT_COMPILED)
+	{
+		speak("Resource tools cannot be accessed in compiled mode.");
+		return;
+	}
+	string[] tool_names = {
+		"compile maps", "decompile maps",
+		"encrypt stores", "decrypt stores",
+		"compile items", "decompile items",
+		"compile weapons", "decompile weapons",
+		"compile packages", "decompile packages",
+		"compile everything", "decompile everything",
+		"back"
+	};
+	string[] tool_ids = {
+		"cm", "dm",
+		"es", "ds",
+		"ci", "di",
+		"cw", "dw",
+		"cp", "dp",
+		"ce", "de",
+		"back"
+	};
+
+	audio_form f;
+	f.create_window("Map and Resource Tools", false, true, false);
+	int[] buttons(tool_names.length());
+	for (uint i = 0; i < tool_names.length(); i++)
+		buttons[i] = f.create_button(tool_names[i]);
+	f.focus_silently(buttons[0]);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		f.monitor();
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(buttons[buttons.length() - 1]))
+		{
+			speak("canceled");
+			return;
+		}
+		for (uint i = 0; i < buttons.length() - 1; i++)
+		{
+			if (f.is_pressed(buttons[i]))
+			{
+				string sel = tool_ids[i];
+				if (sel == "cm") { encrypt_maps(); }
+				else if (sel == "dm") { decrypt_maps(); }
+				else if (sel == "es") { encrypt_stores(); }
+				else if (sel == "ds") { decrypt_stores(); }
+				else if (sel == "ci") { encrypt_all_items(); }
+				else if (sel == "di") { decrypt_all_items(); }
+				else if (sel == "cw") { encrypt_all_weapons(); }
+				else if (sel == "dw") { decrypt_all_weapons(); }
+				else if (sel == "cp") { encrypt_all_packages(); }
+				else if (sel == "dp") { decrypt_all_packages(); }
+				else if (sel == "ce") { encrypt_everything(); }
+				else if (sel == "de") { decrypt_everything(); }
+				maptoolmenu();
+				return;
+			}
+		}
+	}
+}

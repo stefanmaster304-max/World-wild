@@ -1,0 +1,1383 @@
+
+// Player posture state (sitting / standing). Kept engine-side so every module
+// (doors, staircases, vitals, gameplay loop) can share it without a dedicated
+// pose system.
+bool is_sitting = false;
+timer sitting_speech_debounce;
+
+string ver = "0.1.0.1";
+
+#include "bgt_compat.nvgt"
+#include "includes/sound_paths.nvgt"
+#include"includes/rotation.nvgt"
+#include"includes/hip.nvgt"
+#include"includes/store.nvgt"
+#include "includes/sound_pool.nvgt"
+#include"includes/travelpoint.nvgt"
+#include"includes/bodyfall.nvgt"
+#include"includes/door.nvgt"
+#include "speech.nvgt"
+#include"includes/sd.nvgt"
+#include"includes/map.nvgt"
+#include"includes/staircase.nvgt"
+#include "includes/src.nvgt"
+#include"includes/dlg.nvgt"
+#include"includes/dlgplayer.nvgt"
+#include"includes/keyboard_sounds.nvgt"
+#include"includes/menu.nvgt"
+#include"includes/keybinds.nvgt"
+#include "includes/virtualizer.nvgt"
+#include "includes/builder.nvgt"
+#include"includes/inventory.nvgt"
+#include "includes/health_system.nvgt"
+#include"includes/m_pro.nvgt"
+#include"includes/tracking.nvgt"
+#include"includes/store_cfg.nvgt"
+#include"includes/store_menu.nvgt"
+#include"includes/store_manager.nvgt"
+#include"includes/shield_system.nvgt"
+#include"includes/message_system.nvgt"
+#include"includes/verify_files.nvgt"
+#include "includes/world_runtime.nvgt"
+int x, y, z;
+int minx = 0, maxx = 250, miny = 0, maxy = 250, minz = 0, maxz = 50;
+double menu_music_volume = 0.0;
+double map_music_volume = 0.0;
+double musicvolume = 0.0;
+double ambient_volume = 100.0;
+timer volume_repeat_timer;
+int wrap_disabled=0;
+int footdrag_enabled=1;
+int confirm_exit=1;
+int verbalize_zones=1;
+int enable_player_pain_sounds=1;
+bool has_moved=false;
+bool player_walked_since_stop=false;
+
+bool confirm_exit_dialog()
+{
+	speak("Are you sure you want to exit? Press Y or Enter for Yes, or Escape to cancel.");
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		if (key_pressed(KEY_Y) || key_pressed(KEY_RETURN) || key_pressed(KEY_NUMPAD_ENTER) || key_pressed(KEY_NUMPADENTER) || kb_pressed("menu_confirm") || kb_pressed("menu_activate") || kb_pressed("use"))
+		{
+			return true;
+		}
+		if (key_pressed(KEY_ESCAPE) || key_pressed(KEY_N) || kb_pressed("menu_back") || kb_pressed("exit_game"))
+		{
+			speak("Canceled.");
+			return false;
+		}
+		if (key_pressed(KEY_UP) || key_pressed(KEY_DOWN) || key_pressed(KEY_LEFT) || key_pressed(KEY_RIGHT) || key_pressed(KEY_SPACE))
+		{
+			speak("Are you sure you want to exit? Press Y or Enter for Yes, or Escape to cancel.");
+		}
+	}
+	return false;
+}
+// Toggles the player between sitting and standing (Q key).
+void toggle_sit_stand()
+{
+	if (is_sitting)
+	{
+		is_sitting = false;
+		string snd = get_sound_path("standup.ogg");
+		if (snd != "") p.play_stationary(snd, false);
+		speak("You stand up.");
+	}
+	else
+	{
+		is_sitting = true;
+		string snd = get_sound_path("sitdown.ogg");
+		if (snd != "") p.play_stationary(snd, false);
+		string platform = gmt();
+		string fall_snd = get_platform_sound(platform, "fall");
+		if (fall_snd != "") p.play_stationary(fall_snd, false);
+		speak("You sit down.");
+	}
+}
+int kills=0;
+int falltime=120;
+bool falling;
+int facing;
+int level=1;
+bool atapex;
+int jumptime=120;
+int apextime=150;
+int jumptime2=140;
+bool ascending;
+int jumpheight=5;
+int jumping;
+int ty1, ty2;
+int jumpable=1;
+timer falltimer;
+int fallspeed=120;
+int deffallspeed=120;
+int health;
+int maxhealth=1000;
+int movetime;
+int walktime=160;
+int airtime=90;
+int fallcounter;
+bool safe=false;
+bool szstate=false;
+string currentloc;
+string focuseditem;
+timer autosave_timer;
+double xp=0;
+int resurrections=0;
+const string prefsdir="settings";
+
+double get_xp_required(int lvl)
+{
+	if (lvl <= 1) return 100.0;
+	return double(lvl * 100.0);
+}
+
+// Keeps XP local to the current level and resets XP toward the next level limit.
+void normalize_player_xp(bool announce = false)
+{
+	if(level < 1) level = 1;
+	if(xp < 0) xp = 0;
+	int old_level = level;
+	int max_level = get_resurrection_levels_required(resurrections);
+	xprequired = get_xp_required(level);
+	while(level < max_level && xp >= xprequired)
+	{
+		xp -= xprequired;
+		if (xp < 0) xp = 0;
+		level++;
+		xprequired = get_xp_required(level);
+	}
+	if(announce && level > old_level)
+	{
+		speak("You are now at level " + level + ".");
+		string level_sound = get_player_sound("levelup");
+		if (sound_file_exists(level_sound)) p.play_stationary(level_sound, false);
+	}
+}
+
+int get_resurrection_levels_required(int r)
+{
+	return 2500;
+}
+
+double xprequired=50;
+
+void add_player_quantum_xp(int amount)
+{
+    if (amount <= 0) return;
+    xp += amount;
+    normalize_player_xp(true);
+}
+string mapname;
+vector me, old;
+sound_pool p(512); // Bounded player effects pool
+sound_pool dp(128); // Separate, bounded pool for distant weapon reports
+virtualizer v;
+sound bleading;
+
+void dive_underwater()
+{
+	if (is_underwater) return;
+	is_underwater = true;
+	string dive_snd = get_platform_sound("deepwater", "fall");
+	if (dive_snd == "") dive_snd = get_platform_sound("underwater", "fall");
+	if (dive_snd != "") p.play_stationary(dive_snd, false);
+
+	underwater_ambient_sound.stop();
+	string uw_amb = get_sound_path("anbients/underwater.ogg;underwater.ogg");
+	if (uw_amb != "" && underwater_ambient_sound.load(uw_amb))
+	{
+		underwater_ambient_sound.volume = ambient_volume - 100.0;
+		underwater_ambient_sound.play_looped();
+	}
+
+}
+
+void surface_from_underwater()
+{
+	if (!is_underwater) return;
+	is_underwater = false;
+	underwater_ambient_sound.stop();
+	string surf_snd = get_platform_sound("deepwater", "land");
+	if (surf_snd == "") surf_snd = get_platform_sound("underwater", "land");
+	if (surf_snd != "") p.play_stationary(surf_snd, false);
+
+}
+timer movetimer, jumptimer, hittimer, healtimer;
+timer idle_scuff_timer;
+bool idle_scuff_primed=false;
+bool idle_scuff_played=false;
+int play_logo=1;
+void play_logo_intro()
+{
+	if (play_logo != 1) return;
+	string lpath = get_misc_sound("logo");
+	if (lpath == "") lpath = get_sound_path("logo.ogg");
+	if (!file_exists(lpath)) return;
+	sound logosnd;
+	if (logosnd.load(lpath))
+	{
+		logosnd.play();
+		while(logosnd.playing)
+		{
+			wait(5);
+			if (key_pressed(KEY_RETURN) or key_pressed(KEY_NUMPAD_ENTER) or key_pressed(KEY_SPACE) or key_pressed(KEY_ESCAPE))
+			{
+				logosnd.stop();
+				break;
+			}
+		}
+	}
+}
+savedata sd(prefsdir+"/settings.dat","gipwjefiqoiqewiofeiofqwehjoiwmoiwaniewnfoipwqenefowqiniosawENGRWORWIOPNHGRNIOOGINWGR");
+void main()
+{
+	if (!directory_exists(prefsdir)) directory_create(prefsdir);
+	readprefs();
+	kb_init();
+	load_maps_bundle();
+	init_stores();
+	load_all_items_config();
+	load_all_packages();
+	register_default_shield_if_missing();
+	register_default_anti_death_card_if_missing();
+	load_all_weapons_wpm();
+
+show_window("Dangerous World! Version "+ver);
+wait(100);
+if (!verify_files()) exit();
+play_logo_intro();
+if (directory_exists(DIRECTORY_TEMP+"/cheat engine") and SCRIPT_COMPILED)
+{
+sound cheater;
+string cpath = get_misc_sound("cheat");
+if (cpath == "") cpath = get_sound_path("cheat.ogg");
+cheater.load(cpath);
+cheater.play_wait();
+exit();
+}
+if (!file_exists(prefsdir+"/settings.dat"))
+{
+dlg("Settings file not found, creating a new settings file...");
+}
+	p.volume_step = 2.0;
+	sp.volume_step = 2.0;
+	itempool.volume_step = 2.0;
+	dp.volume_step = 2.0;
+	spool.volume_step = 2.0;
+	dp.pan_step = 1.0;
+	dp.behind_pitch_decrease = 0.0;
+	// Max audible radius for pools
+	dp.max_distance = 80;
+p.pan_step = 1.0;
+sp.pan_step = 1.0;
+itempool.pan_step = 1.0;
+dp.pan_step = 1.0;
+spool.pan_step = 1.0;
+p.behind_pitch_decrease = 0.0;
+sp.behind_pitch_decrease = 0.0;
+	p.max_distance = 80;
+	sp.max_distance = 0;
+	itempool.max_distance = 80;
+mainmenu();
+}
+void game()
+{
+is_in_game = true;
+while(true)
+{
+weapon_system_loop();
+// Fire uses its own binding; Space is reserved for jumping.
+if (kb_down("fire") && jumping == 0)
+{
+	if (!is_safe(me.x, me.y, me.z)) fire_current_weapon();
+}
+if (kb_pressed("reload") or key_pressed(KEY_R))
+{
+	start_reload(get_weapon_data(current_weapon_id));
+}
+if (kb_pressed("ammo_status") or key_pressed(KEY_A))
+{
+	speak_ammo_status();
+}
+if (key_pressed(KEY_V))
+{
+	cycle_fire_mode(current_weapon_id);
+}
+doorcheckloop();
+staircasecheckloop();
+szloop();
+checkloc();
+text_square_check();
+checkpoints_check();
+ground_item_loop();
+map_item_spawner_loop();
+bodyfallloop();
+	tracking_loop();
+	broadcast_loop();
+	update_sources();
+	if (autosave_timer.elapsed >= 30000)
+	{
+		autosave_timer.restart();
+		save_location();
+	}
+update_game_world();
+wait(5);
+if (health<=20 and health>0)
+{
+bleading.play_looped();
+}
+if (health>20 and bleading.playing==true)
+{
+bleading.stop();
+}
+if (health>maxhealth) health=maxhealth;
+if (directory_exists(DIRECTORY_TEMP+"/cheat engine") and SCRIPT_COMPILED)
+{
+sound cheater;
+string cpath = get_misc_sound("cheat");
+if (cpath == "") cpath = get_sound_path("cheat.ogg");
+cheater.load(cpath);
+cheater.play_wait();
+exit();
+}
+if (kb_pressed("kills"))
+{
+speak("" + kills + " kills");
+}
+if (healtimer.elapsed>=15000 and health<maxhealth)
+{
+healtimer.restart();
+health+=random(3,7);
+}
+bool shift_held = (key_down(KEY_LSHIFT) or key_down(KEY_RSHIFT) or kb_down("mod_shift"));
+
+if (shift_held && key_pressed(KEY_LEFT))
+{
+	if (is_sitting)
+	{
+		speak("You are sitting. Press Q to stand up.");
+	}
+	else
+	{
+		facing = int(snapleft(facing, int(getdir(facing)), 45));
+		speak(dir_to_string(getdir(facing)));
+	}
+}
+else if (shift_held && key_pressed(KEY_RIGHT))
+{
+	if (is_sitting)
+	{
+		speak("You are sitting. Press Q to stand up.");
+	}
+	else
+	{
+		facing = int(snapright(facing, int(getdir(facing)), 45));
+		speak(dir_to_string(getdir(facing)));
+	}
+}
+if (kb_pressed("facing"))
+{
+speak(dir_to_string(getdir(facing)) + ", " + facing + " degrees");
+}
+// B binding for builder menu
+if ((kb_pressed("builder") or key_pressed(KEY_B)))
+{
+	if (jumping == 0 && falling == false)
+	{
+		if (!SCRIPT_COMPILED && !is_map_encrypted(mapname))
+		{
+			show_window("Dangerous World! - Construction Menu");
+			buildmenu();
+			show_window("Dangerous World! Version " + ver + (mapname != "" ? " - " + mapname : ""));
+		}
+	}
+}
+
+
+
+
+bool alt_held = (key_down(KEY_LMENU) || key_down(KEY_RMENU) || key_down(KEY_LALT) || key_down(KEY_RALT));
+bool vol_up_held = (!alt_held && (kb_down("volume_up") or key_down(KEY_HOME)));
+bool vol_down_held = (!alt_held && (kb_down("volume_down") or key_down(KEY_END)));
+bool music_up_held = (!onstaircase && alt_held && (key_down(KEY_UP) || kb_down("move_forward")));
+bool music_down_held = (!onstaircase && alt_held && (key_down(KEY_DOWN) || kb_down("move_back")));
+
+bool vol_up_pressed = (!alt_held && (kb_pressed("volume_up") or key_pressed(KEY_HOME)));
+bool vol_down_pressed = (!alt_held && (kb_pressed("volume_down") or key_pressed(KEY_END)));
+bool music_up_pressed = (!onstaircase && alt_held && (key_pressed(KEY_UP) || kb_pressed("move_forward")));
+bool music_down_pressed = (!onstaircase && alt_held && (key_pressed(KEY_DOWN) || kb_pressed("move_back")));
+
+if (vol_up_pressed || vol_down_pressed || music_up_pressed || music_down_pressed ||
+    ((vol_up_held || vol_down_held || music_up_held || music_down_held) && volume_repeat_timer.elapsed >= 150))
+{
+	if (vol_up_held)
+	{
+		volume_repeat_timer.restart();
+		if (shiftisdown())
+		{
+			ambient_volume += 5;
+			if (ambient_volume > 100) ambient_volume = 100;
+			apply_ambient_volume();
+			speak("Ambient volume: " + int(ambient_volume) + " percent");
+			writeprefs();
+		}
+		else
+		{
+			double cur_m = get_sound_master_volume() + 5.0;
+			if (cur_m > 100.0) cur_m = 100.0;
+			set_sound_master_volume(cur_m);
+			speak("Master volume: " + int(cur_m) + " percent");
+		}
+	}
+	else if (vol_down_held)
+	{
+		volume_repeat_timer.restart();
+		if (shiftisdown())
+		{
+			ambient_volume -= 5;
+			if (ambient_volume < 0) ambient_volume = 0;
+			apply_ambient_volume();
+			speak("Ambient volume: " + int(ambient_volume) + " percent");
+			writeprefs();
+		}
+		else
+		{
+			double cur_m = get_sound_master_volume() - 5.0;
+			if (cur_m < 0.0) cur_m = 0.0;
+			set_sound_master_volume(cur_m);
+			speak("Master volume: " + int(cur_m) + " percent");
+		}
+	}
+	else if (music_up_held)
+	{
+		volume_repeat_timer.restart();
+		map_music_volume += 5.0;
+		if (map_music_volume > 0.0) map_music_volume = 0.0;
+		musicvolume = map_music_volume;
+		apply_music_volume();
+		speak("Music volume: " + int(map_music_volume) + " dB");
+		writeprefs();
+	}
+	else if (music_down_held)
+	{
+		volume_repeat_timer.restart();
+		map_music_volume -= 5.0;
+		if (map_music_volume < -100.0) map_music_volume = -100.0;
+		musicvolume = map_music_volume;
+		apply_music_volume();
+		speak("Music volume: " + int(map_music_volume) + " dB");
+		writeprefs();
+	}
+}
+
+// Diving & Surfacing (Page Down to dive / descend in deep water down to minz, Page Up to ascend / surface)
+if (!onstaircase)
+{
+	if (kb_pressed("stairs_down") || key_pressed(KEY_NEXT) || key_pressed(KEY_PAGEDOWN))
+	{
+		if (is_deep_water(int(round(me.x,0)), int(round(me.y,0)), int(round(me.z,0))) || is_deep_water_tile_name(gmt()))
+		{
+			if (!is_underwater)
+			{
+				dive_underwater();
+			}
+			else if (me.z > minz)
+			{
+				movetimer.restart();
+				me.z -= 1;
+				string swim_snd = get_platform_sound("underwater", "step");
+				if (swim_snd == "") swim_snd = get_platform_sound("deepwater", "step");
+				if (swim_snd != "") p.play_stationary(swim_snd, false);
+			}
+		}
+		else if (is_underwater && me.z > minz)
+		{
+			movetimer.restart();
+			me.z -= 1;
+			string swim_snd = get_platform_sound("underwater", "step");
+			if (swim_snd == "") swim_snd = get_platform_sound("deepwater", "step");
+			if (swim_snd != "") p.play_stationary(swim_snd, false);
+		}
+	}
+	else if (is_underwater && (kb_down("stairs_down") || key_down(KEY_NEXT) || key_down(KEY_PAGEDOWN)))
+	{
+		if (movetimer.elapsed >= movetime && me.z > minz)
+		{
+			movetimer.restart();
+			me.z -= 1;
+			string swim_snd = get_platform_sound("underwater", "step");
+			if (swim_snd == "") swim_snd = get_platform_sound("deepwater", "step");
+			if (swim_snd != "") p.play_stationary(swim_snd, false);
+		}
+	}
+	else if (kb_pressed("stairs_up") || key_pressed(KEY_PRIOR) || key_pressed(KEY_PAGEUP))
+	{
+		if (is_underwater)
+		{
+			if (me.z < 0 && me.z < maxz)
+			{
+				movetimer.restart();
+				me.z += 1;
+				string swim_snd = get_platform_sound("underwater", "step");
+				if (swim_snd == "") swim_snd = get_platform_sound("deepwater", "step");
+				if (swim_snd != "") p.play_stationary(swim_snd, false);
+				if (me.z >= 0)
+				{
+					surface_from_underwater();
+				}
+			}
+			else
+			{
+				surface_from_underwater();
+			}
+		}
+	}
+	else if (is_underwater && (kb_down("stairs_up") || key_down(KEY_PRIOR) || key_down(KEY_PAGEUP)))
+	{
+		if (movetimer.elapsed >= movetime)
+		{
+			movetimer.restart();
+			if (me.z < 0 && me.z < maxz)
+			{
+				me.z += 1;
+				string swim_snd = get_platform_sound("underwater", "step");
+				if (swim_snd == "") swim_snd = get_platform_sound("deepwater", "step");
+				if (swim_snd != "") p.play_stationary(swim_snd, false);
+				if (me.z >= 0)
+				{
+					surface_from_underwater();
+				}
+			}
+			else
+			{
+				surface_from_underwater();
+			}
+		}
+	}
+}
+if (kb_pressed("location") or key_pressed(KEY_Z))
+{
+	if (key_down(KEY_LSHIFT) or key_down(KEY_RSHIFT))
+	{
+		verbalize_zones = (verbalize_zones == 1) ? 0 : 1;
+		if (verbalize_zones == 1) speak("zones will be spoken");
+		else speak("zones will not be spoken");
+		writeprefs();
+	}
+	else
+	{
+		checkloc(true);
+	}
+}
+if (kb_pressed("level_status"))
+{
+	normalize_player_xp(false);
+	int req_levels = get_resurrection_levels_required(resurrections);
+	speak("Level " + level + " of " + req_levels + " for resurrection, Resurrection " + resurrections + ", XP " + xp + ", " + (xprequired-xp) + " XP required for level " + (level+1));
+}
+if (kb_pressed("health_status"))
+{
+speak("" + health + " out of " + maxhealth + " health.");
+}
+if (key_pressed(KEY_TAB))
+{
+    quick_inventory_cycle((key_down(KEY_LSHIFT) || key_down(KEY_RSHIFT)) ? -1 : 1);
+}
+if (key_pressed(KEY_DELETE)) drop_quick_inventory_item();
+    if (health<=0)
+    {
+        // Death by health alone. The unified death sequence speaks "You died.",
+        // plays the player's death sound first (when present) and then the
+        // platform-fall sound, waiting for each to finish before the main menu.
+        player_die("You died.");
+    }
+if ((key_pressed(KEY_Q) or kb_pressed("sit_stand")) and !shiftisdown())
+{
+	if (jumping == 0 && falling == false)
+	{
+		toggle_sit_stand();
+	}
+}
+if (altisdown() and (key_pressed(KEY_RETURN) or key_pressed(KEY_NUMPAD_ENTER)))
+{
+	if (is_sitting)
+	{
+		speak("You are sitting. Press Q to stand up.");
+	}
+	else if (doorcheck())
+	{
+	}
+	else
+	{
+		checktravelpoint();
+	}
+}
+else if (!altisdown() and (key_pressed(KEY_RETURN) or key_pressed(KEY_NUMPAD_ENTER)))
+{
+	if (checkstores()) { }
+	else
+	{
+		speak("No shop nearby.");
+	}
+}
+if (kb_pressed("coordinates") or key_pressed(KEY_C))
+{
+	if (shiftisdown())
+	{
+		speak_equipped_equipment();
+	}
+	else
+	{
+		speak(int(round(me.x, 0)) + ", " + int(round(me.y, 0)) + ", " + int(round(me.z, 0)));
+	}
+}
+if ((kb_pressed("tracking_query") or key_pressed(KEY_W)))
+{
+	query_tracking();
+}
+if (!altisdown() && !key_down(KEY_LALT) && !key_down(KEY_RALT) && (kb_pressed("tracking_menu") or key_pressed(KEY_X)))
+{
+	open_tracking_menu();
+}
+walktime = get_current_walktime();
+if (jumping==1)
+movetime=airtime;
+else
+movetime=walktime;
+if (dmoving==false and movetimer.elapsed>=movetime)
+{
+	if (is_sitting)
+	{
+		if (kb_pressed("move_forward") or key_pressed(KEY_UP) or kb_pressed("move_back") or key_pressed(KEY_DOWN) or (!shift_held && (kb_pressed("move_left") or key_pressed(KEY_LEFT) or kb_pressed("move_right") or key_pressed(KEY_RIGHT) or kb_down("move_left") or key_down(KEY_LEFT) or kb_down("move_right") or key_down(KEY_RIGHT))) or kb_down("move_forward") or key_down(KEY_UP) or kb_down("move_back") or key_down(KEY_DOWN))
+		{
+			if (sitting_speech_debounce.elapsed >= 1500)
+			{
+				sitting_speech_debounce.restart();
+				speak("You are sitting. Press Q to stand up.");
+			}
+		}
+	}
+	else
+	{
+		if (!alt_held && (kb_down("move_forward") or key_down(KEY_UP)))
+		{
+			movetimer.restart();
+			player_step(north);
+		}
+		else if (!alt_held && (kb_down("move_back") or key_down(KEY_DOWN)))
+		{
+			movetimer.restart();
+			player_step(south);
+		}
+		else if (!shift_held && !alt_held && (kb_down("move_left") or key_down(KEY_LEFT)))
+		{
+			movetimer.restart();
+			player_step(west);
+		}
+		else if (!shift_held && !alt_held && (kb_down("move_right") or key_down(KEY_RIGHT)))
+		{
+			movetimer.restart();
+			player_step(east);
+		}
+	}
+}
+if (me.z < minz) me.z = minz;
+// Spacebar jumps without a modifier.
+if (key_pressed(KEY_SPACE) and jumping==0 and falling==false and dmoving==false)
+{
+	if (is_sitting)
+	{
+		if (sitting_speech_debounce.elapsed >= 1500)
+		{
+			sitting_speech_debounce.restart();
+			speak("You are sitting. Press Q to stand up.");
+		}
+	}
+	else
+	{
+		sjumpcheck();
+		if (abletojump2>0)
+		{
+			p.play_stationary(get_player_sound("jump"),false);
+			ty1=me.z;
+			ty2=me.z+jumpheight;
+			jumping=1;
+			ascending=true;
+			jumptimer.restart();
+		}
+	}
+}
+if (jumping==1)
+{
+if (atapex==true and jumptimer.elapsed>=apextime)
+{
+jumptimer.restart();
+atapex=false;
+}
+if (ascending==false and jumptimer.elapsed>=jumptime2 and atapex==false)
+{
+jumptimer.restart();
+me.z-=1;
+checkforplatforms();
+check_automatic_travelpoints(0, 0, -1);
+}
+if (ascending==true and jumptimer.elapsed>=jumptime)
+{
+jumptimer.restart();
+me.z+=1;
+checkforplatforms();
+check_automatic_travelpoints(0, 0, 1);
+if (me.z>=ty2)
+{
+ascending=false;
+jumptimer.restart();
+atapex=true;
+}
+}
+}
+if(jumping==0 && !falling && !is_underwater && me.z > minz && gmt()=="" and dmoving==false)
+{
+falling=true;
+fallcounter=0;
+p.play_stationary(get_player_sound("fall"), false);
+}
+if(falling)
+{
+if(falltimer.elapsed>=falltime && me.z > minz)
+{
+falltimer.restart();
+me.z--;
+fallcounter++;
+check_automatic_travelpoints(0, 0, -1);
+}
+bool landed = false;
+if (me.z <= minz)
+{
+me.z = minz;
+landed = true;
+}
+else if (gmt() != "")
+{
+landed = true;
+}
+if (landed)
+{
+if (gmt() != "")
+{
+string land_sound = get_platform_sound(gmt(), (fallcounter > 9 ? "hardland" : "land"));
+if (land_sound != "") p.play_stationary(land_sound, false);
+}
+if (fallcounter > 9)
+{
+healtimer.restart();	int actual_fall_dmg = fallcounter * 2;
+	health -= actual_fall_dmg;
+	speak("You lost " + actual_fall_dmg + " health!");
+}
+if (fallcounter >= 8)
+{
+	is_sitting = true;
+	string sit_snd = get_sound_path("sitdown.ogg");
+	if (sit_snd != "") p.play_stationary(sit_snd, false);
+	sitting_speech_debounce.restart();
+	speak("You hit the ground hard and land in a seated position.");
+}
+falling = false;
+fallcounter = 0;
+}
+}
+update_idle_scuff();
+	// Refresh every pool after movement, falling, and facing
+	// changes have been processed. This prevents one-frame stale listener
+	// coordinates when walking away from a stationary 3-D source.
+	p.update_listener_3d(me.x, me.y, me.z, double(facing));
+	sp.update_listener_3d(me.x, me.y, me.z, double(facing));
+	itempool.update_listener_3d(me.x, me.y, me.z, double(facing));
+	dp.update_listener_3d(me.x, me.y, me.z, double(facing));
+if (kb_pressed("exit_game") and jumping==0 and falling==false)
+{
+    bool do_exit = (confirm_exit == 1) ? confirm_exit_dialog() : true;
+    if (do_exit)
+    {
+        save_location();
+        reset();
+        mainmenu();
+    }
+}
+}
+}
+
+
+// Moves the player one tile in the given direction relative to facing, then
+// snaps the position to whole tiles. Without the snap, diagonal facings
+// (northeast, etc.) add 0.7071 to both axes and the player drifts off the
+// grid, effectively moving a full tile only every other step.
+void player_step(int dir)
+{
+old = me;
+vector step_start = me;
+vector target = move(me.x, me.y, me.z, dir, facing);
+int attempt_dx = int(round(target.x - me.x, 0));
+int attempt_dy = int(round(target.y - me.y, 0));
+int attempt_dz = int(round(target.z - me.z, 0));
+target.x = round(target.x, 0);
+target.y = round(target.y, 0);
+target.z = round(target.z, 0);
+bool hit_boundary = false;
+if (target.x < minx) { target.x = minx; hit_boundary = true; }
+if (target.x > maxx) { target.x = maxx; hit_boundary = true; }
+if (target.y < miny) { target.y = miny; hit_boundary = true; }
+if (target.y > maxy) { target.y = maxy; hit_boundary = true; }
+if (target.z < minz) { target.z = minz; hit_boundary = true; }
+if (target.z > maxz) { target.z = maxz; hit_boundary = true; }
+
+me = target;
+
+if (is_underwater && !is_water_tile(int(me.x), int(me.y), int(me.z)))
+{
+	surface_from_underwater();
+}
+
+if (hit_boundary && target.x == old.x && target.y == old.y && target.z == old.z)
+{
+	if (check_automatic_travelpoints(attempt_dx, attempt_dy, attempt_dz, true))
+		return;
+	return;
+}
+
+if (me.x != step_start.x || me.y != step_start.y || me.z != step_start.z)
+{
+	has_moved = true;
+	player_walked_since_stop = true;
+	check_map_exploration(mapname, int(round(me.x, 0)), int(round(me.y, 0)), int(round(me.z, 0)));
+	if (check_automatic_travelpoints(attempt_dx, attempt_dy, attempt_dz, false))
+		return;
+}
+playstep();
+}
+
+void checkforplatforms()
+{
+if (gmt() != "")
+{
+string lnd = get_platform_sound(gmt(), "land");
+if (lnd != "") p.play_stationary(lnd, false);
+jumping = 0;
+falling = false;
+}
+else if (me.z <= minz)
+{
+me.z = minz;
+string lnd = get_platform_sound(gmt(), "land");
+if (lnd != "") p.play_stationary(lnd, false);
+jumping = 0;
+falling = false;
+}
+else if(jumping==0&&!falling&&!is_underwater&&me.z>minz&&gmt()=="" and dmoving==false)
+{
+falling=true;
+p.play_stationary(get_player_sound("fall"), false);
+}
+}
+// Foot-drag / idle scuff: after the player comes to a complete stop on a
+// platform that has a scuff (foot-drag) sound configured, wait 1000 ms and
+// play the scuff sound ONCE per stop - it never repeats while the player keeps
+// standing still. Each new stop (after moving again) plays it once more.
+// Disabled entirely when the "foot dragging" option is off; platforms without
+// a scuff sound simply play nothing (no fallback, no generic sound).
+void update_idle_scuff()
+{
+	bool shift_held = (key_down(KEY_LSHIFT) or key_down(KEY_RSHIFT) or kb_down("mod_shift"));
+	bool moving = (dmoving == true)
+		|| kb_down("move_forward") || key_down(KEY_UP)
+		|| kb_down("move_back") || key_down(KEY_DOWN)
+		|| (!shift_held && (kb_down("move_left") || key_down(KEY_LEFT)))
+		|| (!shift_held && (kb_down("move_right") || key_down(KEY_RIGHT)))
+		|| jumping == 1 || falling;
+	// The scuff sound only exists after the player has actually moved for the
+	// first time and has walked since the last stop - it must never play on spawn
+	// or when merely trying to walk while blocked at a map boundary.
+	if (moving || footdrag_enabled == 0 || !has_moved || !player_walked_since_stop)
+	{
+		idle_scuff_primed = false;
+		idle_scuff_played = false;
+		return;
+	}
+	string tile = gmt();
+	if (tile == "" || string_contains(tile, "wall", 1) > -1)
+	{
+		idle_scuff_primed = false;
+		idle_scuff_played = false;
+		return;
+	}
+	if (!idle_scuff_primed)
+	{
+		idle_scuff_primed = true;
+		idle_scuff_played = false;
+		idle_scuff_timer.restart();
+		return;
+	}
+	if (!idle_scuff_played && idle_scuff_timer.elapsed >= 1000)
+	{
+		idle_scuff_played = true;
+		player_walked_since_stop = false;
+		string sc = get_platform_sound(tile, "scuff");
+		if (sc != "") p.play_stationary(sc, false);
+	}
+}
+void play(string snd, bool loop=false)
+{
+string s = get_pack_sound(snd);
+if (s == "") s = get_sound_path(snd);
+if (s != "") p.play_stationary(s,loop);
+}
+bool shiftisdown()
+{
+if (key_down(KEY_LSHIFT) or key_down(KEY_RSHIFT))
+{
+return true;
+}
+return false;
+}
+bool altisdown()
+{
+if (key_down(KEY_LMENU) or key_down(KEY_RMENU) or key_down(KEY_LALT) or key_down(KEY_RALT))
+{
+return true;
+}
+return false;
+}
+int bool_to_int(bool b)
+{
+if (b==true) return 1;
+else return 0;
+}
+void fade_pool(sound_pool@ pool, double final_volume=-50, double delay=10)
+{
+	bool fading = true;
+	while (fading)
+	{
+		fading = false;
+		for (uint i = 0; i <= pool.highest_slot; i++)
+		{
+			if (pool.verify_slot(i) && @pool.items[i].handle != null && pool.items[i].handle.active)
+			{
+				double vol = pool.items[i].handle.volume;
+				if (vol > final_volume)
+				{
+					pool.items[i].handle.volume = vol - 1;
+					fading = true;
+				}
+			}
+		}
+		if (fading) wait(delay);
+	}
+}
+void reset()
+{
+is_in_game = false;
+cancel_reload();
+fade_pool(@sp, -50, 10);
+fade_pool(@p, -50, 10);
+fade_pool(@dp, -50, 10);
+tracking_active = false;
+bleading.stop();
+// here. It must continue from where it was across death, exit, and return.
+	clear_all_map_states();
+	destroy_all_ground_items();
+	destroy_all_map_spawners();
+	p.destroy_all();
+	p.update_listener_3d(0, 0, 0, 0);
+	dp.destroy_all();
+	dp.update_listener_3d(0, 0, 0, 0);
+	killbodyfalls();
+killstores();
+itempool.update_listener_3d(0, 0, 0, 0);
+killsrcs();
+destroy_all_travelpoints();
+destroy_all_doors();
+destroy_all_staircases();
+destroy_all_builder_objects();
+map.resize(0);
+zones.resize(0);
+safezones.resize(0);
+	remove_all_equipment();
+	is_sitting = false;
+tracking_active = false;
+health = maxhealth;
+}
+double stn(string str)
+{
+return string_to_number(str);
+}
+void readprefs()
+{
+sd.load();
+if (sd.d.exists("menu_music_volume"))
+{
+menu_music_volume=sd.readn("menu_music_volume");
+if (menu_music_volume > 0.0) menu_music_volume = 0.0;
+if (menu_music_volume < -100.0) menu_music_volume = -100.0;
+}
+else if (sd.d.exists("musicvolume"))
+{
+menu_music_volume=sd.readn("musicvolume");
+if (menu_music_volume > 0.0) menu_music_volume = 0.0;
+if (menu_music_volume < -100.0) menu_music_volume = -100.0;
+}
+else
+{
+menu_music_volume=0.0;
+}
+
+if (sd.d.exists("map_music_volume"))
+{
+map_music_volume=sd.readn("map_music_volume");
+if (map_music_volume > 0.0) map_music_volume = 0.0;
+if (map_music_volume < -100.0) map_music_volume = -100.0;
+musicvolume = map_music_volume;
+apply_music_volume();
+}
+else if (sd.d.exists("musicvolume"))
+{
+map_music_volume=sd.readn("musicvolume");
+if (map_music_volume > 0.0) map_music_volume = 0.0;
+if (map_music_volume < -100.0) map_music_volume = -100.0;
+musicvolume = map_music_volume;
+apply_music_volume();
+}
+else
+{
+map_music_volume=0.0;
+musicvolume=0.0;
+apply_music_volume();
+}
+if (sd.d.exists("ambient_volume"))
+{
+ambient_volume=sd.readn("ambient_volume");
+apply_ambient_volume();
+}
+if (sd.d.exists("wrap_disabled"))
+{
+wrap_disabled=sd.readn("wrap_disabled");
+}
+if (sd.d.exists("footdrag_enabled"))
+{
+footdrag_enabled=int(sd.readn("footdrag_enabled"));
+}
+if (sd.d.exists("play_logo"))
+{
+play_logo=sd.readn("play_logo");
+}
+if (sd.d.exists("confirm_exit"))
+{
+confirm_exit=int(sd.readn("confirm_exit"));
+}
+if (sd.d.exists("verbalize_zones"))
+{
+verbalize_zones=int(sd.readn("verbalize_zones"));
+}
+if (sd.d.exists("menu_music_choice"))
+{
+menu_music_choice=sd.read("menu_music_choice");
+}
+if (sd.d.exists("enable_player_pain_sounds"))
+{
+enable_player_pain_sounds=int(sd.readn("enable_player_pain_sounds"));
+}
+if (sd.d.exists("keyboard_sound_theme"))
+{
+current_keyboard_theme=sd.read("keyboard_sound_theme");
+if (current_keyboard_theme == "") current_keyboard_theme = "keyboard1";
+set_global_keyboard_sound_theme(current_keyboard_theme);
+}
+else
+{
+current_keyboard_theme = "keyboard1";
+set_global_keyboard_sound_theme("keyboard1");
+}
+}
+void writeprefs()
+{
+    sd.add("menu_music_volume",menu_music_volume);
+    sd.add("map_music_volume",map_music_volume);
+    sd.add("musicvolume",map_music_volume);
+    sd.add("ambient_volume",ambient_volume);
+    sd.add("wrap_disabled",wrap_disabled);
+    sd.add("footdrag_enabled",footdrag_enabled);
+    sd.add("play_logo",play_logo);
+    sd.add("confirm_exit",confirm_exit);
+    sd.add("verbalize_zones",verbalize_zones);
+    sd.add("menu_music_choice",menu_music_choice);
+    sd.add("enable_player_pain_sounds",enable_player_pain_sounds);
+    sd.add("keyboard_sound_theme",current_keyboard_theme);
+    sd.save();
+}
+void save_location()
+{
+    savedata loc(prefsdir+"/location.dat","gipwjefiqoiqewiofeiofqwehjoiwmoiwaniewnfoipwqenefowqiniosawENGRWORWIOPNHGRNIOOGINWGR");
+    loc.add("mapname", mapname);
+    loc.add("pos_x", int(me.x));
+    loc.add("pos_y", int(me.y));
+    loc.add("pos_z", int(me.z));
+    loc.add("facing", facing);
+    loc.add("level", level);
+    loc.add("xp", xp);
+    loc.add("resurrections", resurrections);
+    loc.add("health", health);
+    loc.add("maxhealth", maxhealth);
+    loc.add("current_weapon", current_weapon_id);
+    loc.add("equipped_shield_id", (current_shield !is null ? current_shield.id : ""));
+    loc.add("equipped_shield_durability", (current_shield !is null ? current_shield.durability : 0));
+    loc.add("inventory_data", serialize_inventory());
+    // death, exit, or return never rewinds it.
+    loc.add("is_sitting", is_sitting ? 1 : 0);
+    loc.add("discovered_maps", serialize_discovered_maps());
+    loc.save();
+}
+void clear_location()
+{
+    if (file_exists(prefsdir+"/location.dat"))
+        file_delete(prefsdir+"/location.dat");
+}
+void load_location(string &out saved_map, int &out lx, int &out ly, int &out lz, int &out lfacing)
+{
+    savedata loc(prefsdir+"/location.dat","gipwjefiqoiqewiofeiofqwehjoiwmoiwaniewnfoipwqenefowqiniosawENGRWORWIOPNHGRNIOOGINWGR");
+    loc.load();
+    if (loc.d.exists("mapname"))
+    {
+        saved_map = loc.read("mapname");
+        lx = loc.readn("pos_x");
+        ly = loc.readn("pos_y");
+        lz = loc.readn("pos_z");
+        lfacing = loc.readn("facing");
+        level = loc.readn("level");
+		if (level < 0) level = 0;
+        xprequired = get_xp_required(level);
+        xp = loc.readn("xp");
+        resurrections = loc.readn("resurrections");
+        maxhealth = 1000 * (1.0 + (resurrections * 0.3));
+        if (loc.d.exists("maxhealth")) maxhealth = loc.readn("maxhealth");
+        if (loc.d.exists("health")) health = loc.readn("health");
+        else health = maxhealth;
+		normalize_player_xp(false);
+        current_weapon_id = "";
+        walktime = 160;
+        remove_all_equipment();
+        if (loc.d.exists("inventory_data"))
+        {
+            deserialize_inventory(loc.read("inventory_data"));
+        }
+        if (loc.d.exists("equipped_shield_id"))
+        {
+            string s_id = loc.read("equipped_shield_id");
+            // New saves store the damage-point durability pool; old saves with
+            // hit counts are read as-is (they are valid damage points too).
+            int s_dur = 0;
+            if (loc.d.exists("equipped_shield_durability")) s_dur = loc.readn("equipped_shield_durability");
+            else if (loc.d.exists("equipped_shield_charges")) s_dur = loc.readn("equipped_shield_charges");
+            if (s_id != "" && s_dur > 0)
+            {
+                @current_shield = equipped_shield();
+                current_shield.id = s_id;
+                current_shield.durability = s_dur;
+            }
+        }
+
+        if (loc.d.exists("is_sitting")) is_sitting = (loc.readn("is_sitting") > 0);
+        if (loc.d.exists("discovered_maps"))
+        {
+            deserialize_discovered_maps(loc.read("discovered_maps"));
+        }
+    }
+    else
+    {
+        saved_map = "main";
+        lx = 1; ly = 0; lz = 0; lfacing = 0;
+        level = 1;
+        xp = 0;
+        resurrections = 0;
+        maxhealth = 1000;
+        health = maxhealth;
+        xprequired = get_xp_required(level);
+        current_weapon_id = "";
+        walktime = 160;
+        remove_all_equipment();
+    }
+}
+void tempreset_internal(bool save_state, const string&in target_map = "")
+{
+    if (save_state) save_current_map_state();
+    else clear_saved_map_state(mapname);
+    g_active_map.reset_data();
+    destroy_all_projectiles();
+    killbodyfalls();
+    killstores();
+    itempool.destroy_all();
+    itempool.update_listener_3d(me.x, me.y, me.z, double(facing));
+    dp.destroy_all();
+    dp.update_listener_3d(me.x, me.y, me.z, double(facing));
+    seamless_switch_map_sources(mapname, target_map);
+    destroy_all_travelpoints();
+    destroy_all_doors();
+    destroy_all_staircases();
+    destroy_all_builder_objects();
+    map.resize(0);
+    zones.resize(0);
+safezones.resize(0);
+
+
+    apply_ambient_volume();
+    apply_music_volume();
+    dmoving = false;
+    movetimer.restart();
+    has_moved = true;
+    player_walked_since_stop = true;
+    idle_scuff_primed = false;
+    idle_scuff_played = false;
+    idle_scuff_timer.restart();
+}
+
+void tempreset_seamless(const string&in target_map = "")
+{
+    tempreset_internal(true, target_map);
+}
+
+void tempreset()
+{
+    cancel_reload();
+    p.destroy_all();
+    p.update_listener_3d(0, 0, 0, 0);
+    dp.destroy_all();
+    dp.update_listener_3d(0, 0, 0, 0);
+    killsrcs();
+    surface_from_underwater();
+    tempreset_internal(false);
+}
+bool initial_session_welcome_played = false;
+sound session_welcome_sound;
+
+void play_initial_session_welcome_sound()
+{
+	if (initial_session_welcome_played) return;
+	initial_session_welcome_played = true;
+
+	string[] welcome_files;
+	if (directory_exists("sounds/welcome"))
+	{
+		string[]@ files = find_files("sounds/welcome/*.ogg");
+		if (files !is null)
+		{
+			for (uint i = 0; i < files.length(); i++)
+			{
+				welcome_files.insert_last("sounds/welcome/" + files[i]);
+			}
+		}
+	}
+	if (welcome_files.length() == 0 && directory_exists("sounds/boas-vindas"))
+	{
+		string[]@ files = find_files("sounds/boas-vindas/*.ogg");
+		if (files !is null)
+		{
+			for (uint i = 0; i < files.length(); i++)
+			{
+				welcome_files.insert_last("sounds/boas-vindas/" + files[i]);
+			}
+		}
+	}
+
+	if (welcome_files.length() > 0)
+	{
+		int chosen_idx = random(0, welcome_files.length() - 1);
+		string wpath = welcome_files[chosen_idx];
+		if (wpath != "" && session_welcome_sound.load(wpath))
+		{
+			session_welcome_sound.play();
+			return;
+		}
+	}
+
+	string fallback = get_sound_path("welcome/welcome.ogg;welcome.ogg");
+	if (fallback != "" && session_welcome_sound.load(fallback))
+	{
+		session_welcome_sound.play();
+	}
+}
+
+void announce_zone_on_load()
+{
+	play_initial_session_welcome_sound();
+	string locate=get_zone_at(int(round(me.x,0)),int(round(me.y,0)),int(round(me.z,0)));
+	if (locate!="")
+	{
+		speak(locate);
+		currentloc=locate;
+	}
+	else
+	{
+		speak("unknown area");
+		currentloc="unknown area";
+	}
+}
+
+void checkloc(bool force_announce=false)
+{
+	string locate=get_zone_at(int(round(me.x,0)),int(round(me.y,0)),int(round(me.z,0)));
+	string loc_text="";
+	if (locate!="")
+	{
+		loc_text=locate;
+	}
+	else
+	{
+		loc_text="unknown area";
+	}
+	if (force_announce)
+	{
+		if (locate!="")
+		{
+			speak("current location: " + locate);
+		}
+		else
+		{
+			speak("current location: unknown area");
+		}
+		currentloc=loc_text;
+		return;
+	}
+	if (loc_text!=currentloc)
+	{
+		if (verbalize_zones==1)
+		{
+			speak(loc_text);
+		}
+		currentloc=loc_text;
+	}
+}
+
+
+void init()
+{
+	is_in_game = true;
+	has_moved=false;
+	player_walked_since_stop=false;
+	init_stores();
+	load_all_items_config();
+	load_all_packages();
+	register_default_shield_if_missing();
+	register_default_anti_death_card_if_missing();
+	load_all_weapons_wpm();
+	cancel_reload();
+	remove_all_equipment();
+	current_weapon_id = "";
+	inv.delete_all();
+	health=maxhealth;
+	currentloc="";
+	string bpath = get_player_sound("blead");
+	if (bpath == "") bpath = get_sound_path("bleading.ogg");
+	bleading.load(bpath);
+}

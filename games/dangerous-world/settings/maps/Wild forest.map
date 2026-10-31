@@ -1,0 +1,15 @@
+map: Wild forest
+minx: 0
+maxx: 499
+miny: 0
+maxy: 499
+minz: 0
+maxz: 50
+minlevel: 1
+maxlevel: 0
+minresurrection: 0
+maxresurrection: 0
+platform:0:499:0:499:0:0:thickforest
+zone:0:499:0:499:0:50:Wild forest
+source:0:499:0:499:0:50:forest:0:100
+travelpoint:0:0:0:499:0:10:Main island:499:499:0:499:0:0:none:1:0:0:0:1

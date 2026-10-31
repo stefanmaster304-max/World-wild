@@ -1,0 +1,203 @@
+// weapon_system.nvgt - Modular Weapon Runtime Engine for Dangerous World.
+// Manages weapon equipping, firing, projectile emission, and sound dispatch.
+// Strictly no explosives and no silencers/suppressors.
+
+string current_weapon_id = "";
+timer weapon_fire_timer;
+int weapon_next_fire_interval = 500;
+bool is_firing_weapon = false;
+
+int get_current_walktime()
+{
+	if (current_weapon_id != "")
+	{
+		weapon_data@ w = find_weapon_data(current_weapon_id);
+		if (w !is null && w.walktime > 0) return w.walktime;
+	}
+	return 160;
+}
+
+void unequip_weapon(bool silent = false)
+{
+	if (is_reloading) cancel_reload();
+	current_weapon_id = "";
+	walktime = 160;
+	if (!silent) speak("Weapon unequipped.");
+}
+
+void equip_weapon(const string&in wid, bool silent = false)
+{
+	weapon_data@ w = get_weapon_data(wid);
+	if (w is null) return;
+
+	// Switching weapons cancels any reload still playing on the old one.
+	if (is_reloading) cancel_reload();
+
+	current_weapon_id = wid;
+	weapon_next_fire_interval = (w.firetime > 0) ? w.firetime : ((w.firetime_min > 0) ? w.firetime_min : 500);
+	init_weapon_ammo(wid, w.capacity);
+	register_weapon_fire_modes(w);
+	if (w.walktime > 0) walktime = w.walktime;
+	else walktime = 160;
+
+	if (!silent && w.sound_draw != "")
+	{
+		string dsnd = get_sound_path(w.sound_draw);
+		if (dsnd != "") p.play_stationary(dsnd, false);
+	}
+
+	if (!silent)
+	{
+		if (w.melee)
+		{
+			speak(w.name + " equipped (Melee).");
+		}
+		else
+		{
+			speak(w.name + " equipped.");
+		}
+	}
+}
+
+int get_player_weapon_fire_direction(weapon_data@ w, int default_facing)
+{
+    return default_facing;
+}
+
+void fire_current_weapon()
+{
+	// While the reload sound is playing the weapon cannot fire and stays in
+	// its reloading state until the sound stops completely.
+	if (is_reloading) return;
+
+	if (current_weapon_id == "")
+	{
+		return;
+	}
+
+	// Consumables such as food or drinks held in hand do not fire.
+	item_data@ it = get_item_data(current_weapon_id);
+	if (it !is null && (it.category == "consumables" || it.subtype == "food" || it.subtype == "drink" || it.subtype == "potion"))
+	{
+		return;
+	}
+
+	weapon_data@ w = get_weapon_data(current_weapon_id);
+	if (w is null) return;
+
+	bool trigger_pressed = kb_pressed("fire");
+	bool trigger_held = kb_down("fire");
+
+	if (!trigger_pressed && !trigger_held) return;
+
+	if (weapon_fire_timer.elapsed < weapon_next_fire_interval) return;
+	weapon_fire_timer.restart();
+	weapon_next_fire_interval = (w.firetime > 0) ? w.firetime : ((w.firetime_min > 0) ? w.firetime_min : 500);
+
+	double res_mult = 1.0;
+	for (int ri = 0; ri < resurrections && res_mult < 1000000.0; ri++) res_mult *= 2.0;
+
+	// Fire direction automatically resolves targets directly in front, left, right, behind or in range.
+	int fire_dir = get_player_weapon_fire_direction(w, facing);
+
+	if (w.melee)
+	{
+		// Melee strikes happen on a fresh trigger press.
+		if (!trigger_pressed) return;
+		if (w.sound_fire != "")
+		{
+			string fsnd = get_sound_path(w.sound_fire);
+			if (fsnd != "") p.play_stationary(fsnd, false);
+		}
+		// Spawn melee strike projectile / ray
+		int base_dmg = random(w.min_damage, w.max_damage);
+		int dmg = int(round(double(base_dmg) * res_mult, 0));
+		spawn_projectile(me.x, me.y, me.z, fire_dir, w.id, "melee", dmg, 2, w.range, 0, "player");
+		return;
+	}
+
+	int fmode = get_fire_mode(current_weapon_id);
+
+	// Validate trigger requirement per fire mode:
+	if (fmode == FIREMODE_AUTO)
+	{
+		if (!trigger_held) return;
+	}
+	else if (fmode == FIREMODE_BURST)
+	{
+		if (burst_rounds_remaining <= 0)
+		{
+			if (!trigger_pressed) return;
+			burst_rounds_remaining = 3;
+		}
+		else
+		{
+			if (!trigger_held)
+			{
+				burst_rounds_remaining = 0;
+				return;
+			}
+		}
+	}
+	else // Semi, Scattershot, Focused: all require an individual trigger press
+	{
+		if (!trigger_pressed) return;
+	}
+
+	// Ranged weapon: ammo check. An empty weapon NEVER auto-reloads on the
+	// fire key: the empty-cartridge sound plays and the player decides when
+	// to reload manually (R).
+	if (get_loaded_ammo(w.id) <= 0)
+	{
+		burst_rounds_remaining = 0;
+		string atype = (w.ammo_type != "") ? w.ammo_type : "ammo";
+		speak("Click. Out of " + atype + ".");
+		if (w.sound_empty_mag != "")
+		{
+			string esnd = get_sound_path(w.sound_empty_mag);
+			if (esnd != "") p.play_stationary(esnd, false);
+		}
+		return;
+	}
+
+	// Consume one round per trigger event
+	consume_loaded_round(w.id);
+	if (fmode == FIREMODE_BURST) burst_rounds_remaining--;
+
+	// Play fire sound strictly from weapon configuration (no generic fallback)
+	if (w.sound_fire != "")
+	{
+		string fsnd = get_sound_path(w.sound_fire);
+		if (fsnd != "") p.play_stationary(fsnd, false);
+	}
+
+	int base_dmg = random(w.min_damage, w.max_damage);
+	int dmg = int(round(double(base_dmg) * res_mult, 0));
+	int spd = (w.speedtime > 0) ? w.speedtime : 5;
+
+	if (fmode == FIREMODE_SCATTERSHOT)
+	{
+		// Scattershot: throws a fan of projectiles simultaneously on trigger press.
+		for (int k = -2; k <= 2; k++)
+		{
+			int sdir = int(degree_limit(double(fire_dir) + double(k * 10)));
+			spawn_projectile(me.x, me.y, me.z, sdir, w.id, "bullet", dmg, spd, w.range, w.spread, "player");
+		}
+	}
+	else if (fmode == FIREMODE_FOCUSED)
+	{
+		// Focused: a single high-damage, perfectly accurate shot.
+		spawn_projectile(me.x, me.y, me.z, fire_dir, w.id, "bullet", int(round(double(dmg) * 1.5, 0)), spd, w.range, 0, "player");
+	}
+	else
+	{
+		// Semi / auto / burst: one real projectile per round, as configured.
+		spawn_projectile(me.x, me.y, me.z, fire_dir, w.id, "bullet", dmg, spd, w.range, w.spread, "player");
+	}
+}
+
+void weapon_system_loop()
+{
+	ammo_system_loop();
+	projectile_loop();
+}

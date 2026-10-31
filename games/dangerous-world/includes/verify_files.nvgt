@@ -1,0 +1,42 @@
+bool verify_files()
+{
+if (!SCRIPT_COMPILED) return true;
+
+	// Verify unified bundles or fallback loose files in settings/
+	bool maps_ok = file_exists("settings/maps.dat") || file_exists("data/maps.dat") || file_exists("settings/maps/main.map") || file_exists("maps/main.map") || file_exists("settings/maps/main.map.dat") || file_exists("data/maps/main.map.dat") || directory_exists("settings/maps");
+	bool items_ok = file_exists("settings/items.dat") || file_exists("data/items.dat") || directory_exists("settings/items") || directory_exists("data/items");
+	bool weapons_ok = file_exists("settings/weapons.dat") || file_exists("data/weapons.dat") || directory_exists("settings/weapons") || directory_exists("data/weapons");
+	bool shops_ok = file_exists("settings/shops.dat") || file_exists("settings/stores.dat") || file_exists("data/shops.dat") || file_exists("data/stores.dat") || directory_exists("settings/stores") || directory_exists("stores") || directory_exists("data/stores");
+	bool sounds_ok = file_exists("sounds.dw") || file_exists("settings/sounds.dw") || directory_exists("sounds");
+
+	string checked = "";
+	string missing = "";
+	bool has_missing = false;
+
+	if (!maps_ok) { missing += "settings/maps.dat (or settings/maps folder)\n"; has_missing = true; }
+	if (!items_ok) { missing += "settings/items.dat (or settings/items folder)\n"; has_missing = true; }
+	if (!weapons_ok) { missing += "settings/weapons.dat (or settings/weapons folder)\n"; has_missing = true; }
+	if (!shops_ok) { missing += "settings/shops.dat (or settings/stores folder)\n"; has_missing = true; }
+	if (!sounds_ok) { missing += "sounds.dw (or sounds folder)\n"; has_missing = true; }
+
+	if (!has_missing) return true;
+
+audio_form f;
+f.create_window("File verification", false, false, false);
+f.create_status_bar("Status", "Checking complete. Missing files found.");
+	int list = f.create_list("Checked files");
+	f.add_list_item(list, "settings/maps.dat: " + (maps_ok ? "found" : "missing"), "", -1, false, false);
+	f.add_list_item(list, "settings/items.dat: " + (items_ok ? "found" : "missing"), "", -1, false, false);
+	f.add_list_item(list, "settings/weapons.dat: " + (weapons_ok ? "found" : "missing"), "", -1, false, false);
+	f.add_list_item(list, "settings/shops.dat: " + (shops_ok ? "found" : "missing"), "", -1, false, false);
+	f.add_list_item(list, "sounds: " + (sounds_ok ? "found" : "missing"), "", -1, false, false);
+int edit = f.create_input_box("Missing files", missing, "", 0, true, true);
+int btn = f.create_button("Exit", true, false);
+while(true)
+{
+wait(5);
+f.monitor();
+if (f.is_pressed(btn)) break;
+}
+return false;
+}

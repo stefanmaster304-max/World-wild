@@ -1,0 +1,264 @@
+// shield_system.nvgt - Shield & Equipment Protection System
+//
+// Shields are unique pieces of equipment. They are defined as regular items of
+// the "equipment" category (created through the Items manager -> Create New
+// Item -> Equipment) and are the only items that protect the player against
+// weapon fire and animal attacks.
+//
+// Shield stats live on the item definition:
+//   - capacity    = total damage points the shield can absorb before it breaks
+//                   (dynamic durability: a weak weapon needs several hits to
+//                   break it, a strong one can smash through in one hit and
+//                   any overflow damage passes through to the player),
+//   - sound_use   = equip / activate sound,
+//   - sound_hit   = impact / deflect sound,
+//   - sound_break = shield break sound,
+//   - sound_distant_hit = distant break / impact sound.
+//
+// EQUIPPING: equipping a shield consumes exactly one copy from the inventory
+// (5 shields in the backpack -> equip -> 4 left, one worn). Only one shield
+// may be worn at a time. The shield is not hit-count based: it has a finite
+// durability pool measured in damage points. Every hit drains the pool by the
+// actual incoming damage; when the pool reaches zero the shield shatters and
+// leftover damage from that same hit is dealt to the player. A powerful
+// weapon (e.g. 1500 damage) can therefore break a low-capacity shield on the
+// first blow, while weak blows only chip away at it.
+//
+// Equipping never produces spoken narration, only the placement sound.
+
+// Fallback durability pool used when an item has no capacity configured.
+const int SHIELD_DEFAULT_DURABILITY = 2500;
+
+// One worn shield copy with its own remaining damage-point durability.
+class equipped_shield
+{
+	string id;
+	int durability;
+
+	equipped_shield()
+	{
+		id = "";
+		durability = 0;
+	}
+}
+
+// Single worn shield. Stacking multiple shields is strictly prohibited.
+equipped_shield@ current_shield = null;
+
+bool has_shield_equipped()
+{
+	return (current_shield !is null && current_shield.durability > 0 && current_shield.id != "");
+}
+
+// A shield is any equipment item marked as shield type (subtype "shield" or an
+// id that contains "shield", e.g. metal_shield).
+bool is_shield_item_data(item_data@ it)
+{
+	if (it is null || it.category != "equipment") return false;
+	string low_id = string_to_lower_case(it.id);
+	string low_sub = string_to_lower_case(it.subtype);
+	if (string_contains(low_sub, "shield", 1) > -1) return true;
+	if (string_contains(low_id, "shield", 1) > -1) return true;
+	return false;
+}
+
+bool is_equipment_item(const string&in item_id)
+{
+	item_data@ it = get_item_data(item_id);
+	return (it !is null && is_shield_item_data(it));
+}
+
+string build_equipment_description(item_data@ it)
+{
+	if (it is null) return "";
+	if (is_shield_item_data(it))
+	{
+		int pool = (it.capacity > 0) ? it.capacity : 0;
+		string desc = "Shield - Protects against weapon fire and animal attacks.";
+		if (pool > 0) desc += " Has " + pool + " points of durability: it absorbs damage until the pool runs out, then breaks, and a strong enough weapon can smash through it in one hit.";
+		desc += " Only one shield may be equipped at a time.";
+		return desc;
+	}
+	if (it.description != "") return it.description;
+	return "Equippable equipment item.";
+}
+
+// Equips a single shield item. If a shield is already equipped, another cannot
+// be equipped until the active one breaks or is removed.
+void equip_equipment(const string&in item_id)
+{
+	item_data@ it = get_item_data(item_id);
+	if (it is null || it.category != "equipment") return;
+	if (get_item_count(item_id) <= 0)
+	{
+		speak("You do not have this equipment.");
+		return;
+	}
+
+	if (has_shield_equipped())
+	{
+		speak("You already have a shield equipped. You can only equip another once it is broken.");
+		return;
+	}
+
+	@current_shield = equipped_shield();
+	current_shield.id = item_id;
+	current_shield.durability = (it.capacity > 0) ? it.capacity : SHIELD_DEFAULT_DURABILITY;
+
+	if (it.sound_use != "")
+	{
+		string snd_path = get_sound_path(it.sound_use);
+		if (snd_path != "") p.play_stationary(snd_path, false);
+	}
+}
+
+// Clears the equipped shield silently (map resets, new game, etc.).
+void remove_all_equipment()
+{
+	@current_shield = null;
+}
+
+// Announces the currently worn shield (Shift + C).
+void speak_equipped_equipment()
+{
+	if (!has_shield_equipped())
+	{
+		speak("You have no equipment equipped.");
+		return;
+	}
+
+	item_data@ it = get_item_data(current_shield.id);
+	string name = (it !is null && it.name != "") ? it.name : current_shield.id;
+	speak("You are holding the " + name + ", with " + current_shield.durability + " points of durability remaining.");
+}
+
+void play_shield_break_sounds(item_data@ it)
+{
+	if (it !is null)
+	{
+		if (it.sound_break != "")
+		{
+			string brk_path = get_sound_path(it.sound_break);
+			if (brk_path != "") p.play_stationary(brk_path, false);
+		}
+		if (it.sound_distant_hit != "")
+		{
+			string dist_path = get_sound_path(it.sound_distant_hit);
+			if (dist_path != "") p.play_stationary(dist_path, false);
+		}
+	}
+	else
+	{
+		string def_brk = get_sound_path("shieldbreak.ogg");
+		if (def_brk != "") p.play_stationary(def_brk, false);
+	}
+}
+
+int get_default_shield_durability()
+{
+	item_data@ d_it = find_item_data("metal_shield");
+	if (d_it !is null && d_it.capacity > 0) return d_it.capacity;
+	for (uint i = 0; i < item_registry.length(); i++)
+	{
+		if (is_shield_item_data(item_registry[i]) && item_registry[i].capacity > 0)
+			return item_registry[i].capacity;
+	}
+	return SHIELD_DEFAULT_DURABILITY;
+}
+
+// Processes an incoming hit against the worn shield.
+//
+// damage_source describes where the hit came from ("bullet" for weapon fire,
+// "projectile" / "impact" / "explosive", ...). Shield durability is a dynamic
+// pool of damage points. Every hit drains the pool by the incoming damage.
+// When an attack breaks the shield, only the shield breaking sound is played
+// (no hit sound), and the blow is completely spent destroying the shield
+// without hurting the wearer on that same hit. Subsequent attacks will hit the player.
+const int SHIELD_PENETRATION_CHANCE = 10; // percent
+int shield_process_damage(int incoming_dmg, const string&in damage_source = "bullet")
+{
+	if (incoming_dmg <= 0) return 0;
+	if (!has_shield_equipped()) return incoming_dmg;
+
+	// A lucky strong blow slips past the shield entirely and hits the player.
+	if (random(1, 100) <= SHIELD_PENETRATION_CHANCE)
+		return incoming_dmg;
+
+	item_data@ it = get_item_data(current_shield.id);
+
+	// Check if this attack breaks the shield
+	if (current_shield.durability <= incoming_dmg)
+	{
+		// Only play shield breaking sound (no impact hit sound simultaneously)
+		play_shield_break_sounds(it);
+		speak("Your shield has broken!");
+		string broken_id = current_shield.id;
+		@current_shield = null;
+		give(broken_id, -1);
+		// Attack is absorbed completely by breaking the shield; 0 damage to player
+		return 0;
+	}
+
+	// Shield survives the blow: play impact hit sound and drain durability
+	string hit_snd = (it !is null && it.sound_hit != "") ? it.sound_hit : "shieldhit" + random(1, 12) + ".ogg";
+	string hit_path = get_sound_path(hit_snd);
+	if (hit_path != "") p.play_stationary(hit_path, false);
+
+	current_shield.durability -= incoming_dmg;
+	return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Default shield seeding (dev builds only)
+// ---------------------------------------------------------------------------
+
+// Ensures a default Metal Shield equipment item exists so the game always has
+// at least one shield. In compiled/encrypted releases items come from the
+// encrypted items bundle instead and nothing is written.
+void register_default_shield_if_missing()
+{
+	if (find_item_data("metal_shield") !is null) return;
+	if (is_item_encrypted("metal_shield")) return;
+
+	item_data it;
+	it.id = "metal_shield";
+	it.name = "Metal Shield";
+	it.category = "equipment";
+	it.subtype = "shield";
+	it.description = "A sturdy metal shield that blocks weapon fire and animal attacks. Absorbs damage until its durability runs out.";
+	it.max_stack = 25;
+	it.capacity = 2500; // damage points the shield can absorb before breaking
+	// Shield durability is a damage pool; the absorption field stays unused.
+	it.heal_amount = 0;
+	it.sound_use = "shieldon.ogg";
+	it.sound_hit = "shieldhit1.ogg";
+	it.sound_break = "shieldbreak.ogg";
+	it.sound_distant_hit = "shieldbreakdist1.ogg";
+
+	if (save_item_config(it))
+	{
+		load_all_items_config();
+	}
+}
+
+void register_default_anti_death_card_if_missing()
+{
+	if (find_item_data("anti_death_card") !is null) return;
+	if (is_item_encrypted("anti_death_card")) return;
+
+	item_data it;
+	it.id = "anti_death_card";
+	it.name = "Anti-Death Card";
+	it.category = "consumables";
+	it.subtype = "anti_death_card";
+	it.description = "A mystical card that cheats death. When your health reaches zero, one card is consumed, restoring your health and saving your life.";
+	it.max_stack = 99;
+	it.capacity = 1;
+	it.heal_amount = 0;
+	it.sound_use = "sounds/misc/deathfree.ogg";
+
+	if (save_item_config(it))
+	{
+		load_all_items_config();
+	}
+}

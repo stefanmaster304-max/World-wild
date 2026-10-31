@@ -1,0 +1,260 @@
+// item_spawner.nvgt - Ground item pickups, map item spawning, configurable durability/decay lifecycle,
+// and high-performance 3D spatial audio pool supporting thousands of items without lag, stutter, or timing drift.
+
+sound_pool itempool(64);
+bool item_pool_initialized = false;
+int ground_item_id_counter = 0;
+const int MAX_ACTIVE_ITEM_BEACONS = 12;
+const int MAX_BEACONS_PER_TILE = 1;
+
+void ensure_item_pool()
+{
+	if (!item_pool_initialized)
+	{
+		@itempool.mixer = mixer();
+		itempool.max_distance = 25.0;
+		itempool.pan_step = 1.0;
+		itempool.volume_step = 2.0;
+		itempool.hrtf = true;
+		item_pool_initialized = true;
+	}
+}
+
+class ground_item
+{
+	int id;
+	string item_id;
+	int amount;
+	double x, y, z;
+	timer beacon_timer;
+	timer lifespan_timer;
+	int sound_slot;
+
+	int decay_time;
+	string beacon_sound;
+	int beacon_interval;
+
+	ground_item(int gid, string iid, int amt, double gx, double gy, double gz, int min_dec = 180000, int max_dec = 480000, string bsnd = "items/item.ogg", int bint = 1000)
+	{
+		id = gid;
+		item_id = iid;
+		amount = amt;
+		x = gx;
+		y = gy;
+		z = gz;
+		sound_slot = -1;
+
+		int d_min = (min_dec > 0) ? min_dec : 180000;
+		int d_max = (max_dec >= d_min) ? max_dec : d_min;
+		decay_time = (d_max > d_min) ? random(d_min, d_max) : d_min;
+
+		beacon_sound = (bsnd != "") ? bsnd : "items/item.ogg";
+		beacon_interval = (bint > 0) ? bint : 1000;
+
+		beacon_timer.restart();
+		// Stagger initial phase so thousands of items do not fire simultaneously
+		beacon_timer.elapsed = random(0, beacon_interval);
+		lifespan_timer.restart();
+	}
+}
+
+ground_item@[] ground_items(0);
+
+void spawn_ground_item(string item_id, int amount, double x, double y, double z, int min_dec = 180000, int max_dec = 480000, string bsnd = "items/item.ogg", int bint = 1000)
+{
+	ensure_item_pool();
+	ground_item_id_counter++;
+	ground_item@ it = ground_item(ground_item_id_counter, item_id, amount, x, y, z, min_dec, max_dec, bsnd, bint);
+	ground_items.insert_last(it);
+}
+
+void destroy_all_ground_items()
+{
+	ensure_item_pool();
+	itempool.destroy_all();
+	ground_items.resize(0);
+}
+
+class item_beacon_candidate
+{
+	ground_item@ item;
+	double dist;
+	item_beacon_candidate(ground_item@ it, double d)
+	{
+		@item = it;
+		dist = d;
+	}
+}
+
+void ground_item_loop()
+{
+	ensure_item_pool();
+	itempool.update_listener_3d(me.x, me.y, me.z, double(facing));
+	pickup_nearby_ground_item();
+
+	item_beacon_candidate@[] candidates;
+
+	for (int i = int(ground_items.length()) - 1; i >= 0; i--)
+	{
+		if (i >= int(ground_items.length())) break;
+		ground_item@ gi = ground_items[i];
+		if (gi is null) continue;
+
+		// 1. Durability Decay & Break Sound
+		if (gi.decay_time > 0 && gi.lifespan_timer.elapsed >= gi.decay_time)
+		{
+			if (gi.sound_slot != -1)
+			{
+				itempool.destroy_sound(gi.sound_slot);
+				gi.sound_slot = -1;
+			}
+			item_data@ it_data = get_item_data(gi.item_id);
+			string snd_file = "";
+			if (it_data !is null && it_data.sound_break != "")
+			{
+				snd_file = get_sound_path(it_data.sound_break);
+			}
+			if (snd_file == "") snd_file = get_sound_path("items/itembreak.ogg");
+			if (snd_file == "") snd_file = "sounds/items/itembreak.ogg";
+			if (snd_file != "" && file_exists(snd_file))
+			{
+				p.play_extended_3d(snd_file, me.x, me.y, me.z, gi.x, gi.y, gi.z, double(facing), 0, 0, 0, 0, 0, 0, false, 0, 0, 0, 100, false);
+			}
+			ground_items.remove_at(uint(i));
+			continue;
+		}
+
+		// Fast Manhattan bounding box culling
+		double dx = (me.x > gi.x) ? (me.x - gi.x) : (gi.x - me.x);
+		double dy = (me.y > gi.y) ? (me.y - gi.y) : (gi.y - me.y);
+		double dz = (me.z > gi.z) ? (me.z - gi.z) : (gi.z - me.z);
+
+		if (dx > 25.0 || dy > 25.0 || dz > 10.0)
+		{
+			continue;
+		}
+
+		double dist = get_3d_distance(me.x, me.y, me.z, gi.x, gi.y, gi.z);
+
+		// 2. Audio beacon candidates within audible radius (15 tiles)
+		if (gi.beacon_sound != "" && dist <= 15.0)
+		{
+			item_beacon_candidate@ cand = item_beacon_candidate(gi, dist);
+			candidates.insert_last(cand);
+		}
+	}
+
+	// 4. Sort candidates by distance (closest first)
+	for (uint i = 0; i < candidates.length(); i++)
+	{
+		for (uint j = i + 1; j < candidates.length(); j++)
+		{
+			if (candidates[j].dist < candidates[i].dist)
+			{
+				item_beacon_candidate@ tmp = candidates[i];
+				@candidates[i] = candidates[j];
+				@candidates[j] = tmp;
+			}
+		}
+	}
+
+	// 5. Cluster & Throttled Audio Playback (Max 6 distinct beacon emitters, max 1 per tile)
+	dictionary tile_active;
+	int active_count = 0;
+
+	for (uint c = 0; c < candidates.length(); c++)
+	{
+		ground_item@ gi = candidates[c].item;
+		if (gi is null) continue;
+		string tile_key = int(round(gi.x, 0)) + ":" + int(round(gi.y, 0)) + ":" + int(round(gi.z, 0));
+
+		if (tile_active.exists(tile_key))
+		{
+			// Another item on this tile is already the active audio beacon
+			continue;
+		}
+
+		if (active_count >= 6)
+		{
+			break;
+		}
+
+		tile_active.set(tile_key, true);
+		active_count++;
+
+		// Trigger beacon sound when interval elapsed
+		if (gi.beacon_timer.elapsed >= gi.beacon_interval)
+		{
+			gi.beacon_timer.restart();
+			string bsnd_path = get_sound_path(gi.beacon_sound);
+			if (bsnd_path == "") bsnd_path = "sounds/items/item.ogg";
+			if (bsnd_path != "" && file_exists(bsnd_path))
+			{
+				gi.sound_slot = itempool.play_3d(bsnd_path, me.x, me.y, me.z, gi.x, gi.y, gi.z, double(facing), false);
+			}
+		}
+	}
+}
+
+timer ground_pickup_timer;
+
+bool pickup_nearby_ground_item()
+{
+	if (ground_pickup_timer.elapsed < 300) return true;
+	ground_pickup_timer.restart();
+
+	int best_idx = -1;
+	double min_dist = 4.0;
+	for (int i = 0; i < int(ground_items.length()); i++)
+	{
+		ground_item@ gi = ground_items[i];
+		if (gi is null) continue;
+		double dist = get_3d_distance(me.x, me.y, me.z, gi.x, gi.y, gi.z);
+		if (dist < min_dist)
+		{
+			min_dist = dist;
+			best_idx = i;
+		}
+	}
+
+	if (best_idx == -1) return false;
+
+	ground_item@ gi = ground_items[best_idx];
+	if (gi.sound_slot != -1)
+	{
+		itempool.destroy_sound(gi.sound_slot);
+		gi.sound_slot = -1;
+	}
+
+	item_data@ data = get_item_data(gi.item_id);
+	string snd_file = "";
+	if (data !is null && data.sound_loot != "")
+	{
+		snd_file = get_sound_path(data.sound_loot);
+		if (snd_file == "") snd_file = find_sound_in_disk("sounds/items/" + data.sound_loot);
+	}
+	if (snd_file == "" && data !is null && data.sound_pickup != "")
+	{
+		snd_file = get_sound_path(data.sound_pickup);
+		if (snd_file == "") snd_file = find_sound_in_disk("sounds/items/" + data.sound_pickup);
+	}
+	if (snd_file == "") snd_file = find_sound_in_disk("sounds/items/get" + gi.item_id + ".ogg");
+	if (snd_file == "") snd_file = get_sound_path("items/itemget1.ogg");
+	if (snd_file == "") snd_file = get_sound_path("itemget1.ogg");
+	if (snd_file != "" && file_exists(snd_file))
+	{
+		p.play_extended_3d(snd_file, me.x, me.y, me.z, gi.x, gi.y, gi.z, double(facing), 0, 0, 0, 0, 0, 0, false, 0, 0, 0, 100, false);
+	}
+
+	string grant_id = gi.item_id;
+	int grant_amount = gi.amount;
+	if (data !is null && data.category == "currency")
+	{
+		grant_id = currency_key_for_item(data);
+		int qty = (data.quantity > 0) ? data.quantity : data.capacity;
+		if (qty > 0) grant_amount = qty;
+	}
+	give(grant_id, grant_amount);
+	ground_items.remove_at(uint(best_idx));
+	return true;
+}

@@ -1,0 +1,833 @@
+// package_manager.nvgt - Standalone TW-Style Package Creation, Editing, Storage & Runtime
+
+const string PACKAGE_DIR = "settings/packages";
+const string PACKAGES_DAT_PATH = "settings/packages.dat";
+const string PACKAGE_ENC_KEY = "ShooterPackageConfigKey2026_9x!L#qZ8*vM3&kP5";
+
+class package_data
+{
+	string id;
+	string name;
+	string description;
+	string sound_open;
+	string contains_items; // "item_id:qty;item_id:qty"
+	string open_message;   // Custom message when opened
+
+	package_data()
+	{
+		id = "";
+		name = "";
+		description = "";
+		sound_open = "items/openpackage1.ogg";
+		contains_items = "";
+		open_message = "";
+	}
+}
+
+package_data@[] package_registry(0);
+
+void ensure_package_directories()
+{
+	if (!directory_exists("settings")) directory_create("settings");
+	if (!directory_exists(PACKAGE_DIR)) directory_create(PACKAGE_DIR);
+}
+
+void parse_package_config(package_data@ pkg, const string&in content)
+{
+	string[]@ lines = string_split(content, "\n", true);
+	if (lines is null) return;
+
+	for (uint i = 0; i < lines.length(); i++)
+	{
+		string line = lines[i].trim_whitespace();
+		if (line == "" || string_starts_with(line, "#") || string_starts_with(line, ";")) continue;
+		int eq = string_contains(line, "=", 1);
+		if (eq == -1) continue;
+
+		string key = string_left(line, eq).trim_whitespace();
+		string val = line.substr(eq + 1).trim_whitespace();
+
+		if (key == "id") pkg.id = val;
+		else if (key == "name") pkg.name = val;
+		else if (key == "description") pkg.description = val;
+		else if (key == "sound_open" || key == "sound_use") pkg.sound_open = val;
+		else if (key == "contains_items" || key == "items") pkg.contains_items = val;
+		else if (key == "open_message" || key == "message") pkg.open_message = val;
+	}
+}
+
+string serialize_package_config(package_data@ pkg)
+{
+	string s = "";
+	s += "id=" + pkg.id + "\n";
+	s += "name=" + pkg.name + "\n";
+	s += "description=" + pkg.description + "\n";
+	if (pkg.sound_open != "") s += "sound_open=" + pkg.sound_open + "\n";
+	s += "contains_items=" + pkg.contains_items + "\n";
+	if (pkg.open_message != "") s += "open_message=" + pkg.open_message + "\n";
+	return s;
+}
+
+string serialize_all_packages_bundle()
+{
+	string s = "# Shooter Unified Packages Bundle v1.0\n\n";
+	for (uint i = 0; i < package_registry.length(); i++)
+	{
+		package_data@ pkg = @package_registry[i];
+		s += "[package:" + pkg.id + "]\n";
+		s += "name=" + pkg.name + "\n";
+		s += "description=" + pkg.description + "\n";
+		s += "sound_open=" + pkg.sound_open + "\n";
+		s += "contains_items=" + pkg.contains_items + "\n";
+		if (pkg.open_message != "") s += "open_message=" + pkg.open_message + "\n";
+		s += "\n";
+	}
+	return s;
+}
+
+void parse_packages_bundle(const string&in content)
+{
+	string[]@ lines = string_split(content, "\n", true);
+	if (lines is null) return;
+	package_data@ current = null;
+
+	for (uint i = 0; i < lines.length(); i++)
+	{
+		string line = lines[i].trim_whitespace();
+		if (line == "" || string_starts_with(line, "#") || string_starts_with(line, ";")) continue;
+
+		if (string_starts_with(line, "[package:") && string_ends_with(line, "]"))
+		{
+			string id = line.substr(9, line.length() - 10);
+			@current = @find_package_data(id);
+			if (current is null)
+			{
+				@current = @package_data();
+				current.id = id;
+				package_registry.insert_last(current);
+			}
+			continue;
+		}
+
+		if (current is null) continue;
+
+		int eq = string_contains(line, "=", 1);
+		if (eq == -1) continue;
+		string key = string_left(line, eq).trim_whitespace();
+		string val = line.substr(eq + 1).trim_whitespace();
+
+		if (key == "name") current.name = val;
+		else if (key == "description") current.description = val;
+		else if (key == "sound_open" || key == "sound_use") current.sound_open = val;
+		else if (key == "contains_items" || key == "items") current.contains_items = val;
+		else if (key == "open_message" || key == "message") current.open_message = val;
+	}
+}
+
+bool is_package_encrypted(const string&in id = "")
+{
+	return file_exists(PACKAGES_DAT_PATH) || file_exists("data/packages.dat") || file_exists("packages.dat");
+}
+
+bool save_package_config(package_data@ pkg)
+{
+	if (pkg is null || pkg.id == "" || is_package_encrypted(pkg.id)) return false;
+	ensure_package_directories();
+	string path = PACKAGE_DIR + "/" + pkg.id + ".config";
+
+	file f;
+	if (!f.open(path, "wb")) return false;
+	string data = serialize_package_config(pkg);
+	f.write(data);
+	f.close();
+
+	bool found = false;
+	for (uint i = 0; i < package_registry.length(); i++)
+	{
+		if (package_registry[i].id == pkg.id)
+		{
+			@package_registry[i] = pkg;
+			found = true;
+			break;
+		}
+	}
+	if (!found) package_registry.insert_last(pkg);
+	return true;
+}
+
+void load_all_packages()
+{
+	package_registry.resize(0);
+	ensure_package_directories();
+
+	// 1. Primary: Load encrypted bundle
+	if (file_exists(PACKAGES_DAT_PATH))
+	{
+		file f;
+		if (f.open(PACKAGES_DAT_PATH, "rb"))
+		{
+			string enc = f.read();
+			f.close();
+			string decrypted = string_decrypt(enc, PACKAGE_ENC_KEY);
+			if (decrypted.length() > 0)
+			{
+				parse_packages_bundle(decrypted);
+				if (package_registry.length() > 0) return;
+			}
+		}
+	}
+
+	// 2. Fallback: Scan loose .config files
+	string[]@ files = find_files(PACKAGE_DIR + "/*.config");
+	if (files !is null)
+	{
+		for (uint i = 0; i < files.length(); i++)
+		{
+			string fn = files[i];
+			string id = fn;
+			if (string_ends_with(id, ".config")) id = string_left(id, id.length() - 7);
+
+			if (find_package_data(id) !is null) continue;
+
+			file f;
+			if (f.open(PACKAGE_DIR + "/" + fn, "rb"))
+			{
+				string content = f.read();
+				f.close();
+				package_data pkg;
+				pkg.id = id;
+				parse_package_config(pkg, content);
+				package_registry.insert_last(pkg);
+			}
+		}
+	}
+
+}
+
+bool delete_package_file(const string&in id)
+{
+	if (id == "" || is_package_encrypted(id)) return false;
+	string path = PACKAGE_DIR + "/" + id + ".config";
+	if (file_exists(path)) file_delete(path);
+
+	for (uint i = 0; i < package_registry.length(); i++)
+	{
+		if (package_registry[i].id == id)
+		{
+			package_registry.remove_at(i);
+			break;
+		}
+	}
+
+	if (file_exists(PACKAGES_DAT_PATH))
+	{
+		if (package_registry.length() > 0)
+			encrypt_all_packages_silent();
+		else
+			file_delete(PACKAGES_DAT_PATH);
+	}
+	return true;
+}
+
+package_data@ find_package_data(const string&in id)
+{
+	for (uint i = 0; i < package_registry.length(); i++)
+	{
+		if (package_registry[i].id == id) return package_registry[i];
+	}
+	return null;
+}
+
+void encrypt_all_packages_silent()
+{
+	if (package_registry.length() == 0) return;
+	ensure_package_directories();
+	string bundle = serialize_all_packages_bundle();
+	string enc = string_encrypt(bundle, PACKAGE_ENC_KEY);
+	file f;
+	if (f.open(PACKAGES_DAT_PATH, "wb"))
+	{
+		f.write(enc);
+		f.close();
+	}
+}
+
+void encrypt_all_packages()
+{
+	ensure_package_directories();
+	if (package_registry.length() == 0)
+	{
+		load_all_packages();
+	}
+	if (package_registry.length() == 0)
+	{
+		speak("No packages found to encrypt.");
+		return;
+	}
+	encrypt_all_packages_silent();
+	string[]@ files = find_files(PACKAGE_DIR + "/*.config");
+	if (files !is null)
+	{
+		for (uint i = 0; i < files.length(); i++)
+		{
+			file_delete(PACKAGE_DIR + "/" + files[i]);
+		}
+	}
+	speak(package_registry.length() + " packages encrypted into packages.dat.");
+}
+
+void decrypt_all_packages()
+{
+	ensure_package_directories();
+	load_all_packages();
+	int count = 0;
+	for (uint i = 0; i < package_registry.length(); i++)
+	{
+		package_data@ pkg = @package_registry[i];
+		string path = PACKAGE_DIR + "/" + pkg.id + ".config";
+		file f;
+		if (f.open(path, "wb"))
+		{
+			f.write(serialize_package_config(pkg));
+			f.close();
+			count++;
+		}
+	}
+	if (file_exists(PACKAGES_DAT_PATH)) file_delete(PACKAGES_DAT_PATH);
+	speak(count + " packages decompiled and decrypted.");
+}
+
+bool is_package(const string&in id)
+{
+	return (find_package_data(id) !is null);
+}
+
+bool open_package_by_id(const string&in pkg_id)
+{
+	package_data@ pkg = find_package_data(pkg_id);
+	if (pkg is null) return false;
+
+	string osnd = pkg.sound_open;
+	if (osnd != "")
+	{
+		string pth = get_sound_path(osnd);
+		if (pth == "") pth = find_sound_in_disk("sounds/" + osnd);
+		if (pth == "") pth = find_sound_in_disk("sounds/items/" + osnd);
+		if (pth != "") p.play_stationary(pth, false);
+	}
+	else
+	{
+		string def_snd = find_sound_in_disk("sounds/items/openpackage*.ogg");
+		if (def_snd != "") p.play_stationary(def_snd, false);
+	}
+
+	// Opening a package EXTRACTS its contents into the inventory only:
+	// nothing is equipped, worn or consumed automatically. The player keeps
+	// full control: weapons/equipment are equipped later from the inventory
+	// with Enter/use, consumables are used later with use().
+	// Exactly one unit of the package is consumed by opening it (a stack of
+	// several packages loses one and keeps the rest).
+	int total_items_extracted = 0;
+	string report_added = "";
+	string[]@ parts = string_split(pkg.contains_items, ";", true);
+	if (parts !is null)
+	{
+		for (uint k = 0; k < parts.length(); k++)
+		{
+			string[]@ pair = string_split(parts[k], ":", true);
+			if (pair is null || pair.length() < 1 || pair[0] == "") continue;
+			string subitem = pair[0];
+			int subcount = (pair.length() >= 2) ? int(string_to_number(pair[1])) : 1;
+			if (subcount <= 0) subcount = 1;
+
+			give(subitem, subcount);
+			total_items_extracted += subcount;
+
+			if (parts.length() <= 6)
+			{
+				if (report_added != "") report_added += ", ";
+				report_added += subcount + " " + get_item_display_name(subitem);
+			}
+		}
+	}
+
+	// Consume exactly one package unit (deletes the package from the
+	// inventory when only one was present).
+	give(pkg_id, -1);
+
+	string summary = "";
+	if (parts !is null && parts.length() > 6)
+	{
+		summary = "Extracted " + parts.length() + " item types (" + total_items_extracted + " items) to inventory.";
+	}
+	else
+	{
+		if (report_added != "") summary += "Extracted to inventory: " + report_added + ".";
+		if (summary == "") summary = "Nothing usable inside.";
+	}
+
+	if (pkg.open_message != "")
+	{
+		string msg = pkg.open_message;
+		msg = string_replace(msg, "%items%", summary, true);
+		msg = string_replace(msg, "{items}", summary, true);
+		msg = string_replace(msg, "%name%", pkg.name, true);
+		msg = string_replace(msg, "{name}", pkg.name, true);
+		speak(msg);
+	}
+	else
+	{
+		speak("You opened your package: " + pkg.name + ". " + summary);
+	}
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+// Package Item Picker Form
+// ---------------------------------------------------------------------------
+string package_pick_items_dialog(const string&in initial_spec)
+{
+	string[]@ existing_tokens = string_split(initial_spec, ";", true);
+	dictionary current_counts;
+	if (existing_tokens !is null)
+	{
+		for (uint t = 0; t < existing_tokens.length(); t++)
+		{
+			string[]@ p = string_split(existing_tokens[t], ":", true);
+			if (p !is null && p.length() >= 2)
+				current_counts.set(p[0], int(string_to_number(p[1])));
+			else if (p !is null && p.length() == 1 && p[0] != "")
+				current_counts.set(p[0], 1);
+		}
+	}
+
+	load_all_items_config();
+	load_all_weapons_wpm();
+
+	string[] all_item_ids;
+	string[] all_item_labels;
+	for (uint i = 0; i < item_registry.length(); i++)
+	{
+		all_item_ids.insert_last(item_registry[i].id);
+		all_item_labels.insert_last(item_registry[i].name != "" ? item_registry[i].name : item_registry[i].id);
+	}
+	for (uint w = 0; w < weapon_registry.length(); w++)
+	{
+		all_item_ids.insert_last(weapon_registry[w].id);
+		all_item_labels.insert_last(weapon_registry[w].name != "" ? weapon_registry[w].name : weapon_registry[w].id);
+	}
+
+	audio_form pf;
+	pf.create_window("select package contents", false, true, false);
+	int list = pf.create_list("available items to pack (Space to check/uncheck)", 0, true, true);
+	for (uint i = 0; i < all_item_ids.length(); i++)
+	{
+		string iid = all_item_ids[i];
+		bool is_checked = current_counts.exists(iid);
+		pf.add_list_item(list, all_item_labels[i], iid, -1, is_checked, (i == 0));
+	}
+
+	int btn_qty = pf.create_button("&set quantity for focused item");
+	int btn_ok = pf.create_button("&save selection", true);
+	int btn_cancel = pf.create_button("&cancel", false, true);
+	pf.focus(list);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		pf.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || pf.is_pressed(btn_cancel))
+		{
+			speak("canceled");
+			return initial_spec;
+		}
+
+		if (pf.is_pressed(btn_qty))
+		{
+			int pos = pf.get_list_position(list);
+			if (pos >= 0 && pos < int(all_item_ids.length()))
+			{
+				string chosen_id = all_item_ids[pos];
+				int current_q = 1;
+				if (current_counts.exists(chosen_id)) current_counts.get(chosen_id, current_q);
+				if (current_q < 1) current_q = 1;
+
+				string val = v.input("Enter quantity for " + all_item_labels[pos], "" + current_q);
+				int n_qty = int(string_to_number(val));
+				if (n_qty > 0)
+				{
+					current_counts.set(chosen_id, n_qty);
+					speak("Quantity set to " + n_qty + " for " + all_item_labels[pos]);
+				}
+			}
+		}
+
+		if (pf.is_pressed(btn_ok))
+		{
+			int[]@ checked = pf.get_checked_list_items(list);
+			if (checked is null || checked.length() == 0)
+			{
+				speak("No items selected for package.");
+				return "";
+			}
+
+			string result = "";
+			for (uint c = 0; c < checked.length(); c++)
+			{
+				int idx = checked[c];
+				if (idx >= 0 && idx < int(all_item_ids.length()))
+				{
+					string id = all_item_ids[idx];
+					int count = 1;
+					if (current_counts.exists(id)) current_counts.get(id, count);
+					if (count <= 0) count = 1;
+					if (result != "") result += ";";
+					result += id + ":" + count;
+				}
+			}
+			speak(checked.length() + " items saved to package.");
+			return result;
+		}
+	}
+	return initial_spec;
+}
+
+// ---------------------------------------------------------------------------
+// Package Edit / Create Form
+// ---------------------------------------------------------------------------
+bool package_edit_form(const string&in pkg_id = "", bool is_new = false, bool view_only = false)
+{
+	package_data pkg;
+	if (!is_new && pkg_id != "")
+	{
+		package_data@ existing = find_package_data(pkg_id);
+		if (existing !is null) pkg = existing;
+	}
+
+	audio_form form;
+	form.create_window(is_new ? "Create Package" : (view_only ? "View Package: " + pkg.name : "Edit Package: " + pkg.name), false, true, false);
+
+	int in_id = -1;
+	if (is_new)
+	{
+		in_id = form.create_input_box("package id (internal name, e.g. cookie_pack)", pkg.id, "", 0, false, false, view_only);
+	}
+	int in_name = form.create_input_box("package display name", pkg.name, "", 0, false, false, view_only);
+	int in_desc = form.create_input_box("description", pkg.description, "", 0, false, false, view_only);
+	int in_items = form.create_input_box("contained items list (format: item:qty;item:qty)", pkg.contains_items, "", 0, false, false, view_only);
+	int in_open_msg = form.create_input_box("custom open message (leave blank for default)", pkg.open_message, "", 0, false, false, view_only);
+
+	int btn_pick_items = -1;
+	if (!view_only)
+	{
+		btn_pick_items = form.create_button("&select package items");
+	}
+
+	int btn_sound_open = form.create_button("&open sound (" + (pkg.sound_open != "" ? pkg.sound_open : "none") + ")");
+
+	int btn_give = -1;
+	if (!view_only)
+	{
+		btn_give = form.create_button("&give package to inventory");
+	}
+
+	int btn_save = -1;
+	if (!view_only)
+	{
+		btn_save = form.create_button("&save package", true);
+	}
+	int btn_cancel = form.create_button("&close", false, true);
+
+	form.focus(is_new ? in_id : in_name);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		form.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || form.is_pressed(btn_cancel))
+		{
+			speak("closed");
+			return false;
+		}
+
+		if (btn_pick_items != -1 && form.is_pressed(btn_pick_items))
+		{
+			string current_spec = form.get_text(in_items);
+			string chosen = package_pick_items_dialog(current_spec);
+			pkg.contains_items = chosen;
+			form.set_text(in_items, chosen);
+			speak("Package items updated.");
+		}
+
+		if (form.is_pressed(btn_sound_open))
+		{
+			pkg.sound_open = item_pick_sound_immediate(pkg.id, "sound_open", pkg.sound_open);
+			form.set_text(btn_sound_open, "&open sound (" + (pkg.sound_open != "" ? pkg.sound_open : "none") + ")");
+		}
+
+		if (btn_give != -1 && form.is_pressed(btn_give))
+		{
+			string pid = is_new ? string_trim_sides(form.get_text(in_id)) : pkg.id;
+			if (pid != "")
+			{
+				give(pid, 1);
+				speak("1 " + (pkg.name != "" ? pkg.name : pid) + " given to inventory.");
+			}
+		}
+
+		if (btn_save != -1 && form.is_pressed(btn_save))
+		{
+			if (is_package_encrypted(pkg.id))
+			{
+				speak("This package is encrypted and cannot be edited. Please decrypt packages first.");
+				dlg("This package is encrypted and cannot be edited. Please decrypt packages first.");
+				return false;
+			}
+			if (is_new)
+			{
+				string nid = string_trim_sides(form.get_text(in_id));
+				if (nid == "")
+				{
+					speak("Package ID cannot be empty.");
+					form.focus(in_id);
+					continue;
+				}
+				pkg.id = nid;
+			}
+
+			pkg.name = string_trim_sides(form.get_text(in_name));
+			if (pkg.name == "") pkg.name = pkg.id;
+			pkg.description = form.get_text(in_desc);
+			pkg.contains_items = form.get_text(in_items);
+			pkg.open_message = form.get_text(in_open_msg);
+
+			if (save_package_config(pkg))
+			{
+				load_all_packages();
+				speak("Package " + pkg.name + " saved successfully.");
+				return true;
+			}
+			else
+			{
+				speak("Failed to save package config.");
+			}
+		}
+	}
+	return false;
+}
+
+// ---------------------------------------------------------------------------
+// Standalone Package Manager Menu (Builder Integration)
+// ---------------------------------------------------------------------------
+void package_list_flow(bool view_only)
+{
+	load_all_packages();
+	if (package_registry.length() == 0)
+	{
+		speak("No packages available.");
+		return;
+	}
+
+	audio_form lf;
+	lf.create_window(view_only ? "view package" : "edit package", false, true, false);
+	int list = lf.create_list("available packages", 0, false, true);
+	for (uint i = 0; i < package_registry.length(); i++)
+	{
+		lf.add_list_item(list, package_registry[i].name + " (" + package_registry[i].id + ")", package_registry[i].id);
+	}
+	int b_ok = lf.create_button("&select", true);
+	int b_cancel = lf.create_button("&cancel", false, true);
+	lf.focus(list);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		lf.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || lf.is_pressed(b_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+
+		if (lf.is_pressed(b_ok) || key_pressed(KEY_RETURN) || key_pressed(KEY_NUMPAD_ENTER))
+		{
+			int pos = lf.get_list_position(list);
+			if (pos >= 0 && pos < int(package_registry.length()))
+			{
+				if (!view_only && is_package_encrypted(package_registry[pos].id))
+				{
+					speak("This package is encrypted and cannot be edited. Please decrypt packages first.");
+					dlg("This package is encrypted and cannot be edited. Please decrypt packages first.");
+					continue;
+				}
+				package_edit_form(package_registry[pos].id, false, view_only);
+			}
+			return;
+		}
+	}
+}
+
+void package_give_flow()
+{
+	load_all_packages();
+	if (package_registry.length() == 0)
+	{
+		speak("No packages available.");
+		return;
+	}
+
+	audio_form gf;
+	gf.create_window("give package to inventory", false, true, false);
+	int list = gf.create_list("select package to receive", 0, false, true);
+	for (uint i = 0; i < package_registry.length(); i++)
+	{
+		gf.add_list_item(list, package_registry[i].name + " (" + package_registry[i].id + ")", package_registry[i].id);
+	}
+	int b_ok = gf.create_button("&give", true);
+	int b_cancel = gf.create_button("&cancel", false, true);
+	gf.focus(list);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		gf.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || gf.is_pressed(b_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+
+		if (gf.is_pressed(b_ok) || key_pressed(KEY_RETURN) || key_pressed(KEY_NUMPAD_ENTER))
+		{
+			int pos = gf.get_list_position(list);
+			if (pos >= 0 && pos < int(package_registry.length()))
+			{
+				string pid = package_registry[pos].id;
+				give(pid, 1);
+				speak("1 " + pid + " given to inventory.");
+			}
+			return;
+		}
+	}
+}
+
+void package_delete_flow()
+{
+	if (is_package_encrypted())
+	{
+		speak("Packages are encrypted and protected. You must decrypt packages first.");
+		dlg("Packages are encrypted and protected. You must decrypt packages first.");
+		return;
+	}
+	load_all_packages();
+	if (package_registry.length() == 0)
+	{
+		speak("No packages available to delete.");
+		return;
+	}
+
+	audio_form df;
+	df.create_window("delete package", false, true, false);
+	int list = df.create_list("select package to delete permanently", 0, false, true);
+	for (uint i = 0; i < package_registry.length(); i++)
+	{
+		df.add_list_item(list, package_registry[i].name + " (" + package_registry[i].id + ")", package_registry[i].id);
+	}
+	int b_ok = df.create_button("&delete", true);
+	int b_cancel = df.create_button("&cancel", false, true);
+	df.focus(list);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		df.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || df.is_pressed(b_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+
+		if (df.is_pressed(b_ok) || key_pressed(KEY_RETURN) || key_pressed(KEY_NUMPAD_ENTER))
+		{
+			int pos = df.get_list_position(list);
+			if (pos >= 0 && pos < int(package_registry.length()))
+			{
+				string pid = package_registry[pos].id;
+				if (menuquestion("Are you sure you want to delete package " + pid + "?") == 1)
+				{
+					delete_package_file(pid);
+					play("invdelete");
+					speak("Package " + pid + " deleted.");
+				}
+			}
+			return;
+		}
+	}
+}
+
+void package_manager_menu()
+{
+	load_all_packages();
+
+	while (true)
+	{
+		wait(5);
+		audio_form pkg_form;
+		pkg_form.create_window("package manager", false, true, false);
+		int list = pkg_form.create_list("select an action", 0, false, true);
+		pkg_form.add_list_item(list, "Create New Package", "create");
+		pkg_form.add_list_item(list, "Edit Existing Package", "edit");
+		pkg_form.add_list_item(list, "View Package Properties", "view");
+		pkg_form.add_list_item(list, "Remove Package", "delete");
+		pkg_form.add_list_item(list, "Give Package To Player Inventory", "give");
+		int b_select = pkg_form.create_button("&select", true);
+		int b_back = pkg_form.create_button("&back", false, true);
+		pkg_form.focus(list);
+
+		while (true)
+		{
+			wait(5);
+			update_game_world();
+			pkg_form.monitor();
+
+			if (key_pressed(KEY_ESCAPE) || pkg_form.is_pressed(b_back))
+			{
+				return;
+			}
+
+			if (pkg_form.is_pressed(b_select) || key_pressed(KEY_RETURN) || key_pressed(KEY_NUMPAD_ENTER))
+			{
+				int pos = pkg_form.get_list_position(list);
+				if (pos == 0)
+				{
+					if (is_package_encrypted())
+					{
+						speak("Packages are encrypted and protected. You must decrypt packages first.");
+						dlg("Packages are encrypted and protected. You must decrypt packages first.");
+						continue;
+					}
+					package_data new_pkg;
+					new_pkg.id = "new_package";
+					new_pkg.name = "New Package";
+					new_pkg.contains_items = "health_potion:2;medkit:1";
+					package_edit_form(new_pkg.id, true, false);
+				}
+				else if (pos == 1) package_list_flow(false);
+				else if (pos == 2) package_list_flow(true);
+				else if (pos == 3) package_delete_flow();
+				else if (pos == 4) package_give_flow();
+				break;
+			}
+		}
+	}
+}

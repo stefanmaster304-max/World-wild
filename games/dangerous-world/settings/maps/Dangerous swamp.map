@@ -1,0 +1,12 @@
+map: Dangerous swamp
+minx: 0
+maxx: 500
+miny: 0
+maxy: 500
+minz: 0
+maxz: 500
+minlevel: 1
+maxlevel: 0
+minresurrection: 0
+maxresurrection: 0
+platform:0:500:0:500:0:0:swamp

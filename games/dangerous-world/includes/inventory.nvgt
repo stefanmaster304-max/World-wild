@@ -1,0 +1,137 @@
+#include "package_manager.nvgt"
+#include "shield_system.nvgt"
+
+dictionary inv;
+int invpos = 0;
+bool takeobj = false;
+string quick_inventory_item = "";
+
+void give(const string&in item, int amount)
+{
+    if (item == "" || amount == 0) return;
+    int quantity = get_item_count(item) + amount;
+    if (quantity <= 0) inv.delete(item);
+    else inv.set(item, quantity);
+}
+
+int get_item_count(const string&in item)
+{
+    int quantity = 0;
+    inv.get(item, quantity);
+    return quantity;
+}
+
+int count_total_items()
+{
+    return int(inv.get_keys().length());
+}
+
+string[] get_all_inv_keys(const string&in filter = "*")
+{
+    string[] all = inv.get_keys();
+    string[] result;
+    for (uint i = 0; i < all.length(); i++)
+    {
+        if (get_item_count(all[i]) > 0) result.insert_last(all[i]);
+    }
+    result.sort_ascending();
+    return result;
+}
+
+string serialize_inventory()
+{
+    string[] keys = get_all_inv_keys();
+    string output = "";
+    for (uint i = 0; i < keys.length(); i++)
+    {
+        if (output != "") output += ";";
+        output += keys[i] + ":" + get_item_count(keys[i]);
+    }
+    return output;
+}
+
+void deserialize_inventory(const string&in data)
+{
+    inv.delete_all();
+    string[] pairs = string_split(data, ";", false);
+    for (uint i = 0; i < pairs.length(); i++)
+    {
+        string[] parts = string_split(pairs[i], ":", false);
+        if (parts.length() < 2) continue;
+        int quantity = int(string_to_number(parts[1]));
+        if (parts[0] != "" && quantity > 0) inv.set(parts[0], quantity);
+    }
+}
+
+string get_item_display_name(const string&in item_id)
+{
+    weapon_data@ weapon = find_weapon_data(item_id);
+    if (weapon !is null && weapon.name != "") return weapon.name;
+    item_data@ item = get_item_data(item_id);
+    if (item !is null && item.name != "") return item.name;
+    package_data@ package = find_package_data(item_id);
+    if (package !is null && package.name != "") return package.name;
+    return string_replace(item_id, "_", " ", true);
+}
+
+string get_item_description(const string&in item_id)
+{
+    item_data@ item = get_item_data(item_id);
+    if (item !is null) return item.description;
+    package_data@ package = find_package_data(item_id);
+    if (package !is null) return package.description;
+    weapon_data@ weapon = find_weapon_data(item_id);
+    if (weapon !is null) return weapon.description;
+    return "";
+}
+
+void use(const string&in item_id)
+{
+    if (item_id == "" || get_item_count(item_id) <= 0) return;
+    weapon_data@ weapon = find_weapon_data(item_id);
+    if (weapon !is null) { equip_weapon(item_id); return; }
+    if (is_package(item_id)) { open_package_by_id(item_id); return; }
+    if (is_equipment_item(item_id)) { equip_equipment(item_id); return; }
+    item_data@ item = get_item_data(item_id);
+    if (item is null) { speak("This item cannot be used."); return; }
+    if (item.category == "consumables" && item.heal_amount > 0)
+    {
+        if (health >= maxhealth) { speak("Your health is already full."); return; }
+        health += item.heal_amount;
+        if (health > maxhealth) health = maxhealth;
+        if (item.sound_use != "")
+        {
+            string path = get_sound_path(item.sound_use);
+            if (path != "") p.play_stationary(path, false);
+        }
+        give(item_id, -1);
+        return;
+    }
+    speak("This item cannot be used.");
+}
+
+void quick_inventory_cycle(int direction)
+{
+    string[] keys = get_all_inv_keys();
+    if (keys.length() == 0) { quick_inventory_item = ""; speak("Your quick inventory is empty."); return; }
+    if (quick_inventory_item == "") invpos = (direction < 0) ? int(keys.length()) - 1 : 0;
+    else
+    {
+        int current = keys.find(quick_inventory_item);
+        if (current < 0) current = 0;
+        invpos = (current + direction + int(keys.length())) % int(keys.length());
+    }
+    quick_inventory_item = keys[invpos];
+    weapon_data@ weapon = find_weapon_data(quick_inventory_item);
+    if (weapon !is null) equip_weapon(quick_inventory_item);
+    speak("Selected " + get_item_display_name(quick_inventory_item) + ".");
+}
+
+void drop_quick_inventory_item()
+{
+    if (quick_inventory_item == "" || get_item_count(quick_inventory_item) <= 0) { speak("No item is selected."); return; }
+    spawn_ground_item(quick_inventory_item, 1, me.x, me.y, me.z);
+    give(quick_inventory_item, -1);
+    quick_inventory_item = "";
+    speak("Item dropped.");
+}

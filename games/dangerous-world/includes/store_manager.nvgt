@@ -1,0 +1,604 @@
+#include"includes/m_pro.nvgt"
+#include"includes/dlg.nvgt"
+
+// Payment methods are a single list where the space bar checks/unchecks each
+// currency accepted by the store, exactly like selecting multiple items to
+// spawn on the map.
+void store_populate_payment_list(audio_form@ f, int l_payments, string[]@ accepted)
+{
+	string[] all = store_all_payment_methods();
+	for (uint i = 0; i < all.length(); i++)
+	{
+		bool chk = (accepted is null) ? true : store_payment_accepted(accepted, all[i]);
+		f.add_list_item(l_payments, all[i], all[i], -1, chk, false);
+	}
+}
+
+string[] store_read_checked_payments(audio_form@ f, int l_payments)
+{
+	string[] accepted;
+	accepted.resize(0);
+	int[]@ checked = f.get_checked_list_items(l_payments);
+	if (checked !is null)
+	{
+		for (uint i = 0; i < checked.length(); i++)
+		{
+			int idx = checked[i];
+			string cur = (idx >= 0) ? f.get_list_item_id(l_payments, idx) : "";
+			cur = normalize_currency(cur);
+			if (is_valid_store_currency(cur) && !store_payment_accepted(accepted, cur)) accepted.insert_last(cur);
+		}
+	}
+	if (accepted.length() == 0) accepted = store_all_payment_methods();
+	return accepted;
+}
+
+// Items never carry their own payment method anymore: only the price is
+// editable. The currency is always the store's own, so no item is ever left
+// without a payment method.
+void edit_store_item(audio_form@ f, int list_items, string[]@ items, string[]@ prices, int pos)
+{
+	if (pos < 0 || pos >= int(items.length())) return;
+	string old_item = items[pos];
+	string old_price = prices[pos];
+
+	audio_form edit;
+	edit.create_window("Edit Store Item", false, true, false);
+	int i_item = edit.create_input_box("Item ID / Name", old_item, "", 0, false, false, true);
+	int i_price = edit.create_input_box("Price", old_price);
+	int btn_save = edit.create_button("&save", true);
+	int btn_cancel = edit.create_button("&cancel", false, true);
+	edit.set_default_controls(btn_save, btn_cancel);
+	edit.focus(i_price);
+
+	while(true)
+	{
+		wait(5);
+		update_game_world();
+		edit.monitor();
+		if (key_pressed(KEY_ESCAPE) || edit.is_pressed(btn_cancel)) break;
+		if (edit.is_pressed(btn_save))
+		{
+			string itm = edit.get_text(i_item);
+			int price = int(stn(edit.get_text(i_price)));
+			if (price < 0) price = 0;
+			items[pos] = itm;
+			prices[pos] = "" + price;
+			f.delete_list_item(list_items, pos, true);
+			f.add_list_item(list_items, itm + " - " + price, itm, pos);
+			speak("Updated " + itm + " price to " + price);
+			break;
+		}
+	}
+}
+
+void pick_store_items_dialog(string[]@ items, string[]@ prices, audio_form@ f, int list_items)
+{
+	load_all_items_config();
+	load_all_weapons_wpm();
+
+	string[] all_ids;
+	string[] all_labels;
+	int[] default_prices;
+
+	// 1. Items from settings/items/ (consumables, ammo, packages, equipment).
+	// Currency items are the payment for buying goods, so they can never be put
+	// up for sale themselves.
+	for (uint i = 0; i < item_registry.length(); i++)
+	{
+		if (item_registry[i].category == "currency") continue;
+		all_ids.insert_last(item_registry[i].id);
+		all_labels.insert_last("[Item - " + item_registry[i].category + "] " + item_registry[i].name + " (" + item_registry[i].id + ")");
+		int def_p = (item_registry[i].category == "equipment") ? 500 : ((item_registry[i].category == "packages") ? 300 : 100);
+		default_prices.insert_last(def_p);
+	}
+
+	// 2. Weapons from settings/weapons/
+	for (uint w = 0; w < weapon_registry.length(); w++)
+	{
+		all_ids.insert_last(weapon_registry[w].id);
+		all_labels.insert_last("[Weapon - " + weapon_registry[w].wclass + "] " + weapon_registry[w].name + " (" + weapon_registry[w].id + ")");
+		default_prices.insert_last(1000);
+	}
+
+	if (all_ids.length() == 0)
+	{
+		speak("No items or weapons found to add to store.");
+		dlg("No items or weapons found in settings/items or settings/weapons.");
+		return;
+	}
+
+	audio_form pf;
+	pf.create_window("Select Items and Weapons for Store", false, true, false);
+	int list = pf.create_list("Available items and weapons (Space to check/uncheck)", 0, true, true);
+
+	for (uint k = 0; k < all_ids.length(); k++)
+	{
+		bool already = (items.find(all_ids[k]) != -1);
+		pf.add_list_item(list, all_labels[k], all_ids[k], -1, already, false);
+	}
+
+	int btn_save = pf.create_button("&add selected", true);
+	int btn_cancel = pf.create_button("&cancel", false, true);
+	pf.focus(list);
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		pf.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || pf.is_pressed(btn_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+
+		if (pf.is_pressed(btn_save))
+		{
+			int[]@ checked = pf.get_checked_list_items(list);
+			if (checked is null || checked.length() == 0)
+			{
+				speak("No items selected.");
+				return;
+			}
+
+			int added_count = 0;
+			for (uint c = 0; c < checked.length(); c++)
+			{
+				int idx = checked[c];
+				if (idx >= 0 && idx < int(all_ids.length()))
+				{
+					string id = all_ids[idx];
+					if (items.find(id) == -1)
+					{
+						int prc = default_prices[idx];
+						items.insert_last(id);
+						prices.insert_last("" + prc);
+						f.add_list_item(list_items, id + " - " + prc, id);
+						added_count++;
+					}
+				}
+			}
+			speak(added_count + " items/weapons added to store.");
+			return;
+		}
+	}
+}
+
+void store_manager_menu()
+{
+	while (true)
+	{
+		audio_form f;
+		f.create_window("Store Manager", false, true, false);
+		int list = f.create_list("Store Manager Options", 0, false, false);
+		f.add_list_item(list, "Create Store", "store_create");
+		f.add_list_item(list, "Edit Store", "store_edit");
+		f.add_list_item(list, "Delete Store", "store_delete");
+		f.add_list_item(list, "Place Store on Map", "store_place");
+		f.add_list_item(list, "Back", "back");
+		int btn_ok = f.create_button("&select", true);
+		int btn_cancel = f.create_button("&back", false, true);
+		f.set_default_controls(btn_ok, btn_cancel);
+		f.focus_silently(list);
+
+		string choice = "";
+		while (true)
+		{
+			wait(5);
+			update_game_world();
+			f.monitor();
+			if (key_pressed(KEY_ESCAPE) || f.is_pressed(btn_cancel)) break;
+			if (f.is_pressed(btn_ok))
+			{
+				int pos = f.get_list_position(list);
+				if (pos >= 0) choice = f.get_list_item_id(list, pos);
+				break;
+			}
+		}
+		if (choice == "") return;
+		if (choice == "back") return;
+		else if (choice == "store_create") store_create_form();
+		else if (choice == "store_edit") store_edit_form();
+		else if (choice == "store_delete") store_delete_form();
+		else if (choice == "store_place") store_place_on_map();
+	}
+}
+
+void store_create_form()
+{
+	if (is_store_encrypted())
+	{
+		speak("Stores are encrypted and cannot be edited. Please decrypt stores first.");
+		dlg("Stores are encrypted and cannot be edited. Please decrypt stores first.");
+		return;
+	}
+	audio_form f;
+	f.create_window("Create Store", false, true, false);
+	int i_name = f.create_input_box("Store name (no spaces)", "");
+	int i_display = f.create_input_box("Display name", "");
+	int l_currency = f.create_list("Store currency", 0, false, false);
+	for (uint c = 0; c < store_currencies.length(); c++)
+	{
+		f.add_list_item(l_currency, store_currencies[c], store_currencies[c]);
+	}
+	f.set_list_position(l_currency, 0, false);
+	int l_payments = f.create_list("Payment methods accepted by the store (Space to check/uncheck)", 0, true, true);
+	store_populate_payment_list(f, l_payments, null);
+	int list_items = f.create_list("Store Items", 0, false, false);
+	int btn_add = f.create_button("&select items to sell", false);
+	int btn_edit = f.create_button("&edit price", false);
+	int btn_remove = f.create_button("&remove", false);
+	int btn_save = f.create_button("&save store", true);
+	int btn_cancel = f.create_button("&cancel", false, true);
+	f.set_default_controls(btn_save, btn_cancel);
+	f.focus_silently(i_name);
+
+	string[] items;
+	string[] prices;
+
+	while(true)
+	{
+		wait(5);
+		update_game_world();
+		f.monitor();
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(btn_cancel)) break;
+		if (f.is_pressed(btn_save))
+		{
+			string name = f.get_text(i_name);
+			if (name == "")
+			{
+				speak("Store name cannot be empty");
+				continue;
+			}
+			store_cfg@ s = @store_cfg();
+			s.name = name;
+			s.display_name = f.get_text(i_display);
+			if (s.display_name == "") s.display_name = name;
+			int cur_pos = f.get_list_position(l_currency);
+			s.currency = (cur_pos >= 0 && cur_pos < int(store_currencies.length())) ? store_currencies[cur_pos] : CURRENCY_DOLLARS;
+			s.accepted_currencies = store_read_checked_payments(f, l_payments);
+			if (!store_payment_accepted(s.accepted_currencies, s.currency))
+			{
+				s.accepted_currencies.insert_last(s.currency);
+			}
+			s.item_names = items;
+			s.item_prices = prices;
+			save_store_config(name, s);
+			speak("Store saved successfully.");
+			break;
+		}
+		if (f.is_pressed(btn_add))
+		{
+			pick_store_items_dialog(items, prices, f, list_items);
+		}
+		if (f.is_pressed(btn_edit))
+		{
+			int pos = f.get_list_position(list_items);
+			if (pos > -1)
+			{
+				edit_store_item(f, list_items, items, prices, pos);
+			}
+		}
+		if (f.is_pressed(btn_remove))
+		{
+			int pos = f.get_list_position(list_items);
+			if (pos > -1 && pos < int(items.length()))
+			{
+				f.delete_list_item(list_items, pos, true);
+				items.remove_at(pos);
+				prices.remove_at(pos);
+				speak("Item removed from store.");
+			}
+		}
+	}
+}
+
+void store_edit_form()
+{
+	if (is_store_encrypted())
+	{
+		speak("Stores are encrypted and cannot be edited. Please decrypt stores first.");
+		dlg("Stores are encrypted and cannot be edited. Please decrypt stores first.");
+		return;
+	}
+	string[] store_names;
+	string[]@ sf = list_store_files();
+	if (sf !is null)
+	{
+		for (uint i = 0; i < sf.length(); i++)
+		{
+			store_names.insert_last(sf[i]);
+		}
+	}
+	if (store_names.length() == 0)
+	{
+		speak("No stores found. Create a store first.");
+		return;
+	}
+
+	audio_form f;
+	f.create_window("Select Store to Edit", false, true, false);
+	int list_stores = f.create_list("Store", 0, false, false);
+	for (uint i = 0; i < store_names.length(); i++)
+	{
+		f.add_list_item(list_stores, store_names[i], store_names[i]);
+	}
+	int btn_ok = f.create_button("Edit", true);
+	int btn_cancel = f.create_button("Cancel", false, true);
+	f.set_default_controls(btn_ok, btn_cancel);
+	f.focus_silently(list_stores);
+
+	string id = "";
+	while(true)
+	{
+		wait(5);
+		update_game_world();
+		f.monitor();
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(btn_cancel)) break;
+		if (f.is_pressed(btn_ok))
+		{
+			int pos = f.get_list_position(list_stores);
+			if (pos < 0)
+			{
+				speak("Select a store first.");
+				continue;
+			}
+			id = f.get_list_item_id(list_stores, pos);
+			break;
+		}
+	}
+	if (id == "") return;
+	store_cfg@ s = get_store(id);
+	if (s is null)
+	{
+		speak("Store not found.");
+		return;
+	}
+
+	string[] items = s.item_names;
+	string[] prices = s.item_prices;
+
+	audio_form f2;
+	f2.create_window("Edit Store: " + s.name, false, true, false);
+	int i_display = f2.create_input_box("Display name", s.display_name);
+	int l_currency = f2.create_list("Store currency", 0, false, false);
+	int cur_sel = 0;
+	string cur_norm = normalize_currency(s.currency);
+	for (uint c = 0; c < store_currencies.length(); c++)
+	{
+		f2.add_list_item(l_currency, store_currencies[c], store_currencies[c]);
+		if (cur_norm == store_currencies[c]) cur_sel = int(c);
+	}
+	f2.set_list_position(l_currency, cur_sel, false);
+	int l_payments = f2.create_list("Payment methods accepted by the store (Space to check/uncheck)", 0, true, true);
+	store_populate_payment_list(f2, l_payments, s.accepted_currencies);
+	int list_items = f2.create_list("Store Items", 0, false, false);
+	for (uint i = 0; i < items.length(); i++)
+	{
+		f2.add_list_item(list_items, items[i] + " - " + prices[i], items[i]);
+	}
+	int btn_add = f2.create_button("&select items to sell", false);
+	int btn_edit = f2.create_button("&edit price", false);
+	int btn_remove = f2.create_button("&remove", false);
+	int btn_save = f2.create_button("&save store", true);
+	int btn_cancel2 = f2.create_button("&cancel", false, true);
+	f2.set_default_controls(btn_save, btn_cancel2);
+
+	while(true)
+	{
+		wait(5);
+		update_game_world();
+		f2.monitor();
+		if (key_pressed(KEY_ESCAPE) || f2.is_pressed(btn_cancel2)) break;
+		if (f2.is_pressed(btn_save))
+		{
+			s.display_name = f2.get_text(i_display);
+			int cur_pos = f2.get_list_position(l_currency);
+			s.currency = (cur_pos >= 0 && cur_pos < int(store_currencies.length())) ? store_currencies[cur_pos] : CURRENCY_DOLLARS;
+			s.accepted_currencies = store_read_checked_payments(f2, l_payments);
+			if (!store_payment_accepted(s.accepted_currencies, s.currency))
+			{
+				s.accepted_currencies.insert_last(s.currency);
+			}
+			s.item_names = items;
+			s.item_prices = prices;
+			save_store_config(id, s);
+			speak("Store updated successfully.");
+			break;
+		}
+		if (f2.is_pressed(btn_add))
+		{
+			pick_store_items_dialog(items, prices, f2, list_items);
+		}
+		if (f2.is_pressed(btn_edit))
+		{
+			int pos = f2.get_list_position(list_items);
+			if (pos > -1)
+			{
+				edit_store_item(f2, list_items, items, prices, pos);
+			}
+		}
+		if (f2.is_pressed(btn_remove))
+		{
+			int pos = f2.get_list_position(list_items);
+			if (pos > -1 && pos < int(items.length()))
+			{
+				f2.delete_list_item(list_items, pos, true);
+				items.remove_at(pos);
+				prices.remove_at(pos);
+				speak("Item removed from store.");
+			}
+		}
+	}
+}
+
+void store_delete_form()
+{
+	if (is_store_encrypted())
+	{
+		speak("Stores are encrypted and cannot be edited. Please decrypt stores first.");
+		dlg("Stores are encrypted and cannot be edited. Please decrypt stores first.");
+		return;
+	}
+	string[] store_names;
+	string[]@ sf = list_store_files();
+	if (sf !is null)
+	{
+		for (uint i = 0; i < sf.length(); i++)
+		{
+			store_names.insert_last(sf[i]);
+		}
+	}
+	if (store_names.length() == 0)
+	{
+		speak("No stores found.");
+		return;
+	}
+
+	audio_form f;
+	f.create_window("Select Store to Delete", false, true, false);
+	int list_stores = f.create_list("Store", 0, false, false);
+	for (uint i = 0; i < store_names.length(); i++)
+	{
+		f.add_list_item(list_stores, store_names[i], store_names[i]);
+	}
+	int btn_delete = f.create_button("Delete", true);
+	int btn_cancel = f.create_button("Cancel", false, true);
+	f.set_default_controls(btn_delete, btn_cancel);
+
+	string id = "";
+	while(true)
+	{
+		wait(5);
+		update_game_world();
+		f.monitor();
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(btn_cancel)) break;
+		if (f.is_pressed(btn_delete))
+		{
+			int pos = f.get_list_position(list_stores);
+			if (pos < 0)
+			{
+				speak("Select a store first.");
+				continue;
+			}
+			id = f.get_list_item_id(list_stores, pos);
+			break;
+		}
+	}
+	if (id == "") return;
+	if (!file_exists(STORE_DIR+"/"+id+".st") && !file_exists(STORE_DIR+"/"+id+".txt") && !file_exists(STORE_DIR+"/"+id+".dat") && !file_exists("stores/"+id+".st") && !file_exists("stores/"+id+".txt") && !file_exists("data/stores/"+id+".dat"))
+	{
+		speak("Store not found.");
+		return;
+	}
+	file_delete(STORE_DIR+"/"+id+".st");
+	file_delete(STORE_DIR+"/"+id+".txt");
+	file_delete(STORE_DIR+"/"+id+".dat");
+	file_delete("stores/"+id+".st");
+	file_delete("stores/"+id+".txt");
+	file_delete("data/stores/"+id+".dat");
+	store_cfg@ sdel = find_store(id);
+	if (sdel !is null)
+	{
+		for (uint i = 0; i < store_configs.length(); i++)
+		{
+			if (store_configs[i].name == id)
+			{
+				store_configs.remove_at(i);
+				break;
+			}
+		}
+	}
+	if (file_exists(SHOPS_DAT_PATH))
+	{
+		if (store_configs.length() > 0)
+			encrypt_all_stores_silent();
+		else
+			file_delete(SHOPS_DAT_PATH);
+	}
+	speak("Store deleted.");
+}
+
+void store_place_on_map()
+{
+	if (SCRIPT_COMPILED || is_map_encrypted(mapname))
+	{
+		speak("Cannot place stores on an encrypted map.");
+		return;
+	}
+	string[] store_names;
+	string[]@ sf = list_store_files();
+	if (sf !is null)
+	{
+		for (uint i = 0; i < sf.length(); i++)
+		{
+			store_names.insert_last(sf[i]);
+		}
+	}
+	if (store_names.length() == 0)
+	{
+		speak("No stores found. Create a store first.");
+		return;
+	}
+
+	audio_form f;
+	f.create_window("Place Store", false, true, false);
+	int list_stores = f.create_list("Store", 0, false, false);
+	for (uint i = 0; i < store_names.length(); i++)
+	{
+		f.add_list_item(list_stores, store_names[i], store_names[i]);
+	}
+	int in_minx = f.create_input_box("Min X", "" + minx);
+	int in_maxx = f.create_input_box("Max X", "" + maxx);
+	int in_miny = f.create_input_box("Min Y", "" + miny);
+	int in_maxy = f.create_input_box("Max Y", "" + maxy);
+	int in_minz = f.create_input_box("Min Z", "" + minz);
+	int in_maxz = f.create_input_box("Max Z", "" + maxz);
+	int btn_ok = f.create_button("Place", true);
+	int btn_cancel = f.create_button("Cancel", false, true);
+	f.set_default_controls(btn_ok, btn_cancel);
+	f.focus_silently(list_stores);
+
+	string id = "";
+	while(true)
+	{
+		wait(5);
+		update_game_world();
+		f.monitor();
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(btn_cancel)) break;
+		if (f.is_pressed(btn_ok))
+		{
+			int pos = f.get_list_position(list_stores);
+			if (pos < 0)
+			{
+				speak("Select a store first.");
+				continue;
+			}
+			id = f.get_list_item_id(list_stores, pos);
+			store_cfg@ s = get_store(id);
+			if (s is null)
+			{
+				speak("Store config not found.");
+				break;
+			}
+			int mx1 = stn(f.get_text(in_minx));
+			int mx2 = stn(f.get_text(in_maxx));
+			int my1 = stn(f.get_text(in_miny));
+			int my2 = stn(f.get_text(in_maxy));
+			int mz1 = stn(f.get_text(in_minz));
+			int mz2 = stn(f.get_text(in_maxz));
+			if (is_store_at(mx1, mx2, my1, my2, mz1, mz2))
+			{
+				speak("A shop already exists at this spot.");
+				continue;
+			}
+			string line = "store:" + id + ":" + mx1 + ":" + mx2 + ":" + my1 + ":" + my2 + ":" + mz1 + ":" + mz2;
+			save_to_map(line);
+			spawn_store(mx1, mx2, my1, my2, mz1, mz2, id);
+			speak("Store placed on map.");
+			break;
+		}
+	}
+}

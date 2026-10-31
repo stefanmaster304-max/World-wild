@@ -1,0 +1,463 @@
+// keybinds.nvgt
+// Rebindable gameplay keys. Every gameplay action is looked up through
+// kb_pressed() / kb_down() instead of raw key_pressed()/key_down() calls, so
+// the player can remap the controls from Options > Keybindings. Bindings are
+// stored in a plain, human-readable text file (data/keybinds.txt) that can be
+// hand-edited: each line is "action=key name", lines starting with # are
+// comments, and deleting a line restores the default for that action.
+string[] KB_ACTIONS = {
+    "move_forward", "move_back", "move_left", "move_right", "jump",
+    "turn_left", "turn_right", "fire", "drop_item",
+    "use", "coordinates", "location",    "health_status", "level_status", "kills",
+    "sit_stand",
+    "facing", "builder", "reload", "ammo_status", "tracking_query", "tracking_menu",
+    "volume_up", "volume_down", "stairs_up", "stairs_down", "exit_game",
+    "mod_shift", "menu_up", "menu_down", "menu_left", "menu_right",
+    "menu_activate", "menu_back", "menu_home", "menu_end"
+};
+int[] KB_DEFAULT_KEYS = {
+    KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_SPACE,
+    0, 0, KEY_LCONTROL, KEY_DELETE,
+    KEY_RETURN, KEY_C, KEY_Z, KEY_H,
+    KEY_L, KEY_K,
+    KEY_Q,
+    KEY_F, KEY_B, KEY_R, KEY_A, KEY_W, KEY_X,
+    KEY_HOME, KEY_END, KEY_PRIOR, KEY_NEXT, KEY_ESCAPE,
+    KEY_LSHIFT,
+    KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_RETURN, KEY_ESCAPE,
+    KEY_HOME, KEY_END
+};
+dictionary kb_bindings;
+// name -> key code map, built from kb_key_name() so a hand-edited text file
+// with readable key names can be parsed back into key codes.
+dictionary kb_name_map;
+
+int kb_get(string action)
+{
+    int k;
+    if (kb_bindings.exists(action) and kb_bindings.get(action, k)) return k;
+    return 0;
+}
+
+// Sets a binding. If the new key is already assigned to another action, the
+// two actions swap keys so nothing ever becomes unbound by accident.
+void kb_set(string action, int key)
+{
+    string other = kb_action_for_key(key);
+    if (other != "" and other != action)
+    {
+        int old_key = kb_get(action);
+        kb_bindings.set(other, old_key);
+    }
+    kb_bindings.set(action, key);
+    kb_save();
+}
+
+bool kb_pressed(string action)
+{
+    int k = kb_get(action);
+    if (k == 0) return false;
+    // When fire is bound to a control key, both controls keep working.
+    if (action == "fire" and (k == KEY_LCONTROL or k == KEY_RCONTROL))
+        return key_pressed(KEY_LCONTROL) or key_pressed(KEY_RCONTROL);
+    // When the shift modifier is bound to a shift key, both shift keys work.
+    if (action == "mod_shift" and (k == KEY_LSHIFT or k == KEY_RSHIFT))
+        return key_pressed(KEY_LSHIFT) or key_pressed(KEY_RSHIFT);
+    return key_pressed(k);
+}
+
+bool kb_down(string action)
+{
+    int k = kb_get(action);
+    if (k == 0) return false;
+    // When fire is bound to a control key, both controls keep working.
+    if (action == "fire" and (k == KEY_LCONTROL or k == KEY_RCONTROL))
+        return key_down(KEY_LCONTROL) or key_down(KEY_RCONTROL);
+    // When the shift modifier is bound to a shift key, both shift keys work.
+    if (action == "mod_shift" and (k == KEY_LSHIFT or k == KEY_RSHIFT))
+        return key_down(KEY_LSHIFT) or key_down(KEY_RSHIFT);
+    return key_down(k);
+}
+
+bool kb_action_available(string action)
+{
+    return true;
+}
+
+string kb_action_for_key(int key)
+{
+    for (uint i = 0; i < KB_ACTIONS.length(); i++)
+    {
+        if (kb_action_available(KB_ACTIONS[i]) and kb_get(KB_ACTIONS[i]) == key) return KB_ACTIONS[i];
+    }
+    return "";
+}
+
+void kb_register_defaults()
+{
+    for (uint i = 0; i < KB_ACTIONS.length(); i++)
+    {
+        if (!kb_action_available(KB_ACTIONS[i])) continue;
+        if (!kb_bindings.exists(KB_ACTIONS[i]))
+        {
+            int def = KB_DEFAULT_KEYS[i];
+            if (def <= 0) continue;
+            // If the default key is held by another action (e.g. a key that
+            // was re-bound in an older save), swap: the displaced action falls
+            // back to its own default key so nothing ever becomes unbound.
+            string other = kb_action_for_key(def);
+            if (other != "" and other != KB_ACTIONS[i])
+            {
+                int old_key = kb_get(KB_ACTIONS[i]);
+                if (old_key <= 0) old_key = kb_default_key(other);
+                kb_bindings.set(other, old_key);
+            }
+            kb_bindings.set(KB_ACTIONS[i], def);
+        }
+    }
+}
+
+void kb_reset_defaults()
+{
+    kb_bindings.delete_all();
+    kb_register_defaults();
+    kb_save();
+}
+
+int kb_default_key(string action)
+{
+    for (uint i = 0; i < KB_ACTIONS.length(); i++)
+    {
+        if (KB_ACTIONS[i] == action) return KB_DEFAULT_KEYS[i];
+    }
+    return 0;
+}
+
+// Restores a single action to its default key. If that default key is
+// currently held by another action, the two swap so no key ends up duplicated.
+void kb_reset_action(string action)
+{
+    int def = kb_default_key(action);
+    if (def <= 0) return;
+    string other = kb_action_for_key(def);
+    if (other != "" and other != action)
+    {
+        int old_key = kb_get(action);
+        kb_bindings.set(other, old_key);
+    }
+    kb_bindings.set(action, def);
+    kb_save();
+}
+
+// Removes leading and trailing whitespace (spaces, tabs, carriage returns).
+string kb_trim(string s)
+{
+    uint start = 0;
+    uint end = s.length();
+    while (start < end and (s[start] == " " or s[start] == "\t" or s[start] == "\r")) start++;
+    while (end > start and (s[end - 1] == " " or s[end - 1] == "\t" or s[end - 1] == "\r")) end--;
+    return s.substr(start, end - start);
+}
+
+void kb_save()
+{
+    file f;
+    if (!f.open(prefsdir + "/keybinds.txt", "w")) return;
+    string buf = "# Dangerous World - keybindings\n";
+    buf += "# Format: action=key name\n";
+    buf += "# To restore the default for an action, delete its line.\n\n";
+    for (uint i = 0; i < KB_ACTIONS.length(); i++)
+    {
+        if (!kb_action_available(KB_ACTIONS[i])) continue;
+        buf += KB_ACTIONS[i] + "=" + kb_key_name(kb_get(KB_ACTIONS[i])) + "\n";
+    }
+    f.write(buf);
+    f.close();
+}
+
+bool kb_action_is_valid(string action)
+{
+    if (!kb_action_available(action)) return false;
+    for (uint i = 0; i < KB_ACTIONS.length(); i++)
+    {
+        if (KB_ACTIONS[i] == action) return true;
+    }
+    return false;
+}
+
+void kb_build_name_map()
+{
+    kb_name_map.delete_all();
+    for (int code = 0; code < 256; code++)
+    {
+        string n = kb_key_name(code);
+        // Unnamed keys fall back to "Key <code>" and are not stored by name.
+        // Lower-cased keys make hand-edited files case-insensitive.
+        if (string_left(n, 4) != "Key ")
+        {
+            string lk = string_to_lower_case(n);
+            if (!kb_name_map.exists(lk))
+                kb_name_map.set(lk, code);
+        }
+    }
+}
+
+int kb_name_to_key(string name)
+{
+    int code;
+    if (kb_name_map.exists(string_to_lower_case(name)) and kb_name_map.get(string_to_lower_case(name), code)) return code;
+    return -1;
+}
+
+void kb_load()
+{
+    if (!file_exists(prefsdir + "/keybinds.txt")) return;
+    file f;
+    if (!f.open(prefsdir + "/keybinds.txt", "r")) return;
+    string content = f.read();
+    f.close();
+    string[] lines = string_split(content, "\n", false);
+    int[] used_codes;
+    for (uint i = 0; i < lines.length(); i++)
+    {
+        string line = kb_trim(lines[i]);
+        if (line == "" or string_left(line, 1) == "#") continue;
+        int eq = line.find("=");
+        if (eq <= 0) continue;
+        string action = kb_trim(line.substr(0, eq));
+        string keyname = kb_trim(line.substr(eq + 1));
+        if (!kb_action_is_valid(action)) continue;
+        int code = kb_name_to_key(keyname);
+        if (code <= 0) continue;
+        // A hand-edited file may try to give one key to several actions;
+        // only the first line that claims a key is accepted.
+        bool dup = false;
+        for (uint u = 0; u < used_codes.length(); u++)
+        {
+            if (used_codes[u] == code) { dup = true; break; }
+        }
+        if (dup) continue;
+        used_codes.insert_last(code);
+        kb_bindings.set(action, code);
+    }
+}
+
+void kb_init()
+{
+    kb_build_name_map();
+    kb_register_defaults();
+    kb_load();
+    // The old encrypted settings file is no longer used; clean it up.
+    if (file_exists(prefsdir + "/keybinds.dat"))
+        file_delete(prefsdir + "/keybinds.dat");
+}
+
+string kb_key_name(int key)
+{
+    switch (key)
+    {
+        case KEY_RETURN: return "Enter";
+        case KEY_ESCAPE: return "Escape";
+        case KEY_BACK: return "Backspace";
+        case KEY_TAB: return "Tab";
+        case KEY_SPACE: return "Space";
+        case KEY_PRIOR: return "Page Up";
+        case KEY_NEXT: return "Page Down";
+        case KEY_HOME: return "Home";
+        case KEY_END: return "End";
+        case KEY_LEFT: return "Left Arrow";
+        case KEY_UP: return "Up Arrow";
+        case KEY_RIGHT: return "Right Arrow";
+        case KEY_DOWN: return "Down Arrow";
+        case KEY_INSERT: return "Insert";
+        case KEY_DELETE: return "Delete";
+        case KEY_LSHIFT: return "Left Shift";
+        case KEY_RSHIFT: return "Right Shift";
+        case KEY_LCONTROL: return "Left Control";
+        case KEY_RCONTROL: return "Right Control";
+        case KEY_LMENU: return "Left Alt";
+        case KEY_RMENU: return "Right Alt";
+        case KEY_NUMPAD_ENTER: return "Numpad Enter";
+        case KEY_NUMPAD_PERIOD: return "Numpad .";
+        case KEY_NUMPAD_DIVIDE: return "Numpad /";
+        case KEY_NUMPAD_MULTIPLY: return "Numpad *";
+        case KEY_NUMPAD_MINUS: return "Numpad -";
+        case KEY_NUMPAD_PLUS: return "Numpad +";
+        case KEY_CAPSLOCK: return "Caps Lock";
+        case KEY_PRINTSCREEN: return "Print Screen";
+        case KEY_SCROLLLOCK: return "Scroll Lock";
+        case KEY_PAUSE: return "Pause";
+        case KEY_NUMLOCKCLEAR: return "Num Lock";
+        case KEY_APPLICATION: return "Application";
+        case KEY_LGUI: return "Left Super";
+        case KEY_RGUI: return "Right Super";
+        case KEY_MINUS: return "-";
+        case KEY_EQUALS: return "=";
+        case KEY_GRAVE: return "`";
+        case KEY_APOSTROPHE: return "'";
+        case KEY_SLASH: return "/";
+        case KEY_SEMICOLON: return ";";
+        case KEY_COMMA: return ",";
+        case KEY_PERIOD: return ".";
+        case KEY_BACKSLASH: return "\\";
+        case KEY_LEFTBRACKET: return "[";
+        case KEY_RIGHTBRACKET: return "]";
+    }
+    if (key >= KEY_0 and key <= KEY_9)
+        return "0123456789".substr(key - KEY_0, 1);
+    if (key >= KEY_NUMPAD_0 and key <= KEY_NUMPAD_9)
+        return "Numpad " + "0123456789".substr(key - KEY_NUMPAD_0, 1);
+    if (key >= KEY_A and key <= KEY_Z)
+        return "ABCDEFGHIJKLMNOPQRSTUVWXYZ".substr(key - KEY_A, 1);
+    if (key >= KEY_F1 and key <= KEY_F24)
+        return "F" + (key - KEY_F1 + 1);
+    return "Key " + key;
+}
+
+string kb_action_name(string action)
+{
+    if (action == "move_forward") return "Move forward";
+    if (action == "move_back") return "Move backward";
+    if (action == "move_left") return "Step left";
+    if (action == "move_right") return "Step right";
+    if (action == "jump") return "Jump";
+    if (action == "turn_left") return "Turn left";
+    if (action == "turn_right") return "Turn right";
+    if (action == "fire") return "Fire weapon / attack";
+    if (action == "reload") return "Reload weapon";
+    if (action == "ammo_status") return "Ammo status";
+    if (action == "drop_item") return "Drop item";
+    if (action == "use") return "Use / interact";
+    if (action == "coordinates") return "Speak coordinates";
+    if (action == "location") return "Speak location";
+    if (action == "health_status") return "Health status";
+    if (action == "level_status") return "Level status";
+    if (action == "kills") return "Kill count";
+    if (action == "sit_stand") return "Sit / Stand";
+    if (action == "facing") return "Speak facing";
+    if (action == "builder") return "Build menu";
+    if (action == "tracking_query") return "Tracking query";
+    if (action == "tracking_menu") return "Tracking menu";
+    if (action == "volume_up") return "Volume up";
+    if (action == "volume_down") return "Volume down";
+    if (action == "stairs_up") return "Stairs up";
+    if (action == "stairs_down") return "Stairs down";
+    if (action == "exit_game") return "Exit game";
+    if (action == "mod_shift") return "Shift modifier";
+    if (action == "menu_up") return "Menu up";
+    if (action == "menu_down") return "Menu down";
+    if (action == "menu_left") return "Menu left";
+    if (action == "menu_right") return "Menu right";
+    if (action == "menu_activate") return "Activate / OK";
+    if (action == "menu_back") return "Back / cancel";
+    if (action == "menu_home") return "Menu first item";
+    if (action == "menu_end") return "Menu last item";
+    return action;
+}
+
+// Waits until every key is released, then returns the next key pressed.
+// Escape cancels (returns 0).
+int kb_capture_key(bool allow_modifiers = false)
+{
+    while (keys_down().length() > 0) wait(5);
+    while (true)
+    {
+        wait(5);
+        key_code[]@ kd = keys_down();
+        if (kd.length() > 0)
+        {
+            // The shift modifier itself may legitimately be a modifier key.
+            if (allow_modifiers)
+            {
+                if (kd[0] == KEY_ESCAPE) return 0;
+                return int(kd[0]);
+            }
+            // Prefer a non-modifier key so Shift+W captures W, not Shift.
+            for (uint i = 0; i < kd.length(); i++)
+            {
+                int k = int(kd[i]);
+                if (k == KEY_LSHIFT or k == KEY_RSHIFT or k == KEY_LCONTROL or k == KEY_RCONTROL or k == KEY_LMENU or k == KEY_RMENU) continue;
+                if (k == KEY_ESCAPE) return 0;
+                return k;
+            }
+            int first = int(kd[0]);
+            if (first == KEY_ESCAPE) return 0;
+            return first;
+        }
+    }
+    return 0;
+}
+
+void keybinds_menu()
+{
+    setupmenu(false);
+    for (uint i = 0; i < KB_ACTIONS.length(); i++)
+    {
+        string a = KB_ACTIONS[i];
+        if (!kb_action_available(a)) continue;
+        m.add_item_tts(kb_action_name(a) + ", " + kb_key_name(kb_get(a)), a);
+    }
+    m.add_item_tts("Reset all to defaults", "kb_reset");
+    m.add_item_tts("Back", "back");
+    while (true)
+    {
+        int r = m.run("Keybindings", true);
+        if (r == 0) return;
+        string sel = m.get_item_name(r);
+        if (sel == "back") return;
+        if (sel == "kb_reset")
+        {
+            if (menuquestion("Reset all keybindings to defaults?") == 1)
+            {
+                kb_reset_defaults();
+                speak("Keybindings restored to defaults.");
+            }
+            keybinds_menu();
+            return;
+        }
+        // Per-action menu: assign a new key, or restore this one to its default.
+        setupmenu(false);
+        m.add_item_tts("Assign a new key", "assign");
+        m.add_item_tts("Reset to default", "reset");
+        m.add_item_tts("Back", "back");
+        int ra = m.run(kb_action_name(sel) + ", currently " + kb_key_name(kb_get(sel)), true);
+        string sel2 = m.get_item_name(ra);
+        if (ra == 0 or sel2 == "back")
+        {
+            keybinds_menu();
+            return;
+        }
+        if (sel2 == "reset")
+        {
+            // Announce if the default key belonged to another action and got moved.
+            string reset_other = kb_action_for_key(kb_default_key(sel));
+            kb_reset_action(sel);
+            if (reset_other != "" and reset_other != sel)
+                speak(kb_action_name(reset_other) + " moved to " + kb_key_name(kb_get(reset_other)) + ".");
+            speak(kb_action_name(sel) + " restored to default " + kb_key_name(kb_get(sel)) + ".");
+            keybinds_menu();
+            return;
+        }
+        speak("Press a new key for " + kb_action_name(sel) + ". Escape to cancel.");
+        int newkey = kb_capture_key(sel == "mod_shift");
+        if (newkey == 0)
+        {
+            speak("Keybinding cancelled.");
+            keybinds_menu();
+            return;
+        }
+        string other = kb_action_for_key(newkey);
+        if (other != "" and other != sel)
+        {
+            if (menuquestion(kb_key_name(newkey) + " is already assigned to " + kb_action_name(other) + ". Swap them?") != 1)
+            {
+                keybinds_menu();
+                return;
+            }
+        }
+        kb_set(sel, newkey);
+        speak(kb_action_name(sel) + " is now " + kb_key_name(newkey) + ".");
+        keybinds_menu();
+        return;
+    }
+}

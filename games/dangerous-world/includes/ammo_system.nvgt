@@ -1,0 +1,339 @@
+// ammo_system.nvgt - Modular inventory-backed ammunition system for Dangerous World.
+// Weapons track currently loaded ammo; spare ammo lives in player inventory.
+// Supports magazines, loose ammo belts/boxes, energy cells, and fuel canisters.
+
+// ---------------------------------------------------------------------------
+// Fire mode system
+// ---------------------------------------------------------------------------
+const int FIREMODE_SEMI = 0;
+const int FIREMODE_BURST = 1;
+const int FIREMODE_AUTO = 2;
+const int FIREMODE_SCATTERSHOT = 3;
+const int FIREMODE_FOCUSED = 4;
+
+class fire_mode_info
+{
+	string weapon_name;
+	int[] modes;
+	int current_mode;
+
+	fire_mode_info(string wn, int[] m)
+	{
+		weapon_name = wn;
+		modes = m;
+		current_mode = 0;
+	}
+}
+
+fire_mode_info@[] fire_modes_list(0);
+int burst_rounds_remaining = 0;
+bool burst_firing = false;
+
+void register_fire_modes(string wn, int[] modes)
+{
+	for (uint i = 0; i < fire_modes_list.length(); i++)
+	{
+		if (fire_modes_list[i].weapon_name == wn)
+		{
+			fire_modes_list[i].modes = modes;
+			fire_modes_list[i].current_mode = 0;
+			return;
+		}
+	}
+	fire_mode_info fm(wn, modes);
+	fire_modes_list.insert_last(fm);
+}
+
+// Parse a weapon's configured fire_modes string ("semi;auto;burst") into the
+// real mode list used by the runtime. Called when the weapon is equipped.
+void register_weapon_fire_modes(weapon_data@ w)
+{
+	if (w is null) return;
+	int[] modes;
+	string fm = string_to_lower_case(w.fire_modes);
+	if (fm == "") fm = "semi";
+	fm = string_replace(fm, "/", ";", true);
+	fm = string_replace(fm, ",", ";", true);
+	string[]@ parts = string_split(fm, ";", true);
+	if (parts !is null)
+	{
+		for (uint i = 0; i < parts.length(); i++)
+		{
+			string p = parts[i].trim_whitespace();
+			if (p == "auto" || p == "automatic" || p == "full_auto") modes.insert_last(FIREMODE_AUTO);
+			else if (p == "burst") modes.insert_last(FIREMODE_BURST);
+			else if (p == "scattershot") modes.insert_last(FIREMODE_SCATTERSHOT);
+			else if (p == "focused") modes.insert_last(FIREMODE_FOCUSED);
+			else if (p == "semi" || p == "semi_auto" || p == "semiautomatic") modes.insert_last(FIREMODE_SEMI);
+		}
+	}
+	if (modes.length() == 0) modes.insert_last(FIREMODE_SEMI);
+	register_fire_modes(w.id, modes);
+}
+
+int get_fire_mode(string wname)
+{
+	for (uint i = 0; i < fire_modes_list.length(); i++)
+	{
+		if (fire_modes_list[i].weapon_name == wname)
+		{
+			if (fire_modes_list[i].modes.length() == 0) return FIREMODE_SEMI;
+			return fire_modes_list[i].modes[fire_modes_list[i].current_mode];
+		}
+	}
+	return FIREMODE_SEMI;
+}
+
+string fire_mode_name(int mode)
+{
+	if (mode == FIREMODE_SEMI) return "semi-automatic";
+	if (mode == FIREMODE_BURST) return "burst";
+	if (mode == FIREMODE_AUTO) return "full automatic";
+	if (mode == FIREMODE_SCATTERSHOT) return "scattershot";
+	if (mode == FIREMODE_FOCUSED) return "focused";
+	return "semi-automatic";
+}
+
+void cycle_fire_mode(string wname)
+{
+	if (wname == "")
+	{
+		speak("No weapon equipped.");
+		return;
+	}
+	for (uint i = 0; i < fire_modes_list.length(); i++)
+	{
+		if (fire_modes_list[i].weapon_name == wname)
+		{
+			if (fire_modes_list[i].modes.length() <= 1)
+			{
+				speak("This weapon only has one fire mode.");
+				return;
+			}
+			fire_modes_list[i].current_mode++;
+			if (fire_modes_list[i].current_mode >= int(fire_modes_list[i].modes.length()))
+				fire_modes_list[i].current_mode = 0;
+			speak(fire_mode_name(fire_modes_list[i].modes[fire_modes_list[i].current_mode]));
+			return;
+		}
+	}
+	speak("This weapon does not have selectable fire modes.");
+}
+
+// ---------------------------------------------------------------------------
+// Loaded magazine/chamber state per weapon instance
+// ---------------------------------------------------------------------------
+dictionary loaded_ammo;
+bool is_reloading = false;
+timer reload_timer;
+// Persistent sound-pool slot that is playing the reload sound (-1 when no
+// reload sound is available and the fixed fallback is used instead).
+int current_reload_slot = -1;
+string reloading_weapon = "";
+// Safety fallback used ONLY when a weapon has no playable reload sound, so a
+// weapon can never get stuck reloading forever. Weapons with a reload sound
+// finish reloading exactly when that sound stops playing.
+const int RELOAD_NO_SOUND_FALLBACK_MS = 2000;
+
+int get_loaded_ammo(string wname)
+{
+	int count = 0;
+	if (loaded_ammo.exists(wname))
+		loaded_ammo.get(wname, count);
+	return count;
+}
+
+void set_loaded_ammo(string wname, int count)
+{
+	if (count < 0) count = 0;
+	loaded_ammo.set(wname, count);
+}
+
+void init_weapon_ammo(string wname, int cap)
+{
+	if (!loaded_ammo.exists(wname))
+		loaded_ammo.set(wname, cap);
+}
+
+int get_reserve_ammo(const string&in item_id)
+{
+	if (item_id == "") return 0;
+	int cnt = get_item_count(item_id);
+	if (cnt > 0) return cnt;
+	if (string_contains(item_id, "9mm", 1) > -1 || string_contains(item_id, "9x19", 1) > -1)
+	{
+		int legacy = get_item_count("ammo_9mm");
+		if (legacy > 0) return legacy;
+	}
+	return 0;
+}
+
+bool consume_loaded_round(string wname)
+{
+	int cur = get_loaded_ammo(wname);
+	if (cur <= 0) return false;
+	set_loaded_ammo(wname, cur - 1);
+	return true;
+}
+
+bool can_reload(weapon_data@ w)
+{
+	if (w is null or w.melee) return false;
+	if (is_reloading) return false;
+	int loaded = get_loaded_ammo(w.id);
+	if (loaded >= w.capacity) return false;
+	int reserve = get_reserve_ammo(w.reserve_item);
+	return reserve > 0;
+}
+
+void start_reload(weapon_data@ w)
+{
+	if (w is null or w.melee) return;
+	if (is_reloading) return;
+
+	int loaded = get_loaded_ammo(w.id);
+	if (loaded >= w.capacity)
+	{
+		speak(w.name + " is already fully loaded.");
+		return;
+	}
+
+	int reserve = get_reserve_ammo(w.reserve_item);
+	if (reserve <= 0)
+	{
+		// Pressing R with an empty reserve announces the required ammo type
+		string atype = (w.ammo_type != "") ? w.ammo_type : "ammunition";
+		string res_label = (w.reserve_label != "") ? w.reserve_label : "magazine";
+		if (!string_ends_with(res_label, "s")) res_label += "s";
+		speak("No " + atype + " " + res_label + " remaining for " + w.name + ".");
+		return;
+	}
+
+	is_reloading = true;
+	reloading_weapon = w.id;
+	current_reload_slot = -1;
+	reload_timer.restart();
+
+	if (w.sound_reload != "")
+	{
+		string rsnd = get_sound_path(w.sound_reload);
+		if (rsnd != "")
+		{
+			// Persistent slot: it stays dedicated to this reload until it
+			// finishes, so no other sound from the pool can steal it while the
+			// reload sound is still playing.
+			current_reload_slot = p.play_stationary(rsnd, false, true);
+		}
+	}
+}
+
+// Aborts a reload in progress (weapon switched, map reset, new game, etc.)
+// and releases its sound slot without granting any ammunition.
+void cancel_reload()
+{
+	if (!is_reloading && current_reload_slot < 0) return;
+	if (current_reload_slot >= 0)
+	{
+		p.destroy_sound(current_reload_slot);
+		current_reload_slot = -1;
+	}
+	is_reloading = false;
+	reloading_weapon = "";
+}
+
+void ammo_system_loop()
+{
+	if (!is_reloading) return;
+
+	weapon_data@ w = get_weapon_data(reloading_weapon);
+	if (w is null)
+	{
+		cancel_reload();
+		return;
+	}
+
+	bool finished = false;
+	if (current_reload_slot >= 0)
+	{
+		// The weapon stays in its reloading state for exactly as long as the
+		// reload sound plays. Once the sound has stopped completely, the
+		// reload is finished and the magazine is full again.
+		if (!p.sound_is_playing(current_reload_slot)) finished = true;
+	}
+	else
+	{
+		// No playable reload sound on this weapon: rely on the safety timer.
+		if (reload_timer.elapsed >= RELOAD_NO_SOUND_FALLBACK_MS) finished = true;
+	}
+	if (!finished) return;
+
+	if (current_reload_slot >= 0)
+	{
+		p.destroy_sound(current_reload_slot);
+		current_reload_slot = -1;
+	}
+	is_reloading = false;
+	reloading_weapon = "";
+
+	int reserve = get_reserve_ammo(w.reserve_item);
+	if (reserve <= 0) return;
+
+	string active_item = w.reserve_item;
+	if (get_item_count(active_item) <= 0 && (string_contains(active_item, "9mm", 1) > -1 || string_contains(active_item, "9x19", 1) > -1))
+	{
+		if (get_item_count("ammo_9mm") > 0) active_item = "ammo_9mm";
+	}
+
+	if (w.is_magazine)
+	{
+		// Magazine swap: consume 1 magazine from inventory, set loaded to full capacity
+		give(active_item, -1);
+		set_loaded_ammo(w.id, w.capacity);
+	}
+	else
+	{
+		// Loose rounds/cells: consume needed amount from inventory
+		int needed = w.capacity - get_loaded_ammo(w.id);
+		int to_load = (reserve >= needed) ? needed : reserve;
+		give(active_item, -to_load);
+		set_loaded_ammo(w.id, get_loaded_ammo(w.id) + to_load);
+	}
+}
+
+void speak_ammo_status()
+{
+	if (current_weapon_id == "")
+	{
+		speak("No weapon equipped.");
+		return;
+	}
+
+	weapon_data@ w = get_weapon_data(current_weapon_id);
+	if (w is null)
+	{
+		speak("No weapon equipped.");
+		return;
+	}
+
+	if (w.melee)
+	{
+		speak(w.name + " is a melee weapon.");
+		return;
+	}
+
+	int loaded = get_loaded_ammo(w.id);
+	int reserve = get_reserve_ammo(w.reserve_item);
+	string atype = (w.ammo_type != "") ? w.ammo_type : "ammunition";
+	string disp = (w.ammo_display != "") ? w.ammo_display : "rounds";
+	string res_label = (w.reserve_label != "") ? w.reserve_label : "magazine";
+	if (reserve != 1 && !string_ends_with(res_label, "s")) res_label += "s";
+
+	if (reserve > 0)
+	{
+		speak("" + loaded + " of " + w.capacity + " " + disp + " of " + atype + ", " + reserve + " " + res_label + " in reserve.");
+	}
+	else
+	{
+		speak("" + loaded + " of " + w.capacity + " " + disp + " of " + atype + ", 0 " + res_label + " in reserve.");
+	}
+}

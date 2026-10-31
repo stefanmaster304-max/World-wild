@@ -1,0 +1,321 @@
+// item_spawner_builder.nvgt - Single-line Map Item Spawner with Multi-item Pool & Custom Beacon Audio
+
+class map_item_spawner
+{
+	double minx, maxx, miny, maxy, minz, maxz;
+	int spawn_interval;
+	int min_decay;
+	int max_decay;
+	string item_spec; // Semicolon-separated item IDs
+	string beacon_sound;
+	int beacon_interval;
+	timer spawn_timer;
+
+	map_item_spawner(double x1, double x2, double y1, double y2, double z1, double z2, int tint, int dmin, int dmax, string ispec, string bsnd, int bint)
+	{
+		minx = x1;
+		maxx = x2;
+		miny = y1;
+		maxy = y2;
+		minz = z1;
+		maxz = z2;
+		spawn_interval = tint > 0 ? tint : 30000;
+		min_decay = dmin > 0 ? dmin : 180000;
+		max_decay = dmax >= min_decay ? dmax : (min_decay + 120000);
+		item_spec = ispec;
+		beacon_sound = (bsnd != "") ? bsnd : "items/item.ogg";
+		beacon_interval = bint > 0 ? bint : 1000;
+	}
+}
+
+map_item_spawner@[] map_item_spawners(0);
+
+void destroy_all_map_spawners()
+{
+	map_item_spawners.resize(0);
+}
+
+void read_item_spawner(string[] sd)
+{
+	if (sd.length() < 12) return;
+	double x1 = stn(sd[1]);
+	double x2 = stn(sd[2]);
+	double y1 = stn(sd[3]);
+	double y2 = stn(sd[4]);
+	double z1 = stn(sd[5]);
+	double z2 = stn(sd[6]);
+	int tint = int(stn(sd[7]));
+	int dmin = int(stn(sd[8]));
+	int dmax = dmin;
+	string ispec = "";
+	string bsnd = "items/item.ogg";
+	int bint = 1000;
+
+	if (sd.length() >= 13)
+	{
+		dmax = int(stn(sd[9]));
+		ispec = sd[10];
+		bsnd = sd[11];
+		bint = int(stn(sd[12]));
+	}
+	else
+	{
+		ispec = sd[9];
+		bsnd = sd[10];
+		bint = int(stn(sd[11]));
+	}
+
+	map_item_spawner sp(x1, x2, y1, y2, z1, z2, tint, dmin, dmax, ispec, bsnd, bint);
+	map_item_spawners.insert_last(sp);
+}
+
+void write_item_spawner(double x1, double x2, double y1, double y2, double z1, double z2, int tint, int dmin, int dmax, string ispec, string bsnd, int bint)
+{
+	save_to_map("item_spawner:" + x1 + ":" + x2 + ":" + y1 + ":" + y2 + ":" + z1 + ":" + z2 + ":" + tint + ":" + dmin + ":" + dmax + ":" + ispec + ":" + bsnd + ":" + bint);
+}
+
+string pick_spawner_beacon_sound(string current_snd)
+{
+	string[]@ files = find_files("sounds/items/*");
+	if (files is null || files.length() == 0)
+	{
+		@files = find_files("sounds/*");
+	}
+	if (files is null || files.length() == 0)
+	{
+		speak("No sound files found.");
+		return current_snd;
+	}
+
+	audio_form sf;
+	sf.create_window("select beacon sound (Space to preview)", false, true, false);
+	int list = sf.create_list("available sounds", 0, false, true);
+
+	for (uint i = 0; i < files.length(); i++)
+	{
+		sf.add_list_item(list, files[i], files[i], -1, false, (files[i] == current_snd));
+	}
+	int b_ok = sf.create_button("&select", true);
+	int b_can = sf.create_button("&cancel", false, true);
+	sf.focus(list);
+
+	int last_pos = -1;
+	int prevslot = -1;
+	timer preview_timer;
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		sf.monitor();
+		int pos = sf.get_list_position(list);
+		if (pos != last_pos)
+		{
+			last_pos = pos;
+			p.destroy_sound(prevslot);
+			prevslot = -1;
+			if (pos >= 0 && pos < int(files.length()))
+				prevslot = p.play_stationary(get_sound_path(files[pos]), false);
+		}
+		if (key_pressed(KEY_SPACE) && preview_timer.elapsed >= 150)
+		{
+			p.destroy_sound(prevslot);
+			prevslot = -1;
+			if (pos >= 0 && pos < int(files.length()))
+				prevslot = p.play_stationary(get_sound_path(files[pos]), false);
+			preview_timer.restart();
+		}
+		if (key_pressed(KEY_ESCAPE) || sf.is_pressed(b_can))
+		{
+			p.destroy_sound(prevslot);
+			speak("canceled");
+			return current_snd;
+		}
+		if (sf.is_pressed(b_ok))
+		{
+			p.destroy_sound(prevslot);
+			if (pos >= 0 && pos < int(files.length()))
+			{
+				return "items/" + files[pos];
+			}
+			return current_snd;
+		}
+	}
+	return current_snd;
+}
+
+void build_item_spawner()
+{
+	load_all_items_config();
+	if (item_registry.length() == 0)
+	{
+		speak("No items are registered to spawn.");
+		return;
+	}
+
+	audio_form pf;
+	pf.create_window("select items to spawn (Space to check/uncheck)", false, true, false);
+	int list = pf.create_list("available items to spawn", 0, true, true);
+
+	for (uint i = 0; i < item_registry.length(); i++)
+	{
+		string display = item_registry[i].name + " (" + item_registry[i].category + (item_registry[i].subtype != "" ? " - " + item_registry[i].subtype : "") + ")";
+		pf.add_list_item(list, display, item_registry[i].id, -1, (i == 0), false);
+	}
+
+	int b_ok = pf.create_button("&next", true);
+	int b_cancel = pf.create_button("&cancel", false, true);
+	pf.focus(list);
+
+	string[] selected_ids;
+
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		pf.monitor();
+
+		if (key_pressed(KEY_ESCAPE) || pf.is_pressed(b_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+
+		if (pf.is_pressed(b_ok))
+		{
+			int[]@ checked = pf.get_checked_list_items(list);
+			if (checked is null || checked.length() == 0)
+			{
+				speak("No items selected. Please select at least one item using Space.");
+				continue;
+			}
+			for (uint c = 0; c < checked.length(); c++)
+			{
+				if (checked[c] >= 0 && checked[c] < int(item_registry.length()))
+				{
+					selected_ids.insert_last(item_registry[checked[c]].id);
+				}
+			}
+			break;
+		}
+	}
+
+	string combined_item_spec = "";
+	for (uint s = 0; s < selected_ids.length(); s++)
+	{
+		if (combined_item_spec != "") combined_item_spec += ";";
+		combined_item_spec += selected_ids[s];
+	}
+
+	// Form for spawner properties
+	audio_form sf;
+	sf.create_window("configure item spawner", false);
+
+	int mx = sf.create_input_box("minimum x", "" + int(minx));
+	int mx2 = sf.create_input_box("maximum x", "" + int(maxx));
+	int my = sf.create_input_box("minimum y", "" + int(miny));
+	int my2 = sf.create_input_box("maximum y", "" + int(maxy));
+	int mnz = sf.create_input_box("minimum z", "" + int(minz));
+	int mxz = sf.create_input_box("maximum z", "" + int(maxz));
+
+	int in_sp_time = sf.create_input_box("spawn interval (ms)", "30000");
+	int in_dmin_time = sf.create_input_box("minimum decay time (ms)", "180000");
+	int in_dmax_time = sf.create_input_box("maximum decay time (ms)", "480000");
+	int in_beacon_snd = sf.create_input_box("ground beacon loop sound", "items/item.ogg");
+	int btn_browse_snd = sf.create_button("&browse beacon sound");
+	int in_beacon_int = sf.create_input_box("beacon loop interval (ms)", "1000");
+
+	sf.set_disallowed_chars(mx, "0123456789-", true, "Numbers only.");
+	sf.set_disallowed_chars(mx2, "0123456789-", true, "Numbers only.");
+	sf.set_disallowed_chars(my, "0123456789-", true, "Numbers only.");
+	sf.set_disallowed_chars(my2, "0123456789-", true, "Numbers only.");
+	sf.set_disallowed_chars(mnz, "0123456789-", true, "Numbers only.");
+	sf.set_disallowed_chars(mxz, "0123456789-", true, "Numbers only.");
+	sf.set_disallowed_chars(in_sp_time, "0123456789", true, "Numbers only.");
+	sf.set_disallowed_chars(in_dmin_time, "0123456789", true, "Numbers only.");
+	sf.set_disallowed_chars(in_dmax_time, "0123456789", true, "Numbers only.");
+	sf.set_disallowed_chars(in_beacon_int, "0123456789", true, "Numbers only.");
+
+	int b_save = sf.create_button("&save spawner", true);
+	int b_can = sf.create_button("&cancel", false, true);
+
+	sf.focus(mx);
+
+	int[] input_boxes = {mx, mx2, my, my2, mnz, mxz, in_sp_time, in_dmin_time, in_dmax_time, in_beacon_snd, in_beacon_int};
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		sf.monitor();
+		update_form_input_keyboard_sound(sf, input_boxes);
+		if (key_pressed(KEY_ESCAPE) || sf.is_pressed(b_can))
+		{
+			speak("canceled");
+			return;
+		}
+
+		if (sf.is_pressed(btn_browse_snd))
+		{
+			string cur = sf.get_text(in_beacon_snd);
+			string picked = pick_spawner_beacon_sound(cur);
+			if (picked != "") sf.set_text(in_beacon_snd, picked);
+		}
+
+		if (sf.is_pressed(b_save))
+		{
+			double rx = string_to_number(sf.get_text(mx));
+			double rx2 = string_to_number(sf.get_text(mx2));
+			double ry = string_to_number(sf.get_text(my));
+			double ry2 = string_to_number(sf.get_text(my2));
+			double rz = string_to_number(sf.get_text(mnz));
+			double rz2 = string_to_number(sf.get_text(mxz));
+
+			int sp_time = int(string_to_number(sf.get_text(in_sp_time)));
+			int dmin_time = int(string_to_number(sf.get_text(in_dmin_time)));
+			int dmax_time = int(string_to_number(sf.get_text(in_dmax_time)));
+			string bsnd = sf.get_text(in_beacon_snd);
+			int bint = int(string_to_number(sf.get_text(in_beacon_int)));
+
+			write_item_spawner(rx, rx2, ry, ry2, rz, rz2, sp_time, dmin_time, dmax_time, combined_item_spec, bsnd, bint);
+
+			// Spawn 1 initial item randomly from the set
+			string initial_item = selected_ids[random(0, int(selected_ids.length()) - 1)];
+			spawn_ground_item(initial_item, 1, random(int(rx), int(rx2)), random(int(ry), int(ry2)), rz + 1, dmin_time, dmax_time, bsnd, bint);
+
+			tempreset();
+			draw_map(mapname);
+			speak("Item spawner created with " + selected_ids.length() + " item types.");
+			return;
+		}
+	}
+}
+
+void map_item_spawner_loop()
+{
+	for (uint i = 0; i < map_item_spawners.length(); i++)
+	{
+		map_item_spawner@ sp = map_item_spawners[i];
+		if (sp.spawn_timer.elapsed >= sp.spawn_interval)
+		{
+			sp.spawn_timer.restart();
+
+			// Prevent excessive ground item accumulation on map (max 30 items)
+			if (ground_items.length() >= 30) continue;
+
+			string[]@ parts = string_split(sp.item_spec, ";", true);
+			if (parts is null || parts.length() == 0) continue;
+
+			string chosen_item = parts[random(0, int(parts.length()) - 1)].trim_whitespace();
+			if (chosen_item == "") continue;
+
+			double rx = random(int(sp.minx), int(sp.maxx));
+			double ry = random(int(sp.miny), int(sp.maxy));
+			double rz = sp.minz;
+
+			if (get_tile_at(int(rx), int(ry), int(rz)) != "")
+			{
+				spawn_ground_item(chosen_item, 1, rx, ry, rz + 1, sp.min_decay, sp.max_decay, sp.beacon_sound, sp.beacon_interval);
+			}
+		}
+	}
+}

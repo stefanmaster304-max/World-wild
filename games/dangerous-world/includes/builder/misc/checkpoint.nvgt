@@ -1,0 +1,62 @@
+// includes/builder/misc/checkpoint.nvgt - Checkpoint builder and runtime class
+
+class checkpoint_obj
+{
+	int x, y, z;
+	string name;
+	bool activated;
+	checkpoint_obj(int cx, int cy, int cz, string cname)
+	{
+		x = cx; y = cy; z = cz; name = cname; activated = false;
+	}
+}
+checkpoint_obj@[] checkpoints;
+
+int map_spawn_x = 0;
+int map_spawn_y = 0;
+int map_spawn_z = 0;
+bool has_map_spawnpoint = false;
+
+void spawn_checkpoint(int x, int y, int z, string name)
+{
+	checkpoint_obj cp(x, y, z, name);
+	checkpoints.insert_last(cp);
+}
+
+void set_map_spawnpoint(int x, int y, int z)
+{
+	map_spawn_x = x;
+	map_spawn_y = y;
+	map_spawn_z = z;
+	has_map_spawnpoint = true;
+}
+
+void checkpoints_check()
+{
+	for (uint i = 0; i < checkpoints.length(); i++)
+	{
+		if (me.x == checkpoints[i].x && me.y == checkpoints[i].y && me.z == checkpoints[i].z)
+		{
+			if (!checkpoints[i].activated)
+			{
+				checkpoints[i].activated = true;
+				map_spawn_x = checkpoints[i].x;
+				map_spawn_y = checkpoints[i].y;
+				map_spawn_z = checkpoints[i].z;
+				has_map_spawnpoint = true;
+				play("checkpoint");
+				speak("Checkpoint: " + checkpoints[i].name);
+			}
+		}
+	}
+}
+
+void build_checkpoint()
+{
+	string cp_name = v.input("Checkpoint Name:", "Zone Checkpoint");
+	if (cp_name == "") cp_name = "Checkpoint";
+	int cx = int(round(me.x, 0));
+	int cy = int(round(me.y, 0));
+	int cz = int(round(me.z, 0));
+	save_to_map("checkpoint:" + cx + ":" + cy + ":" + cz + ":" + cp_name);
+}

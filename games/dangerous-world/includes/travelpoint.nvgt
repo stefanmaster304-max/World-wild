@@ -1,0 +1,502 @@
+travelpoint@[] travelpoints(0);
+class travelpoint
+{
+	int minx, maxx;
+	int miny, maxy;
+	int minz, maxz;
+	string nmap;
+	int dest_minx, dest_maxx;
+	int dest_miny, dest_maxy;
+	int dest_minz, dest_maxz;
+	string text;
+	int min_level = 1;
+	int max_level = 0;
+	int min_resurrection = 0;
+	int max_resurrection = 0;
+	bool is_automatic = false;
+
+	// Backwards compatibility properties (origin and target default coords)
+	int dx { get const { return minx; } }
+	int dy { get const { return miny; } }
+	int dz { get const { return minz; } }
+	int nx { get const { return dest_minx; } }
+	int ny { get const { return dest_miny; } }
+	int nz { get const { return dest_minz; } }
+
+	travelpoint(int x1, int x2, int y1, int y2, int z1, int z2, string newmap, int dx1, int dx2, int dy1, int dy2, int dz1, int dz2, string tx, int min_lvl = 1, int max_lvl = 0, int min_res = 0, int max_res = 0, bool is_auto = false)
+	{
+		minx = (x1 <= x2) ? x1 : x2;
+		maxx = (x1 <= x2) ? x2 : x1;
+		miny = (y1 <= y2) ? y1 : y2;
+		maxy = (y1 <= y2) ? y2 : y1;
+		minz = (z1 <= z2) ? z1 : z2;
+		maxz = (z1 <= z2) ? z2 : z1;
+
+		nmap = newmap;
+
+		dest_minx = (dx1 <= dx2) ? dx1 : dx2;
+		dest_maxx = (dx1 <= dx2) ? dx2 : dx1;
+		dest_miny = (dy1 <= dy2) ? dy1 : dy2;
+		dest_maxy = (dy1 <= dy2) ? dy2 : dy1;
+		dest_minz = (dz1 <= dz2) ? dz1 : dz2;
+		dest_maxz = (dz1 <= dz2) ? dz2 : dz1;
+
+		text = (tx == "none") ? "" : tx;
+		min_level = (min_lvl < 1) ? 1 : min_lvl;
+		max_level = (max_lvl < 0) ? 0 : max_lvl;
+		min_resurrection = (min_res < 0) ? 0 : min_res;
+		max_resurrection = (max_res < 0) ? 0 : max_res;
+		is_automatic = is_auto;
+	}
+
+	bool is_inside(int px, int py, int pz)
+	{
+		bool x_in = (px >= minx && px <= maxx);
+		bool y_in = (py >= miny && py <= maxy);
+		bool z_in = (minz == maxz) ? (pz >= minz - 1 && pz <= maxz + 3) : (pz >= minz - 1 && pz <= maxz + 6);
+		return (x_in && y_in && z_in);
+	}
+
+	void get_destination_coords(int &out out_x, int &out out_y, int &out out_z)
+	{
+		if (dest_minx == dest_maxx)
+		{
+			out_x = dest_minx;
+		}
+		else if (maxx > minx)
+		{
+			double rel_x = double(me.x - minx) / double(maxx - minx);
+			if (rel_x < 0.0) rel_x = 0.0;
+			if (rel_x > 1.0) rel_x = 1.0;
+			out_x = dest_minx + int(round(rel_x * double(dest_maxx - dest_minx), 0));
+		}
+		else
+		{
+			out_x = dest_minx;
+		}
+
+		if (dest_miny == dest_maxy)
+		{
+			out_y = dest_miny;
+		}
+		else if (maxy > miny)
+		{
+			double rel_y = double(me.y - miny) / double(maxy - miny);
+			if (rel_y < 0.0) rel_y = 0.0;
+			if (rel_y > 1.0) rel_y = 1.0;
+			out_y = dest_miny + int(round(rel_y * double(dest_maxy - dest_miny), 0));
+		}
+		else
+		{
+			out_y = dest_miny;
+		}
+
+		out_z = dest_minz;
+	}
+}
+
+timer auto_tp_cooldown;
+
+void destroy_all_travelpoints()
+{
+	travelpoints.resize(0);
+}
+
+void spawn_travelpoint(int x1, int x2, int y1, int y2, int z1, int z2, string newmap, int dx1, int dx2, int dy1, int dy2, int dz1, int dz2, string text, int min_lvl = 1, int max_lvl = 0, int min_res = 0, int max_res = 0, bool is_auto = false)
+{
+	if (text == "none") text = "";
+	travelpoint tp(x1, x2, y1, y2, z1, z2, newmap, dx1, dx2, dy1, dy2, dz1, dz2, text, min_lvl, max_lvl, min_res, max_res, is_auto);
+	travelpoints.insert_last(tp);
+}
+
+void spawn_travelpoint(int travelpointx, int travelpointy, int travelpointz, string newmap, int newx, int newy, int newz, string text, int min_lvl = 1, int max_lvl = 0, int min_res = 0, int max_res = 0, bool is_auto = false)
+{
+	spawn_travelpoint(travelpointx, travelpointx, travelpointy, travelpointy, travelpointz, travelpointz, newmap, newx, newx, newy, newy, newz, newz, text, min_lvl, max_lvl, min_res, max_res, is_auto);
+}
+
+bool check_travelpoint_requirements(travelpoint@ tp, bool announce = true)
+{
+	if (tp is null) return false;
+	if (!map_exists_on_disk(tp.nmap))
+	{
+		if (announce) speak("Destination map no longer exists.");
+		return false;
+	}
+
+	bool res_too_low = (resurrections < tp.min_resurrection);
+	bool res_too_high = (tp.max_resurrection > 0 && resurrections > tp.max_resurrection);
+	bool lvl_too_low = (level < tp.min_level);
+	bool lvl_too_high = (tp.max_level > 0 && level > tp.max_level);
+
+	if (res_too_low)
+	{
+		if (announce) speak("This map is locked.");
+		return false;
+	}
+	if (res_too_high)
+	{
+		if (announce) speak("You cannot enter here yet; your resurrection exceeds the maximum allowed.");
+		return false;
+	}
+	if (lvl_too_low)
+	{
+		if (announce) speak("You cannot enter here yet; your level does not meet the requirements.");
+		return false;
+	}
+	if (lvl_too_high)
+	{
+		if (announce) speak("You cannot enter here yet; your level exceeds the maximum allowed.");
+		return false;
+	}
+	return can_enter_map(tp.nmap, announce);
+}
+
+bool execute_map_transition(const string&in target_map, int target_x, int target_y, int target_z, const string&in custom_text = "")
+{
+	if (!map_exists_on_disk(target_map))
+	{
+		speak("Destination map does not exist.");
+		return false;
+	}
+	auto_tp_cooldown.restart();
+	tracking_active = false;
+
+	int saved_jumping = jumping;
+	bool saved_ascending = ascending;
+	bool saved_atapex = atapex;
+	bool saved_falling = falling;
+	int saved_fallcounter = fallcounter;
+	double jump_offset_z = 0;
+	if (saved_jumping == 1 || saved_falling)
+	{
+		jump_offset_z = me.z - ty1;
+		if (jump_offset_z < 0) jump_offset_z = 0;
+		if (jump_offset_z > jumpheight) jump_offset_z = jumpheight;
+	}
+
+	// Set destination coordinates BEFORE switching sources and drawing the map
+	me.x = target_x;
+	me.y = target_y;
+	if (saved_jumping == 1)
+	{
+		me.z = target_z + jump_offset_z;
+		jumping = saved_jumping;
+		ascending = saved_ascending;
+		atapex = saved_atapex;
+		ty1 = target_z;
+		ty2 = target_z + jumpheight;
+		jumptimer.restart();
+		falling = false;
+		fallcounter = 0;
+	}
+	else if (saved_falling)
+	{
+		me.z = target_z + jump_offset_z;
+		if (me.z < target_z) me.z = target_z;
+		falling = true;
+		fallcounter = saved_fallcounter;
+		falltimer.restart();
+		jumping = 0;
+	}
+	else
+	{
+		me.z = target_z;
+		jumping = 0;
+		falling = false;
+		fallcounter = 0;
+	}
+	old = me;
+
+	// Immediately update listener coordinates in all pools so 3-D ambient sounds
+	// calculate volume relative to the arrival coordinates (not stale 0,0 or previous map pos)
+	p.update_listener_3d(me.x, me.y, me.z, double(facing));
+	sp.update_listener_3d(me.x, me.y, me.z, double(facing));
+	itempool.update_listener_3d(me.x, me.y, me.z, double(facing));
+	dp.update_listener_3d(me.x, me.y, me.z, double(facing));
+
+	// Seamless audio: preserve playing footstep sounds across the boundary so the step is not cut off
+	tempreset_seamless(target_map);
+
+	draw_map(target_map);
+	p.update_listener_3d(me.x, me.y, me.z, double(facing));
+	sp.update_listener_3d(me.x, me.y, me.z, double(facing));
+	itempool.update_listener_3d(me.x, me.y, me.z, double(facing));
+	dp.update_listener_3d(me.x, me.y, me.z, double(facing));
+
+	// Play footstep sound of the destination platform for this step
+	string new_tile = gmt();
+	if (new_tile != "" && jumping == 0 && !falling)
+	{
+		string snd = get_platform_sound(new_tile, "step");
+		if (snd != "") p.play_stationary(snd, false);
+	}
+
+	if (custom_text != "" && custom_text != "none")
+	{
+		speak(custom_text);
+		string locate = get_zone_at(int(round(me.x, 0)), int(round(me.y, 0)), int(round(me.z, 0)));
+		currentloc = (locate != "") ? locate : "unknown area";
+	}
+	else
+	{
+		announce_zone_on_load();
+	}
+	return true;
+}
+
+timer auto_tp_announce_debounce;
+
+bool travelpoint_matches_movement(travelpoint@ tp, int attempt_dx, int attempt_dy, int attempt_dz, bool is_boundary_hit = false)
+{
+	if (tp is null) return false;
+
+	bool is_east = (tp.minx >= maxx && tp.maxx >= maxx);
+	bool is_west = (tp.minx <= minx && tp.maxx <= minx);
+	bool is_north = (tp.miny >= maxy && tp.maxy >= maxy);
+	bool is_south = (tp.miny <= miny && tp.maxy <= miny);
+	bool is_top = (tp.minz >= maxz && tp.maxz >= maxz);
+	bool is_bottom = (tp.minz <= minz && tp.maxz <= minz);
+
+	bool is_edge = (is_east || is_west || is_north || is_south || is_top || is_bottom);
+
+	// If it is an interior portal/teleporter (not on the outer boundary of the map), any step inside triggers it
+	if (!is_edge) return true;
+
+	// On outer map boundaries, movement must be an attempt to step past that boundary (is_boundary_hit)
+	if (!is_boundary_hit) return false;
+
+	if (is_east && attempt_dx > 0) return true;
+	if (is_west && attempt_dx < 0) return true;
+	if (is_north && attempt_dy > 0) return true;
+	if (is_south && attempt_dy < 0) return true;
+	if (is_top && attempt_dz > 0) return true;
+	if (is_bottom && attempt_dz < 0) return true;
+
+	return false;
+}
+
+bool check_automatic_travelpoints(int attempt_dx = 0, int attempt_dy = 0, int attempt_dz = 0, bool is_boundary_hit = false)
+{
+	if (auto_tp_cooldown.elapsed < 50) return false;
+	int rx = int(round(me.x, 0));
+	int ry = int(round(me.y, 0));
+	int rz = int(round(me.z, 0));
+
+	travelpoint@ selected_tp = null;
+	travelpoint@[] candidates;
+
+	for (uint i = 0; i < travelpoints.length(); i++)
+	{
+		if (travelpoints[i] is null || !travelpoints[i].is_automatic) continue;
+		if (travelpoints[i].is_inside(rx, ry, rz))
+		{
+			if (map_exists_on_disk(travelpoints[i].nmap) && travelpoint_matches_movement(travelpoints[i], attempt_dx, attempt_dy, attempt_dz, is_boundary_hit))
+			{
+				candidates.insert_last(travelpoints[i]);
+			}
+		}
+	}
+
+	if (candidates.length() == 0) return false;
+
+	if (candidates.length() == 1)
+	{
+		@selected_tp = candidates[0];
+	}
+	else
+	{
+		// Disambiguate overlapping travelpoints at corners based on movement direction
+		for (uint i = 0; i < candidates.length(); i++)
+		{
+			travelpoint@ c = candidates[i];
+			if (attempt_dx < 0 && c.minx <= minx && c.maxx <= minx) { @selected_tp = c; break; }
+			if (attempt_dx > 0 && c.minx >= maxx && c.maxx >= maxx) { @selected_tp = c; break; }
+			if (attempt_dy < 0 && c.miny <= miny && c.maxy <= miny) { @selected_tp = c; break; }
+			if (attempt_dy > 0 && c.miny >= maxy && c.maxy >= maxy) { @selected_tp = c; break; }
+			if (attempt_dz < 0 && c.minz <= minz && c.maxz <= minz) { @selected_tp = c; break; }
+			if (attempt_dz > 0 && c.minz >= maxz && c.maxz >= maxz) { @selected_tp = c; break; }
+		}
+		if (selected_tp is null)
+		{
+			@selected_tp = candidates[0];
+		}
+	}
+
+	bool should_announce = (auto_tp_announce_debounce.elapsed >= 1500);
+	if (!check_travelpoint_requirements(selected_tp, should_announce))
+	{
+		if (should_announce) auto_tp_announce_debounce.restart();
+		return false;
+	}
+	auto_tp_cooldown.restart();
+	string tp_nmap = selected_tp.nmap;
+	int target_x = 0, target_y = 0, target_z = 0;
+	selected_tp.get_destination_coords(target_x, target_y, target_z);
+	string tp_text = selected_tp.text;
+	return execute_map_transition(tp_nmap, target_x, target_y, target_z, tp_text);
+}
+
+void checktravelpoint()
+{
+	int rx = int(round(me.x, 0));
+	int ry = int(round(me.y, 0));
+	int rz = int(round(me.z, 0));
+
+	for (uint i = 0; i < travelpoints.length(); i++)
+	{
+		if (travelpoints[i] is null) continue;
+		if (travelpoints[i].is_inside(rx, ry, rz))
+		{
+			if (!map_exists_on_disk(travelpoints[i].nmap))
+			{
+				speak("Destination map does not exist.");
+				return;
+			}
+			if (!check_travelpoint_requirements(travelpoints[i], true))
+			{
+				return;
+			}
+			string tp_nmap = travelpoints[i].nmap;
+			int target_x = 0, target_y = 0, target_z = 0;
+			travelpoints[i].get_destination_coords(target_x, target_y, target_z);
+			string tp_text = travelpoints[i].text;
+			execute_map_transition(tp_nmap, target_x, target_y, target_z, tp_text);
+			return;
+		}
+	}
+}
+
+void build_travelpoint()
+{
+	string disallowed_nums = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ `!@#$%^&*()[]{};:'\"\\|,<>?_/.+=~";
+
+	audio_form f;
+	f.create_window("Add Travel Point", false, true, false);
+
+	int cur_x = int(round(me.x, 0));
+	int cur_y = int(round(me.y, 0));
+	int cur_z = int(round(me.z, 0));
+
+	int i_min_x = f.create_input_box("Minimum X", "" + cur_x);
+	int i_max_x = f.create_input_box("Maximum X", "" + cur_x);
+	int i_min_y = f.create_input_box("Minimum Y", "" + cur_y);
+	int i_max_y = f.create_input_box("Maximum Y", "" + cur_y);
+	int i_min_z = f.create_input_box("Minimum Z", "" + cur_z);
+	int i_max_z = f.create_input_box("Maximum Z", "" + cur_z);
+
+	int i_dest_min_x = f.create_input_box("Destination Minimum X", "0");
+	int i_dest_max_x = f.create_input_box("Destination Maximum X", "0");
+	int i_dest_min_y = f.create_input_box("Destination Minimum Y", "0");
+	int i_dest_max_y = f.create_input_box("Destination Maximum Y", "0");
+	int i_dest_min_z = f.create_input_box("Destination Minimum Z", "0");
+	int i_dest_max_z = f.create_input_box("Destination Maximum Z", "0");
+
+	int i_map = f.create_input_box("Target Map Name", "main");
+	int i_text = f.create_input_box("Prompt Text (optional)", "");
+	int i_min_lvl = f.create_input_box("Minimum Level", "1");
+	int i_max_lvl = f.create_input_box("Maximum Level (0 for unlimited)", "0");
+	int i_min_res = f.create_input_box("Minimum Resurrection", "0");
+	int i_max_res = f.create_input_box("Maximum Resurrection (0 for unlimited)", "0");
+	int cb_auto = f.create_checkbox("Automatic travel point (cross immediately upon stepping)", false);
+
+	f.set_disallowed_chars(i_min_x, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_max_x, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_min_y, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_max_y, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_min_z, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_max_z, "0123456789-", true, "Numbers only.");
+
+	f.set_disallowed_chars(i_dest_min_x, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_dest_max_x, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_dest_min_y, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_dest_max_y, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_dest_min_z, "0123456789-", true, "Numbers only.");
+	f.set_disallowed_chars(i_dest_max_z, "0123456789-", true, "Numbers only.");
+
+	f.set_disallowed_chars(i_min_lvl, "0123456789", true, "Numbers only.");
+	f.set_disallowed_chars(i_max_lvl, "0123456789", true, "Numbers only.");
+	f.set_disallowed_chars(i_min_res, "0123456789", true, "Numbers only.");
+	f.set_disallowed_chars(i_max_res, "0123456789", true, "Numbers only.");
+
+	int btn_ok = f.create_button("Add Travel Point", true);
+	int btn_cancel = f.create_button("Cancel", false, true);
+	f.set_default_controls(btn_ok, btn_cancel);
+	f.focus_silently(i_map);
+
+	int[] input_boxes = {i_min_x, i_max_x, i_min_y, i_max_y, i_min_z, i_max_z, i_dest_min_x, i_dest_max_x, i_dest_min_y, i_dest_max_y, i_dest_min_z, i_dest_max_z, i_map, i_text, i_min_lvl, i_max_lvl, i_min_res, i_max_res};
+	while (true)
+	{
+		wait(5);
+		update_game_world();
+		f.monitor();
+		update_form_input_keyboard_sound(f, input_boxes);
+		if (key_pressed(KEY_ESCAPE) || f.is_pressed(btn_cancel))
+		{
+			speak("canceled");
+			return;
+		}
+		if (f.is_pressed(btn_ok))
+		{
+			string s_min_x = f.get_text(i_min_x).trim_whitespace();
+			string s_max_x = f.get_text(i_max_x).trim_whitespace();
+			string s_min_y = f.get_text(i_min_y).trim_whitespace();
+			string s_max_y = f.get_text(i_max_y).trim_whitespace();
+			string s_min_z = f.get_text(i_min_z).trim_whitespace();
+			string s_max_z = f.get_text(i_max_z).trim_whitespace();
+
+			string s_dmin_x = f.get_text(i_dest_min_x).trim_whitespace();
+			string s_dmax_x = f.get_text(i_dest_max_x).trim_whitespace();
+			string s_dmin_y = f.get_text(i_dest_min_y).trim_whitespace();
+			string s_dmax_y = f.get_text(i_dest_max_y).trim_whitespace();
+			string s_dmin_z = f.get_text(i_dest_min_z).trim_whitespace();
+			string s_dmax_z = f.get_text(i_dest_max_z).trim_whitespace();
+
+			string tmap = f.get_text(i_map).trim_whitespace();
+			string ttxt = f.get_text(i_text).trim_whitespace();
+			string tmin_lvl = f.get_text(i_min_lvl).trim_whitespace();
+			string tmax_lvl = f.get_text(i_max_lvl).trim_whitespace();
+			string tmin_res = f.get_text(i_min_res).trim_whitespace();
+			string tmax_res = f.get_text(i_max_res).trim_whitespace();
+			bool t_auto = f.is_checked(cb_auto);
+
+			if (s_min_x == "" || s_max_x == "" || s_min_y == "" || s_max_y == "" || s_min_z == "" || s_max_z == "" ||
+				s_dmin_x == "" || s_dmax_x == "" || s_dmin_y == "" || s_dmax_y == "" || s_dmin_z == "" || s_dmax_z == "" ||
+				tmap == "")
+			{
+				speak("Coordinates and map name cannot be empty.");
+				continue;
+			}
+
+			int x1 = int(string_to_number(s_min_x));
+			int x2 = int(string_to_number(s_max_x));
+			int y1 = int(string_to_number(s_min_y));
+			int y2 = int(string_to_number(s_max_y));
+			int z1 = int(string_to_number(s_min_z));
+			int z2 = int(string_to_number(s_max_z));
+
+			int dx1 = int(string_to_number(s_dmin_x));
+			int dx2 = int(string_to_number(s_dmax_x));
+			int dy1 = int(string_to_number(s_dmin_y));
+			int dy2 = int(string_to_number(s_dmax_y));
+			int dz1 = int(string_to_number(s_dmin_z));
+			int dz2 = int(string_to_number(s_dmax_z));
+
+			if (x1 > x2) { int tmp = x1; x1 = x2; x2 = tmp; }
+			if (y1 > y2) { int tmp = y1; y1 = y2; y2 = tmp; }
+			if (z1 > z2) { int tmp = z1; z1 = z2; z2 = tmp; }
+
+			if (dx1 > dx2) { int tmp = dx1; dx1 = dx2; dx2 = tmp; }
+			if (dy1 > dy2) { int tmp = dy1; dy1 = dy2; dy2 = tmp; }
+			if (dz1 > dz2) { int tmp = dz1; dz1 = dz2; dz2 = tmp; }
+
+			if (ttxt == "") ttxt = "none";
+			if (tmin_lvl == "") tmin_lvl = "1";
+			if (tmax_lvl == "") tmax_lvl = "0";
+			if (tmin_res == "") tmin_res = "0";
+			if (tmax_res == "") tmax_res = "0";
+
+			save_to_map("travelpoint:" + x1 + ":" + x2 + ":" + y1 + ":" + y2 + ":" + z1 + ":" + z2 + ":" + tmap + ":" + dx1 + ":" + dx2 + ":" + dy1 + ":" + dy2 + ":" + dz1 + ":" + dz2 + ":" + ttxt + ":" + tmin_lvl + ":" + tmax_lvl + ":" + tmin_res + ":" + tmax_res + ":" + (t_auto ? "1" : "0"));
+			return;
+		}
+	}
+}

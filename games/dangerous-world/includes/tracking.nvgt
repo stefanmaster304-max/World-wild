@@ -1,0 +1,217 @@
+#include "menu.nvgt"
+#include "includes/rotation.nvgt"
+
+bool tracking_active = false;
+double tracking_x = 0;
+double tracking_y = 0;
+double tracking_z = 0;
+int tracking_minx = 0;
+int tracking_maxx = 0;
+int tracking_miny = 0;
+int tracking_maxy = 0;
+int tracking_minz = 0;
+int tracking_maxz = 0;
+string tracking_name = "";
+string tracking_type = ""; // "travelpoint", "item"
+timer tracking_timer;
+
+class track_entry {
+    string display_name;
+    int x, y, z;
+    int minx, maxx, miny, maxy, minz, maxz;
+    string type; // "travelpoint", "item"
+}
+
+track_entry[] current_track_list;
+
+void rebuild_track_list()
+{
+    current_track_list.resize(0);
+
+    // Travel points on the current map
+    for (uint i = 0; i < travelpoints.length(); i++)
+    {
+        travelpoint@ tp = travelpoints[i];
+        if (tp is null) continue;
+        track_entry te;
+        string dest_name = tp.text;
+        if (dest_name == "" || dest_name == "none")
+        {
+            dest_name = "Travel point to " + tp.nmap;
+        }
+        te.display_name = dest_name;
+        te.minx = tp.minx;
+        te.maxx = tp.maxx;
+        te.miny = tp.miny;
+        te.maxy = tp.maxy;
+        te.minz = tp.minz;
+        te.maxz = tp.maxz;
+        te.x = (tp.minx + tp.maxx) / 2;
+        te.y = (tp.miny + tp.maxy) / 2;
+        te.z = tp.minz;
+        te.type = "travelpoint";
+        current_track_list.insert_last(te);
+    }
+}
+
+void open_tracking_menu()
+{
+    rebuild_track_list();
+
+    if (current_track_list.length() == 0)
+    {
+        speak("No travel points found on this map.");
+        return;
+    }
+
+    setupmenu(false);
+    if (tracking_active)
+    {
+        m.add_item_tts("Stop tracking", "stoptrack");
+    }
+
+    for (uint i = 0; i < current_track_list.length(); i++)
+    {
+        track_entry@ te = @current_track_list[i];
+        int dist = int(round(get_3d_distance(me.x, me.y, me.z, te.x, te.y, te.z), 0));
+        string label = te.display_name + " at " + te.x + ", " + te.y + ", " + te.z + " (" + dist + " tiles away)";
+        m.add_item_tts(label, "track_" + i);
+    }
+
+    int mres = m.run("What travel point would you like to track?", true);
+    if (mres <= 0) return;
+    string sel = m.get_item_name(mres);
+
+    if (sel == "stoptrack")
+    {
+        stop_tracking();
+        return;
+    }
+
+    if (string_starts_with(sel, "track_"))
+    {
+        int idx = string_to_number(sel.substr(6));
+        if (idx >= 0 && idx < int(current_track_list.length()))
+        {
+            start_tracking(current_track_list[idx]);
+        }
+    }
+}
+
+void start_tracking(track_entry@ target)
+{
+    if (target is null) return;
+    tracking_active = true;
+    tracking_name = target.display_name;
+    tracking_type = target.type;
+    tracking_x = target.x;
+    tracking_y = target.y;
+    tracking_z = target.z;
+    tracking_minx = target.minx;
+    tracking_maxx = target.maxx;
+    tracking_miny = target.miny;
+    tracking_maxy = target.maxy;
+    tracking_minz = target.minz;
+    tracking_maxz = target.maxz;
+    tracking_timer.restart();
+
+    double angle = calculate_x_y_angle(me.x, me.y, tracking_x, tracking_y, facing, false, true);
+    string dir_str = calculate_x_y_string3d(angle, me.z, tracking_z);
+    int dist = int(round(get_3d_distance(me.x, me.y, me.z, tracking_x, tracking_y, tracking_z), 0));
+    string coords = "" + int(round(tracking_x, 0)) + ", " + int(round(tracking_y, 0)) + ", " + int(round(tracking_z, 0));
+
+    speak("Tracking " + tracking_name + ": " + dir_str + " (" + dist + " tiles away) at " + coords + ".");
+
+    string trk_snd = get_misc_sound("track");
+    if (trk_snd == "") trk_snd = get_sound_path("misc/track.ogg");
+    if (trk_snd != "")
+    {
+        p.play_3d(trk_snd, me.x, me.y, me.z, tracking_x, tracking_y, tracking_z, double(facing), false);
+    }
+}
+
+void stop_tracking()
+{
+    if (tracking_active)
+    {
+        tracking_active = false;
+        speak("Stopped tracking.");
+        string trk_snd = get_sound_path("menu sounds/close.ogg");
+        if (trk_snd == "") trk_snd = get_sound_path("misc/error.ogg");
+        if (trk_snd != "") p.play_stationary(trk_snd, false);
+    }
+}
+
+void query_tracking()
+{
+    if (!tracking_active)
+    {
+        speak("You are not tracking anything.");
+        return;
+    }
+    double angle = calculate_x_y_angle(me.x, me.y, tracking_x, tracking_y, facing, false, true);
+    string dir_str = calculate_x_y_string3d(angle, me.z, tracking_z);
+    int dist = int(round(get_3d_distance(me.x, me.y, me.z, tracking_x, tracking_y, tracking_z), 0));
+    string coords = "" + int(round(tracking_x, 0)) + ", " + int(round(tracking_y, 0)) + ", " + int(round(tracking_z, 0));
+
+    speak(tracking_name + ": " + dir_str + " (" + dist + " tiles away) at " + coords + ".");
+
+    string trk_snd = get_misc_sound("track");
+    if (trk_snd == "") trk_snd = get_sound_path("misc/track.ogg");
+    if (trk_snd != "")
+    {
+        p.play_3d(trk_snd, me.x, me.y, me.z, tracking_x, tracking_y, tracking_z, double(facing), false);
+    }
+}
+
+
+
+void tracking_loop()
+{
+    if (!tracking_active) return;
+
+    // Check if player reached the tracked location or item
+    bool arrived = false;
+    double dist = get_3d_distance(me.x, me.y, me.z, tracking_x, tracking_y, tracking_z);
+
+    if (tracking_type == "item")
+    {
+        if (dist <= 2.0)
+        {
+            arrived = true;
+        }
+    }
+    else
+    {
+        if (me.x >= tracking_minx && me.x <= tracking_maxx && me.y >= tracking_miny && me.y <= tracking_maxy && me.z >= tracking_minz && me.z <= tracking_maxz)
+        {
+            arrived = true;
+        }
+        else if (dist <= 1.5)
+        {
+            arrived = true;
+        }
+    }
+
+    if (arrived)
+    {
+        tracking_active = false;
+        speak("You have reached your destination: " + tracking_name);
+        string tracked_snd = get_misc_sound("tracked");
+        if (tracked_snd == "") tracked_snd = get_sound_path("misc/tracked.ogg");
+        if (tracked_snd != "") p.play_stationary(tracked_snd, false);
+        return;
+    }
+
+    // Play tracking sound every 500 ms in 3D audio at target position
+    if (tracking_timer.elapsed >= 500)
+    {
+        tracking_timer.restart();
+        string trk_snd = get_misc_sound("track");
+        if (trk_snd == "") trk_snd = get_sound_path("misc/track.ogg");
+        if (trk_snd != "")
+        {
+            p.play_3d(trk_snd, me.x, me.y, me.z, tracking_x, tracking_y, tracking_z, double(facing), false);
+        }
+    }
+}

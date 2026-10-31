@@ -1,0 +1,1281 @@
+// weapon_data_saver.nvgt - Persistence and I/O for weapons.
+// Unified encrypted format: settings/weapons.dat (all weapons encrypted into a single bundle)
+
+const string WEAPON_ENC_KEY = "aB3!cD5#eF7@gH9*jK2$lM4^nP8&qR6%tS1*uV5/wX7(yZ0)zA3-dE6+fG9/hJ2=mL4+pO7*rT1_DWWeaponsPack2026";
+const string WEAPON_DIR = "settings/weapons";
+const string WEAPONS_DAT_PATH = "settings/weapons.dat";
+
+string[] weapon_class_folders = {
+	"pistols",
+	"revolvers",
+	"machine_guns",
+	"rifles",
+	"shotguns",
+	"sniper_rifles",
+	"melee",
+	"launchers",
+	"energy_weapons"
+};
+
+
+class weapon_data
+{
+	string id;
+	string name;
+	string description;
+	string wclass;
+	bool melee;
+	int firetime;
+	int firetime_min;
+	int firetime_max;
+	int walktime;
+	int speedtime;
+	int range;
+	int min_damage;
+	int max_damage;
+	int spread;
+	string ammo_type;
+	string feed_device;
+	int capacity;
+	string reserve_item;
+	string reserve_label;
+	bool is_magazine;
+	int starting_reserve;
+	string ammo_display;
+	string fire_modes;
+	string sound_fire;
+	string sound_distant_fire;
+	string sound_ricochet;
+	string sound_empty_mag;
+	string sound_reload;
+	string sound_draw;
+	string sound_hit;
+
+	weapon_data()
+	{
+		id = "";
+		name = "";
+		description = "";
+		wclass = "rifles";
+		melee = false;
+		firetime = 500;
+		firetime_min = 500;
+		firetime_max = 500;
+		walktime = 200;
+		speedtime = 5;
+		range = 10;
+		min_damage = 50;
+		max_damage = 100;
+		spread = 0;
+		ammo_type = "9x19mm Parabellum";
+		feed_device = "magazine";
+		capacity = 30;
+		reserve_item = "";
+		reserve_label = "magazine";
+		is_magazine = true;
+		starting_reserve = 3;
+		ammo_display = "rounds";
+		fire_modes = "semi";
+		sound_fire = "";
+		sound_distant_fire = "";
+		sound_ricochet = "";
+		sound_empty_mag = "";
+		sound_reload = "";
+		sound_draw = "";
+		sound_hit = "";
+	}
+
+	weapon_data(const string&in wid, const string&in wname, const string&in cls = "rifles", int rng = 10, int min_dmg = 50, int max_dmg = 100, int ftime = 500, int cap = 30)
+	{
+		id = wid;
+		name = wname;
+		wclass = cls;
+		melee = false;
+		firetime = ftime;
+		firetime_min = ftime;
+		firetime_max = ftime;
+		walktime = 200;
+		speedtime = 5;
+		range = (rng > 0) ? rng : 10;
+		min_damage = min_dmg;
+		max_damage = max_dmg;
+		spread = 0;
+		ammo_type = "9x19mm Parabellum";
+		feed_device = "magazine";
+		capacity = cap;
+		reserve_item = "";
+		reserve_label = "magazine";
+		is_magazine = true;
+		starting_reserve = 3;
+		ammo_display = "rounds";
+		fire_modes = "semi";
+		sound_fire = "";
+		sound_distant_fire = "";
+		sound_ricochet = "";
+		sound_empty_mag = "";
+		sound_reload = "";
+		sound_draw = "";
+		sound_hit = "";
+	}
+}
+
+weapon_data@[] weapon_registry(0);
+
+bool weapons_loaded_once = false;
+int weapon_cache_version = 0;
+dictionary weapon_missing_cache;
+
+void ensure_weapon_directories()
+{
+	if (!directory_exists("settings")) directory_create("settings");
+	if (!directory_exists(WEAPON_DIR)) directory_create(WEAPON_DIR);
+}
+
+void parse_weapon_wpm(weapon_data@ w, const string&in content)
+{
+	string[]@ lines = string_split(content, "\n", true);
+	if (lines is null) return;
+
+	for (uint i = 0; i < lines.length(); i++)
+	{
+		string line = lines[i].trim_whitespace();
+		if (line == "" || string_starts_with(line, "#") || string_starts_with(line, ";")) continue;
+		int eq = string_contains(line, "=", 1);
+		if (eq == -1) continue;
+
+		string key = string_left(line, eq).trim_whitespace();
+		string val = line.substr(eq + 1).trim_whitespace();
+
+		if (key == "name") w.name = val;
+		else if (key == "description") w.description = val;
+		else if (key == "class") w.wclass = val;
+		else if (key == "melee") w.melee = (val == "true" || val == "1");
+		else if (key == "firetime") w.firetime = int(string_to_number(val));
+		else if (key == "firetime_min") w.firetime_min = int(string_to_number(val));
+		else if (key == "firetime_max") w.firetime_max = int(string_to_number(val));
+		else if (key == "walktime") w.walktime = int(string_to_number(val));
+		else if (key == "speedtime") w.speedtime = int(string_to_number(val));
+		else if (key == "range") w.range = int(string_to_number(val));
+		else if (key == "min_damage") w.min_damage = int(string_to_number(val));
+		else if (key == "max_damage") w.max_damage = int(string_to_number(val));
+		else if (key == "spread") w.spread = int(string_to_number(val));
+		else if (key == "ammo_type") w.ammo_type = val;
+		else if (key == "feed_device") w.feed_device = val;
+		else if (key == "capacity") w.capacity = int(string_to_number(val));
+		else if (key == "reserve_item") w.reserve_item = val;
+		else if (key == "reserve_label") w.reserve_label = val;
+		else if (key == "is_magazine") w.is_magazine = (val == "true" || val == "1");
+		else if (key == "starting_reserve") w.starting_reserve = int(string_to_number(val));
+		else if (key == "ammo_display") w.ammo_display = val;
+		else if (key == "fire_modes") w.fire_modes = val;
+		else if (key == "sound_fire") w.sound_fire = val;
+		else if (key == "sound_distant_fire") w.sound_distant_fire = val;
+		else if (key == "sound_ricochet") w.sound_ricochet = val;
+		else if (key == "sound_empty_mag") w.sound_empty_mag = val;
+		else if (key == "sound_reload") w.sound_reload = val;
+		else if (key == "sound_draw") w.sound_draw = val;
+		else if (key == "sound_hit") w.sound_hit = val;
+	}
+	if (w.firetime <= 0)
+	{
+		if (w.firetime_min > 0) w.firetime = w.firetime_min;
+		else w.firetime = 500;
+	}
+	w.firetime_min = w.firetime;
+	w.firetime_max = w.firetime;
+	resolve_weapon_ammo_config(w);
+}
+
+void resolve_weapon_ammo_config(weapon_data@ w)
+{
+	if (w is null) return;
+	if (w.melee)
+	{
+		w.ammo_type = "";
+		w.reserve_item = "";
+		w.reserve_label = "";
+		w.capacity = 0;
+		return;
+	}
+
+	string cls = string_to_lower_case(w.wclass);
+	string nid = string_to_lower_case(w.id + " " + w.name);
+
+	// If ammo_type is default or empty, infer realistic ammunition and container
+	if (w.ammo_type == "" || w.ammo_type == "9mm Standard" || w.ammo_type == "9x19mm Parabellum")
+	{
+		if (cls == "shotguns" || string_contains(nid, "shotgun", 1) > -1 || string_contains(nid, "maverick", 1) > -1 || string_contains(nid, "remington", 1) > -1 || string_contains(nid, "beneli", 1) > -1 || string_contains(nid, "ithica", 1) > -1)
+		{
+			if (string_contains(nid, "ks23", 1) > -1 || string_contains(nid, "ks123", 1) > -1)
+			{
+				w.ammo_type = "23x75mmR Heavy Shotgun";
+				w.reserve_item = "23x75mmr_heavy_shotgun_shell_box";
+				w.reserve_label = "shell box";
+				w.ammo_display = "shells";
+				w.is_magazine = false;
+			}
+			else
+			{
+				w.ammo_type = "12 Gauge";
+				w.reserve_item = "12_gauge_buckshot_shell_box";
+				w.reserve_label = "shell box";
+				w.ammo_display = "shells";
+				w.is_magazine = false;
+			}
+		}
+		else if (cls == "revolvers" || string_contains(nid, "revolver", 1) > -1 || string_contains(nid, "revouver", 1) > -1 || string_contains(nid, "magnum", 1) > -1 || string_contains(nid, "redhawk", 1) > -1)
+		{
+			if (string_contains(nid, "66", 1) > -1 || string_contains(nid, "security", 1) > -1 || string_contains(nid, "357", 1) > -1)
+			{
+				w.ammo_type = ".357 Magnum";
+				w.reserve_item = "357_magnum_speedloader";
+				w.reserve_label = "speedloader";
+				w.ammo_display = "rounds";
+				w.is_magazine = false;
+			}
+			else if (string_contains(nid, "tauros", 1) > -1 || string_contains(nid, "taurus", 1) > -1 || string_contains(nid, "38", 1) > -1)
+			{
+				w.ammo_type = ".38 Special";
+				w.reserve_item = "38_special_speedloader";
+				w.reserve_label = "speedloader";
+				w.ammo_display = "rounds";
+				w.is_magazine = false;
+			}
+			else
+			{
+				w.ammo_type = ".44 Magnum";
+				w.reserve_item = "44_magnum_speedloader";
+				w.reserve_label = "speedloader";
+				w.ammo_display = "rounds";
+				w.is_magazine = false;
+			}
+		}
+		else if (cls == "sniper_rifles" || string_contains(nid, "sniper", 1) > -1 || string_contains(nid, "barrett", 1) > -1 || string_contains(nid, "barret", 1) > -1 || string_contains(nid, "mosin", 1) > -1 || string_contains(nid, "dragunov", 1) > -1 || string_contains(nid, "awp", 1) > -1 || string_contains(nid, "m24", 1) > -1 || string_contains(nid, "jng90", 1) > -1)
+		{
+			if (string_contains(nid, "barrett", 1) > -1 || string_contains(nid, "barret", 1) > -1 || string_contains(nid, "aw_50", 1) > -1 || string_contains(nid, "50", 1) > -1)
+			{
+				w.ammo_type = "12.7x99mm (.50 BMG)";
+				w.reserve_item = "12.7x99mm_heavy_machine_gun_magazine";
+				w.reserve_label = "magazine";
+				w.ammo_display = "rounds";
+				w.is_magazine = true;
+			}
+			else if (string_contains(nid, "dragunov", 1) > -1 || string_contains(nid, "psl", 1) > -1 || string_contains(nid, "mosin", 1) > -1)
+			{
+				w.ammo_type = "7.62x54mmR";
+				w.reserve_item = "7.62x54mmr_magazine";
+				w.reserve_label = "magazine";
+				w.ammo_display = "rounds";
+				w.is_magazine = true;
+			}
+			else
+			{
+				w.ammo_type = ".308 Winchester";
+				w.reserve_item = "308_winchester_20_round_magazine";
+				w.reserve_label = "magazine";
+				w.ammo_display = "rounds";
+				w.is_magazine = true;
+			}
+		}
+		else if (cls == "rifles" || string_contains(nid, "rifle", 1) > -1 || string_contains(nid, "ar_15", 1) > -1 || string_contains(nid, "m16", 1) > -1 || string_contains(nid, "ak74", 1) > -1 || string_contains(nid, "fal", 1) > -1 || string_contains(nid, "galil", 1) > -1 || string_contains(nid, "famas", 1) > -1 || string_contains(nid, "aug", 1) > -1 || string_contains(nid, "mpt76", 1) > -1 || string_contains(nid, "tar", 1) > -1 || string_contains(nid, "f2000", 1) > -1)
+		{
+			if (string_contains(nid, "ak74", 1) > -1)
+			{
+				w.ammo_type = "5.45x39mm";
+				w.reserve_item = "5.45x39mm_magazine";
+				w.reserve_label = "magazine";
+				w.ammo_display = "rounds";
+				w.is_magazine = true;
+			}
+			else if (string_contains(nid, "fal", 1) > -1 || string_contains(nid, "galil", 1) > -1 || string_contains(nid, "mpt76", 1) > -1)
+			{
+				w.ammo_type = "7.62x51mm NATO";
+				w.reserve_item = "7.62x51mm_nato_battle_rifle_magazine";
+				w.reserve_label = "magazine";
+				w.ammo_display = "rounds";
+				w.is_magazine = true;
+			}
+			else if (string_contains(nid, "247", 1) > -1 || string_contains(nid, "auto rifle", 1) > -1)
+			{
+				w.ammo_type = "7.62x39mm";
+				w.reserve_item = "7.62x39mm_magazine";
+				w.reserve_label = "magazine";
+				w.ammo_display = "rounds";
+				w.is_magazine = true;
+			}
+			else if (string_contains(nid, "gsg5", 1) > -1)
+			{
+				w.ammo_type = "9x19mm Parabellum";
+				w.reserve_item = "9x19mm_30_round_magazine";
+				w.reserve_label = "magazine";
+				w.ammo_display = "rounds";
+				w.is_magazine = true;
+			}
+			else
+			{
+				w.ammo_type = "5.56x45mm NATO";
+				w.reserve_item = "5.56x45mm_nato_rifle_magazine";
+				w.reserve_label = "magazine";
+				w.ammo_display = "rounds";
+				w.is_magazine = true;
+			}
+		}
+		else if (cls == "machine_guns" || string_contains(nid, "machine_gun", 1) > -1 || string_contains(nid, "uzi", 1) > -1 || string_contains(nid, "p90", 1) > -1 || string_contains(nid, "mp5", 1) > -1 || string_contains(nid, "mp7", 1) > -1 || string_contains(nid, "browning", 1) > -1)
+		{
+			if (string_contains(nid, "p90", 1) > -1)
+			{
+				w.ammo_type = "5.7x28mm";
+				w.reserve_item = "5.7x28mm_50_round_magazine";
+				w.reserve_label = "magazine";
+				w.ammo_display = "rounds";
+				w.is_magazine = true;
+			}
+			else if (string_contains(nid, "browning_m2", 1) > -1 || string_contains(nid, "50_cal", 1) > -1)
+			{
+				w.ammo_type = "12.7x99mm (.50 BMG)";
+				w.reserve_item = "12.7x99mm_heavy_machine_gun_magazine";
+				w.reserve_label = "ammo belt";
+				w.ammo_display = "rounds";
+				w.is_magazine = true;
+			}
+			else if (string_contains(nid, "browning_1919", 1) > -1)
+			{
+				w.ammo_type = ".30-06 Springfield";
+				w.reserve_item = "30_06_springfield_cartridge_box";
+				w.reserve_label = "cartridge box";
+				w.ammo_display = "rounds";
+				w.is_magazine = false;
+			}
+			else
+			{
+				w.ammo_type = "9x19mm Parabellum";
+				w.reserve_item = "9x19mm_30_round_magazine";
+				w.reserve_label = "magazine";
+				w.ammo_display = "rounds";
+				w.is_magazine = true;
+			}
+		}
+		else if (cls == "launchers" || string_contains(nid, "launcher", 1) > -1 || string_contains(nid, "flame", 1) > -1 || string_contains(nid, "crossbow", 1) > -1 || string_contains(nid, "cannon", 1) > -1)
+		{
+			if (string_contains(nid, "flame", 1) > -1)
+			{
+				w.ammo_type = "Flamethrower Fuel";
+				w.reserve_item = "flamethrower_fuel_canister";
+				w.reserve_label = "fuel canister";
+				w.ammo_display = "fuel units";
+				w.is_magazine = false;
+			}
+			else if (string_contains(nid, "crossbow", 1) > -1)
+			{
+				w.ammo_type = "Crossbow Bolts";
+				w.reserve_item = "crossbow_bolts_rack";
+				w.reserve_label = "quiver";
+				w.ammo_display = "bolts";
+				w.is_magazine = false;
+			}
+			else
+			{
+				w.ammo_type = "20mm Cannon Rounds";
+				w.reserve_item = "20mm_cannon_round_box";
+				w.reserve_label = "box";
+				w.ammo_display = "rounds";
+				w.is_magazine = false;
+			}
+		}
+		else if (cls == "energy_weapons" || string_contains(nid, "laser", 1) > -1 || string_contains(nid, "plasma", 1) > -1)
+		{
+			w.ammo_type = "Energy Cells";
+			w.reserve_item = "standard_energy_cell";
+			w.reserve_label = "cell";
+			w.ammo_display = "cells";
+			w.is_magazine = true;
+		}
+		else if (cls == "pistols" || string_contains(nid, "pistol", 1) > -1 || string_contains(nid, "glock", 1) > -1 || string_contains(nid, "fnp", 1) > -1 || string_contains(nid, "keltec", 1) > -1 || string_contains(nid, "walther", 1) > -1 || string_contains(nid, "p250", 1) > -1)
+		{
+			if (string_contains(nid, "45", 1) > -1)
+			{
+				w.ammo_type = ".45 ACP";
+				w.reserve_item = "45_acp_13_round_magazine";
+				w.reserve_label = "magazine";
+				w.ammo_display = "rounds";
+				w.is_magazine = true;
+			}
+			else if (string_contains(nid, "40", 1) > -1)
+			{
+				w.ammo_type = ".40 S&W";
+				w.reserve_item = "40_sw_13_round_magazine";
+				w.reserve_label = "magazine";
+				w.ammo_display = "rounds";
+				w.is_magazine = true;
+			}
+			else if (string_contains(nid, "fiveseven", 1) > -1 || string_contains(nid, "57", 1) > -1)
+			{
+				w.ammo_type = "5.7x28mm";
+				w.reserve_item = "5.7x28mm_50_round_magazine";
+				w.reserve_label = "magazine";
+				w.ammo_display = "rounds";
+				w.is_magazine = true;
+			}
+			else if (string_contains(nid, "keltec", 1) > -1 || string_contains(nid, "380", 1) > -1)
+			{
+				w.ammo_type = ".380 ACP";
+				w.reserve_item = "380_acp_8_round_magazine";
+				w.reserve_label = "magazine";
+				w.ammo_display = "rounds";
+				w.is_magazine = true;
+			}
+			else
+			{
+				w.ammo_type = "9x19mm Parabellum";
+				w.reserve_item = "9x19mm_15_round_magazine";
+				w.reserve_label = "magazine";
+				w.ammo_display = "rounds";
+				w.is_magazine = true;
+			}
+		}
+	}
+	if (w.ammo_display == "") w.ammo_display = "rounds";
+	if (w.reserve_label == "") w.reserve_label = "magazine";
+	if (w.reserve_item == "") w.reserve_item = "ammo_9mm";
+	resolve_weapon_timing_and_weight(w);
+}
+
+void resolve_weapon_timing_and_weight(weapon_data@ w)
+{
+	if (w is null) return;
+	string cls = string_to_lower_case(w.wclass);
+	string nid = string_to_lower_case(w.id + " " + w.name);
+
+	if (w.melee || cls == "melee")
+	{
+		w.melee = true;
+		// Standard walking speed (weighs almost nothing)
+		w.walktime = 160;
+
+		// Knife / dagger types: fast firing delay 100-200ms
+		if (string_contains(nid, "knife", 1) > -1 || string_contains(nid, "crt17", 1) > -1 || string_contains(nid, "dagger", 1) > -1)
+		{
+			w.firetime = 120;
+		}
+		else if (string_contains(nid, "claw", 1) > -1)
+		{
+			w.firetime = 140;
+		}
+		else if (string_contains(nid, "machete", 1) > -1)
+		{
+			w.firetime = 250;
+		}
+		else if (string_contains(nid, "axe", 1) > -1)
+		{
+			w.firetime = 320;
+		}
+		else if (string_contains(nid, "katana", 1) > -1)
+		{
+			w.firetime = 350;
+		}
+		else if (string_contains(nid, "diamond", 1) > -1)
+		{
+			w.firetime = 380;
+		}
+		else if (string_contains(nid, "longsword", 1) > -1)
+		{
+			w.firetime = 450;
+		}
+		else // regular sword / default melee (100-500ms)
+		{
+			w.firetime = 280;
+		}
+		w.firetime_min = w.firetime;
+		w.firetime_max = w.firetime;
+		return;
+	}
+
+	if (cls == "pistols" || string_contains(nid, "pistol", 1) > -1)
+	{
+		// Pistols: standard weight, does not impact movement
+		w.walktime = 160;
+
+		// Firetimes vary between 100 and 500ms
+		if (string_contains(nid, "fiveseven", 1) > -1 || string_contains(nid, "57", 1) > -1)
+			w.firetime = 150;
+		else if (string_contains(nid, "keltec", 1) > -1 || string_contains(nid, "380", 1) > -1)
+			w.firetime = 175;
+		else if (string_contains(nid, "auto pistol", 1) > -1)
+			w.firetime = 180;
+		else if (string_contains(nid, "glock9mm", 1) > -1 || string_contains(nid, "glock_17", 1) > -1 || string_contains(nid, "glock", 1) > -1)
+			w.firetime = 210;
+		else if (string_contains(nid, "beretta", 1) > -1 || string_contains(nid, "92fs", 1) > -1)
+			w.firetime = 230;
+		else if (string_contains(nid, "walther", 1) > -1 || string_contains(nid, "p99", 1) > -1)
+			w.firetime = 250;
+		else if (string_contains(nid, "p250", 1) > -1)
+			w.firetime = 260;
+		else if (string_contains(nid, "yavuz", 1) > -1 || string_contains(nid, "mkek", 1) > -1)
+			w.firetime = 275;
+		else if (string_contains(nid, "colt", 1) > -1 || string_contains(nid, "1911", 1) > -1)
+			w.firetime = 320;
+		else if (string_contains(nid, "fnp40", 1) > -1 || string_contains(nid, "40", 1) > -1)
+			w.firetime = 300;
+		else if (string_contains(nid, "fnp45", 1) > -1 || string_contains(nid, "45", 1) > -1 || string_contains(nid, "fnf", 1) > -1 || string_contains(nid, "fn", 1) > -1)
+			w.firetime = 340;
+		else if (string_contains(nid, "desert_eagle", 1) > -1 || string_contains(nid, "eagle", 1) > -1)
+			w.firetime = 440;
+		else if (string_contains(nid, "stp106", 1) > -1)
+			w.firetime = 470;
+		else
+			w.firetime = 250;
+
+		w.firetime_min = w.firetime;
+		w.firetime_max = w.firetime;
+		return;
+	}
+
+	if (cls == "revolvers" || string_contains(nid, "revolver", 1) > -1 || string_contains(nid, "revouver", 1) > -1)
+	{
+		// Revolvers: standard weight, does not impact movement
+		w.walktime = 160;
+
+		// Firetimes vary between 100 and 500ms
+		if (string_contains(nid, "tauros", 1) > -1 || string_contains(nid, "taurus", 1) > -1 || string_contains(nid, "38", 1) > -1)
+			w.firetime = 260;
+		else if (string_contains(nid, "66", 1) > -1)
+			w.firetime = 330;
+		else if (string_contains(nid, "security", 1) > -1 || string_contains(nid, "357", 1) > -1)
+			w.firetime = 360;
+		else if (string_contains(nid, "model29", 1) > -1 || string_contains(nid, "29", 1) > -1)
+			w.firetime = 430;
+		else if (string_contains(nid, "redhawk", 1) > -1)
+			w.firetime = 460;
+		else // magnum revouver / default
+			w.firetime = 480;
+
+		w.firetime_min = w.firetime;
+		w.firetime_max = w.firetime;
+		return;
+	}
+
+	if (cls == "machine_guns" || string_contains(nid, "machine_gun", 1) > -1 || string_contains(nid, "smg", 1) > -1 || string_contains(nid, "uzi", 1) > -1 || string_contains(nid, "p90", 1) > -1 || string_contains(nid, "mp5", 1) > -1 || string_contains(nid, "mp7", 1) > -1)
+	{
+		// Machine guns: firetime starts at 90ms up to 190-200ms
+		if (string_contains(nid, "mp7", 1) > -1)
+		{
+			w.firetime = 90;
+			w.walktime = 165;
+		}
+		else if (string_contains(nid, "fmp90", 1) > -1 || string_contains(nid, "p90", 1) > -1)
+		{
+			w.firetime = 95;
+			w.walktime = 165;
+		}
+		else if (string_contains(nid, "uzi", 1) > -1 || string_contains(nid, "viper", 1) > -1 || string_contains(nid, "awds", 1) > -1)
+		{
+			w.firetime = 105;
+			w.walktime = 165;
+		}
+		else if (string_contains(nid, "m4", 1) > -1)
+		{
+			w.firetime = 115;
+			w.walktime = 180;
+		}
+		else if (string_contains(nid, "carbine", 1) > -1 || string_contains(nid, "modern_sub", 1) > -1)
+		{
+			w.firetime = 125;
+			w.walktime = 175;
+		}
+		else if (string_contains(nid, "mpk_20", 1) > -1 || string_contains(nid, "mpk", 1) > -1)
+		{
+			w.firetime = 130;
+			w.walktime = 170;
+		}
+		else if (string_contains(nid, "mp5", 1) > -1)
+		{
+			w.firetime = 135;
+			w.walktime = 170;
+		}
+		else if (string_contains(nid, "tech9", 1) > -1 || string_contains(nid, "mlk_tech", 1) > -1)
+		{
+			w.firetime = 145;
+			w.walktime = 165;
+		}
+		else if (string_contains(nid, "1919", 1) > -1)
+		{
+			w.firetime = 175;
+			w.walktime = 220;
+		}
+		else if (string_contains(nid, "browning_m2", 1) > -1 || string_contains(nid, "50_cal", 1) > -1)
+		{
+			w.firetime = 190;
+			w.walktime = 235;
+		}
+		else
+		{
+			w.firetime = 120;
+			w.walktime = 170;
+		}
+
+		w.firetime_min = w.firetime;
+		w.firetime_max = w.firetime;
+		return;
+	}
+
+	if (cls == "shotguns" || string_contains(nid, "shotgun", 1) > -1 || string_contains(nid, "remington", 1) > -1 || string_contains(nid, "maverick", 1) > -1 || string_contains(nid, "beneli", 1) > -1 || string_contains(nid, "ks123", 1) > -1)
+	{
+		// Shotguns: keep their original firetimes; walktime weighs a little (175-180ms)
+		w.walktime = 175;
+		if (string_contains(nid, "ks123", 1) > -1 || string_contains(nid, "ks23", 1) > -1)
+		{
+			w.walktime = 185;
+			if (w.firetime <= 0) w.firetime = 1100;
+		}
+		else if (string_contains(nid, "remington", 1) > -1)
+		{
+			w.walktime = 180;
+			if (w.firetime <= 0) w.firetime = 1050;
+		}
+		else if (string_contains(nid, "beneli", 1) > -1)
+		{
+			w.walktime = 175;
+			if (w.firetime <= 0) w.firetime = 750;
+		}
+		else if (string_contains(nid, "ithica", 1) > -1)
+		{
+			w.walktime = 175;
+			if (w.firetime <= 0) w.firetime = 850;
+		}
+		else if (string_contains(nid, "maverick88", 1) > -1)
+		{
+			w.walktime = 178;
+			if (w.firetime <= 0) w.firetime = 900;
+		}
+		else if (string_contains(nid, "m1208", 1) > -1)
+		{
+			w.walktime = 178;
+			if (w.firetime <= 0) w.firetime = 920;
+		}
+		else
+		{
+			w.walktime = 175;
+			if (w.firetime <= 0) w.firetime = 950;
+		}
+		w.firetime_min = w.firetime;
+		w.firetime_max = w.firetime;
+		return;
+	}
+
+	if (cls == "rifles" || string_contains(nid, "rifle", 1) > -1)
+	{
+		// Rifles: weigh a bit more (185-195ms walktime), firetimes 110-250ms
+		if (string_contains(nid, "aug", 1) > -1)
+		{
+			w.firetime = 110;
+			w.walktime = 185;
+		}
+		else if (string_contains(nid, "famas", 1) > -1)
+		{
+			w.firetime = 115;
+			w.walktime = 185;
+		}
+		else if (string_contains(nid, "tar", 1) > -1 || string_contains(nid, "f2000", 1) > -1)
+		{
+			w.firetime = 125;
+			w.walktime = 188;
+		}
+		else if (string_contains(nid, "ar_15", 1) > -1 || string_contains(nid, "colt", 1) > -1)
+		{
+			w.firetime = 140;
+			w.walktime = 188;
+		}
+		else if (string_contains(nid, "m16", 1) > -1)
+		{
+			w.firetime = 145;
+			w.walktime = 190;
+		}
+		else if (string_contains(nid, "ak74", 1) > -1)
+		{
+			w.firetime = 150;
+			w.walktime = 190;
+		}
+		else if (string_contains(nid, "gsg5", 1) > -1)
+		{
+			w.firetime = 160;
+			w.walktime = 182;
+		}
+		else if (string_contains(nid, "247", 1) > -1 || string_contains(nid, "auto rifle", 1) > -1)
+		{
+			w.firetime = 180;
+			w.walktime = 192;
+		}
+		else if (string_contains(nid, "galil", 1) > -1)
+		{
+			w.firetime = 200;
+			w.walktime = 195;
+		}
+		else if (string_contains(nid, "fal", 1) > -1 || string_contains(nid, "mpt76", 1) > -1)
+		{
+			w.firetime = 230;
+			w.walktime = 195;
+		}
+		else
+		{
+			w.firetime = 160;
+			w.walktime = 190;
+		}
+		w.firetime_min = w.firetime;
+		w.firetime_max = w.firetime;
+		return;
+	}
+
+	if (cls == "sniper_rifles" || string_contains(nid, "sniper", 1) > -1)
+	{
+		// Sniper rifles: weigh a bit more still (205-225ms walktime), firetimes 550-1200ms
+		if (string_contains(nid, "dragunov", 1) > -1 || string_contains(nid, "psl", 1) > -1)
+		{
+			w.firetime = 550;
+			w.walktime = 205;
+		}
+		else if (string_contains(nid, "mosin", 1) > -1)
+		{
+			w.firetime = 850;
+			w.walktime = 210;
+		}
+		else if (string_contains(nid, "m24", 1) > -1)
+		{
+			w.firetime = 900;
+			w.walktime = 210;
+		}
+		else if (string_contains(nid, "jng90", 1) > -1)
+		{
+			w.firetime = 950;
+			w.walktime = 215;
+		}
+		else if (string_contains(nid, "awp", 1) > -1)
+		{
+			w.firetime = 1000;
+			w.walktime = 215;
+		}
+		else if (string_contains(nid, "barret", 1) > -1 || string_contains(nid, "barrett", 1) > -1 || string_contains(nid, "aw_50", 1) > -1)
+		{
+			w.firetime = 1150;
+			w.walktime = 225;
+		}
+		else
+		{
+			w.firetime = 900;
+			w.walktime = 210;
+		}
+		w.firetime_min = w.firetime;
+		w.firetime_max = w.firetime;
+		return;
+	}
+
+	if (cls == "launchers" || string_contains(nid, "cannon", 1) > -1 || string_contains(nid, "flame", 1) > -1 || string_contains(nid, "crossbow", 1) > -1)
+	{
+		// Launchers: heavy weapons, weigh even more (220-250ms walktime)
+		if (string_contains(nid, "flame", 1) > -1)
+		{
+			w.firetime = 100;
+			w.walktime = 220;
+		}
+		else if (string_contains(nid, "crossbow", 1) > -1)
+		{
+			w.firetime = 600;
+			w.walktime = 175;
+		}
+		else if (string_contains(nid, "cannon", 1) > -1)
+		{
+			w.firetime = 1500;
+			w.walktime = 250;
+		}
+		else
+		{
+			w.firetime = 1000;
+			w.walktime = 230;
+		}
+		w.firetime_min = w.firetime;
+		w.firetime_max = w.firetime;
+		return;
+	}
+
+	if (cls == "energy_weapons" || string_contains(nid, "laser", 1) > -1)
+	{
+		w.firetime = 200;
+		w.walktime = 190;
+		w.firetime_min = w.firetime;
+		w.firetime_max = w.firetime;
+		return;
+	}
+}
+
+string serialize_weapon_wpm(weapon_data@ w)
+{
+	string s = "";
+
+	s += "name=" + w.name + "\n";
+	if (w.description != "") s += "description=" + w.description + "\n";
+	s += "class=" + w.wclass + "\n";
+	s += "melee=" + (w.melee ? "true" : "false") + "\n";
+	s += "firetime=" + w.firetime + "\n";
+	s += "walktime=" + w.walktime + "\n";
+	s += "speedtime=" + w.speedtime + "\n";
+	s += "range=" + w.range + "\n";
+	s += "min_damage=" + w.min_damage + "\n";
+	s += "max_damage=" + w.max_damage + "\n";
+	s += "spread=" + w.spread + "\n";
+	s += "ammo_type=" + w.ammo_type + "\n";
+	s += "feed_device=" + w.feed_device + "\n";
+	s += "capacity=" + w.capacity + "\n";
+	s += "reserve_item=" + w.reserve_item + "\n";
+	s += "reserve_label=" + w.reserve_label + "\n";
+	s += "is_magazine=" + (w.is_magazine ? "true" : "false") + "\n";
+	s += "starting_reserve=" + w.starting_reserve + "\n";
+	s += "ammo_display=" + w.ammo_display + "\n";
+	s += "fire_modes=" + w.fire_modes + "\n";
+	if (w.sound_fire != "") s += "sound_fire=" + w.sound_fire + "\n";
+	if (w.sound_distant_fire != "") s += "sound_distant_fire=" + w.sound_distant_fire + "\n";
+	if (w.sound_ricochet != "") s += "sound_ricochet=" + w.sound_ricochet + "\n";
+	if (w.sound_empty_mag != "") s += "sound_empty_mag=" + w.sound_empty_mag + "\n";
+	if (w.sound_reload != "") s += "sound_reload=" + w.sound_reload + "\n";
+	if (w.sound_draw != "") s += "sound_draw=" + w.sound_draw + "\n";
+	if (w.sound_hit != "") s += "sound_hit=" + w.sound_hit + "\n";
+	return s;
+}
+
+string serialize_all_weapons_bundle()
+{
+	string s = "# Shooter Unified Weapons Bundle v1.0\n\n";
+	for (uint i = 0; i < weapon_registry.length(); i++)
+	{
+		weapon_data@ w = @weapon_registry[i];
+		s += "[weapon:" + w.id + "]\n";
+		s += "name=" + w.name + "\n";
+		if (w.description != "") s += "description=" + w.description + "\n";
+		s += "class=" + w.wclass + "\n";
+		s += "melee=" + (w.melee ? "1" : "0") + "\n";
+		s += "firetime=" + w.firetime + "\n";
+		s += "walktime=" + w.walktime + "\n";
+		s += "speedtime=" + w.speedtime + "\n";
+		s += "range=" + w.range + "\n";
+		s += "min_damage=" + w.min_damage + "\n";
+		s += "max_damage=" + w.max_damage + "\n";
+		s += "spread=" + w.spread + "\n";
+		s += "ammo_type=" + w.ammo_type + "\n";
+		s += "feed_device=" + w.feed_device + "\n";
+		s += "capacity=" + w.capacity + "\n";
+		s += "reserve_item=" + w.reserve_item + "\n";
+		s += "reserve_label=" + w.reserve_label + "\n";
+		s += "is_magazine=" + (w.is_magazine ? "1" : "0") + "\n";
+		s += "starting_reserve=" + w.starting_reserve + "\n";
+		s += "ammo_display=" + w.ammo_display + "\n";
+		s += "fire_modes=" + w.fire_modes + "\n";
+		s += "sound_fire=" + w.sound_fire + "\n";
+		s += "sound_distant_fire=" + w.sound_distant_fire + "\n";
+		s += "sound_ricochet=" + w.sound_ricochet + "\n";
+		s += "sound_empty_mag=" + w.sound_empty_mag + "\n";
+		s += "sound_reload=" + w.sound_reload + "\n";
+		s += "sound_draw=" + w.sound_draw + "\n";
+		s += "sound_hit=" + w.sound_hit + "\n\n";
+	}
+	return s;
+}
+
+void parse_weapons_bundle(const string&in content)
+{
+	string[]@ lines = string_split(content, "\n", true);
+	if (lines is null) return;
+	weapon_data@ current = null;
+
+	for (uint i = 0; i < lines.length(); i++)
+	{
+		string line = lines[i].trim_whitespace();
+		if (line == "" || string_starts_with(line, "#") || string_starts_with(line, ";")) continue;
+
+		if (string_starts_with(line, "[weapon:") && string_ends_with(line, "]"))
+		{
+			string id = line.substr(8, line.length() - 9);
+			@current = @find_weapon_data(id);
+			if (current is null)
+			{
+				@current = @weapon_data();
+				current.id = id;
+				weapon_registry.insert_last(current);
+			}
+			continue;
+		}
+
+		if (current is null) continue;
+
+		int eq = string_contains(line, "=", 1);
+		if (eq == -1) continue;
+		string key = string_left(line, eq).trim_whitespace();
+		string val = line.substr(eq + 1).trim_whitespace();
+
+		if (key == "name") current.name = val;
+		else if (key == "description") current.description = val;
+		else if (key == "class") current.wclass = val;
+		else if (key == "melee") current.melee = (val == "1" || val == "true");
+		else if (key == "firetime")
+		{
+			current.firetime = int(string_to_number(val));
+			current.firetime_min = current.firetime;
+			current.firetime_max = current.firetime;
+		}
+		else if (key == "walktime") current.walktime = int(string_to_number(val));
+		else if (key == "speedtime") current.speedtime = int(string_to_number(val));
+		else if (key == "range") current.range = int(string_to_number(val));
+		else if (key == "min_damage") current.min_damage = int(string_to_number(val));
+		else if (key == "max_damage") current.max_damage = int(string_to_number(val));
+		else if (key == "spread") current.spread = int(string_to_number(val));
+		else if (key == "ammo_type") current.ammo_type = val;
+		else if (key == "feed_device") current.feed_device = val;
+		else if (key == "capacity") current.capacity = int(string_to_number(val));
+		else if (key == "reserve_item") current.reserve_item = val;
+		else if (key == "reserve_label") current.reserve_label = val;
+		else if (key == "is_magazine") current.is_magazine = (val == "1" || val == "true");
+		else if (key == "starting_reserve") current.starting_reserve = int(string_to_number(val));
+		else if (key == "ammo_display") current.ammo_display = val;
+		else if (key == "fire_modes") current.fire_modes = val;
+		else if (key == "sound_fire") current.sound_fire = val;
+		else if (key == "sound_distant_fire") current.sound_distant_fire = val;
+		else if (key == "sound_ricochet") current.sound_ricochet = val;
+		else if (key == "sound_empty_mag") current.sound_empty_mag = val;
+		else if (key == "sound_reload") current.sound_reload = val;
+		else if (key == "sound_draw") current.sound_draw = val;
+		else if (key == "sound_hit") current.sound_hit = val;
+	}
+
+	for (uint k = 0; k < weapon_registry.length(); k++)
+	{
+		weapon_data@ cw = weapon_registry[k];
+		if (cw !is null)
+		{
+			if (cw.wclass == "shotguns")
+			{
+				cw.fire_modes = "semi";
+			}
+			resolve_weapon_ammo_config(cw);
+		}
+	}
+}
+
+
+bool save_weapon_wpm(weapon_data@ w)
+{
+	if (w is null || w.id == "") return false;
+	ensure_weapon_directories();
+	string folder = WEAPON_DIR + "/" + w.wclass;
+	if (!directory_exists(folder)) directory_create(folder);
+	string path = folder + "/" + w.id + ".wpm";
+
+	file f;
+	if (!f.open(path, "wb")) return false;
+	string data = serialize_weapon_wpm(w);
+	f.write(data);
+	f.close();
+
+	bool found = false;
+	for (uint i = 0; i < weapon_registry.length(); i++)
+	{
+		if (weapon_registry[i].id == w.id)
+		{
+			@weapon_registry[i] = w;
+			found = true;
+			break;
+		}
+	}
+	if (!found) weapon_registry.insert_last(w);
+	weapon_cache_version++;
+	if (file_exists(WEAPONS_DAT_PATH)) encrypt_all_weapons_silent();
+	return true;
+}
+
+void load_all_weapons_wpm(bool force = false)
+{
+	if (!force && weapon_registry.length() > 0) return;
+	weapon_registry.resize(0);
+	ensure_weapon_directories();
+
+	// 1. Primary: Load single unified encrypted weapons.dat
+	string bundle_path = file_exists(WEAPONS_DAT_PATH) ? WEAPONS_DAT_PATH : (file_exists("data/weapons.dat") ? "data/weapons.dat" : (file_exists("weapons.dat") ? "weapons.dat" : ""));
+	if (bundle_path != "")
+	{
+		file f;
+		if (f.open(bundle_path, "rb"))
+		{
+			string enc = f.read();
+			f.close();
+			string decrypted = string_decrypt(enc, WEAPON_ENC_KEY);
+			if (decrypted.length() > 0)
+			{
+				parse_weapons_bundle(decrypted);
+				if (weapon_registry.length() > 0)
+				{
+					weapon_cache_version++;
+					weapons_loaded_once = true;
+					return;
+				}
+			}
+		}
+	}
+
+	// 2. Fallback: Scan existing subfolders in WEAPON_DIR
+	string[]@ existing_dirs = find_directories(WEAPON_DIR + "/*");
+	if (existing_dirs !is null)
+	{
+		for (uint c = 0; c < existing_dirs.length(); c++)
+		{
+			string folder = WEAPON_DIR + "/" + existing_dirs[c];
+			if (!directory_exists(folder)) continue;
+
+			// Plain .wpm files
+			string[]@ files = find_files(folder + "/*.wpm");
+			if (files !is null)
+			{
+				for (uint i = 0; i < files.length(); i++)
+				{
+					string fn = files[i];
+					string id = fn;
+					if (string_ends_with(id, ".wpm")) id = string_left(id, id.length() - 4);
+
+					if (find_weapon_data(id) !is null) continue;
+
+					file f;
+					if (f.open(folder + "/" + fn, "rb"))
+					{
+						string content = f.read();
+						f.close();
+
+						weapon_data w;
+						w.id = id;
+						w.wclass = existing_dirs[c];
+						parse_weapon_wpm(w, content);
+						weapon_registry.insert_last(w);
+					}
+				}
+			}
+
+			// Encrypted .dat files (legacy)
+			string[]@ dat_files = find_files(folder + "/*.dat");
+			if (dat_files !is null)
+			{
+				for (uint i = 0; i < dat_files.length(); i++)
+				{
+					string fn = dat_files[i];
+					string id = fn;
+					if (string_ends_with(id, ".dat")) id = string_left(id, id.length() - 4);
+
+					if (find_weapon_data(id) !is null) continue;
+
+					file f;
+					if (f.open(folder + "/" + fn, "rb"))
+					{
+						string content = f.read();
+						f.close();
+						string decrypted = string_decrypt(content, WEAPON_ENC_KEY);
+						if (decrypted != "")
+						{
+							weapon_data w;
+							w.id = id;
+							w.wclass = existing_dirs[c];
+							parse_weapon_wpm(w, decrypted);
+							weapon_registry.insert_last(w);
+						}
+					}
+				}
+			}
+		}
+	}
+	sort_weapon_registry();
+	weapon_cache_version++;
+	weapons_loaded_once = true;
+}
+
+void sort_weapon_registry()
+{
+	for (uint i = 0; i < weapon_registry.length(); i++)
+	{
+		for (uint j = i + 1; j < weapon_registry.length(); j++)
+		{
+			if (string_to_lower_case(weapon_registry[j].id) < string_to_lower_case(weapon_registry[i].id))
+			{
+				weapon_data@ tmp = weapon_registry[i];
+				@weapon_registry[i] = weapon_registry[j];
+				@weapon_registry[j] = tmp;
+			}
+		}
+	}
+}
+
+weapon_data@ find_weapon_data(const string&in id)
+{
+	if (id == "") return null;
+	// 1. Exact match
+	for (uint i = 0; i < weapon_registry.length(); i++)
+	{
+		if (weapon_registry[i].id == id) return weapon_registry[i];
+	}
+	// 2. Case-insensitive and spaces vs underscores match
+	string norm = string_to_lower_case(string_replace(id, "_", " ", true));
+	for (uint i = 0; i < weapon_registry.length(); i++)
+	{
+		string reg_norm = string_to_lower_case(string_replace(weapon_registry[i].id, "_", " ", true));
+		if (reg_norm == norm) return weapon_registry[i];
+	}
+	// 3. Fallback common aliases for legacy configurations and stores
+	if (norm == "glock 17" || norm == "glock17") return find_weapon_data("glock_17_pistol");
+	if (norm == "ak47" || norm == "ak 47" || norm == "ak47 assault rifle") return find_weapon_data("AK74");
+	if (norm == "benelli m4" || norm == "benelli m4 shotgun") return find_weapon_data("beneli m4");
+	if (norm == "m6d magnum" || norm == "m6d magnum tactical") return find_weapon_data("magnum revouver");
+	if (norm == "colt 45" || norm == "colt45") return find_weapon_data("colt1911");
+	if (norm == "remington") return find_weapon_data("remington_870_pump_action_shotgun");
+	return null;
+}
+
+weapon_data@ get_weapon_data(const string&in id)
+{
+	if (id == "") return null;
+	weapon_data@ w = find_weapon_data(id);
+	if (w !is null) return w;
+
+	// One-time lazy load (startup already loads, so this only fires for callers
+	// that touch weapons before the explicit load has run).
+	if (!weapons_loaded_once)
+	{
+		weapons_loaded_once = true;
+		load_all_weapons_wpm();
+		w = find_weapon_data(id);
+		if (w !is null) return w;
+	}
+
+	// A known-missing id must NEVER trigger a full re-scan; the failure is
+	// cached per registry version so repeated lookups are O(1).
+	int ver = 0;
+	if (weapon_missing_cache.get(id, ver) && ver == weapon_cache_version) return null;
+	weapon_missing_cache.set(id, weapon_cache_version);
+	return null;
+}
+
+bool delete_weapon_file(const string&in id)
+{
+	if (id == "") return false;
+	string[]@ existing_dirs = find_directories(WEAPON_DIR + "/*");
+	if (existing_dirs !is null)
+	{
+		for (uint c = 0; c < existing_dirs.length(); c++)
+		{
+			string folder = WEAPON_DIR + "/" + existing_dirs[c];
+			string path = folder + "/" + id + ".wpm";
+			if (file_exists(path))
+			{
+				file_delete(path);
+			}
+			string dat_path = folder + "/" + id + ".dat";
+			if (file_exists(dat_path))
+			{
+				file_delete(dat_path);
+			}
+			// If folder became empty, clean up the empty directory on disk
+			string[]@ remaining = find_files(folder + "/*");
+			if (remaining is null || remaining.length() == 0)
+			{
+				directory_delete(folder);
+			}
+		}
+	}
+	for (uint i = 0; i < weapon_registry.length(); i++)
+	{
+		if (weapon_registry[i].id == id)
+		{
+			weapon_registry.remove_at(i);
+			break;
+		}
+	}
+	weapon_cache_version++;
+	if (file_exists(WEAPONS_DAT_PATH))
+	{
+		if (weapon_registry.length() > 0)
+			encrypt_all_weapons_silent();
+		else
+			file_delete(WEAPONS_DAT_PATH);
+	}
+	return true;
+}
+
+bool delete_weapon_wpm(const string&in id)
+{
+	return delete_weapon_file(id);
+}
+
+bool is_weapon_encrypted(const string&in id = "")
+{
+	return file_exists(WEAPONS_DAT_PATH) || file_exists("data/weapons.dat") || file_exists("weapons.dat");
+}
+
+void encrypt_all_weapons_silent()
+{
+	if (weapon_registry.length() == 0) return;
+	ensure_weapon_directories();
+	string bundle = serialize_all_weapons_bundle();
+	string enc = string_encrypt(bundle, WEAPON_ENC_KEY);
+	file f;
+	if (f.open(WEAPONS_DAT_PATH, "wb"))
+	{
+		f.write(enc);
+		f.close();
+	}
+}
+
+void encrypt_all_weapons()
+{
+	ensure_weapon_directories();
+	if (weapon_registry.length() == 0)
+	{
+		load_all_weapons_wpm();
+	}
+	if (weapon_registry.length() == 0)
+	{
+		speak("No weapons found to encrypt.");
+		return;
+	}
+	encrypt_all_weapons_silent();
+	for (uint c = 0; c < weapon_class_folders.length(); c++)
+	{
+		string folder = WEAPON_DIR + "/" + weapon_class_folders[c];
+		if (directory_exists(folder))
+		{
+			string[]@ files = find_files(folder + "/*.wpm");
+			if (files !is null)
+			{
+				for (uint i = 0; i < files.length(); i++)
+				{
+					file_delete(folder + "/" + files[i]);
+				}
+			}
+		}
+	}
+	speak(weapon_registry.length() + " weapons encrypted into weapons.dat.");
+}
+
+void decrypt_all_weapons()
+{
+	ensure_weapon_directories();
+	load_all_weapons_wpm();
+	int count = 0;
+	for (uint i = 0; i < weapon_registry.length(); i++)
+	{
+		weapon_data@ w = @weapon_registry[i];
+		string folder = WEAPON_DIR + "/" + w.wclass;
+		if (!directory_exists(folder)) directory_create(folder);
+		string path = folder + "/" + w.id + ".wpm";
+		file f;
+		if (f.open(path, "wb"))
+		{
+			f.write(serialize_weapon_wpm(w));
+			f.close();
+			count++;
+		}
+	}
+	if (file_exists(WEAPONS_DAT_PATH)) file_delete(WEAPONS_DAT_PATH);
+	if (file_exists("data/weapons.dat")) file_delete("data/weapons.dat");
+	if (file_exists("weapons.dat")) file_delete("weapons.dat");
+	speak(count + " weapons decrypted.");
+}
