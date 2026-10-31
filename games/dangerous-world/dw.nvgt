@@ -128,7 +128,10 @@ string focuseditem;
 timer autosave_timer;
 double xp=0;
 int resurrections=0;
-const string prefsdir="settings";
+// Keep persistent data independent of the process working directory. NVGT
+// resolves DIRECTORY_APPDATA per platform (and keeps it stable between runs).
+const string prefsdir = DIRECTORY_APPDATA + "/StefanGames/Dangerous World";
+const string game_save_path = prefsdir + "/game_save.dat";
 
 double get_xp_required(int lvl)
 {
@@ -236,7 +239,11 @@ void play_logo_intro()
 savedata sd(prefsdir+"/settings.dat","gipwjefiqoiqewiofeiofqwehjoiwmoiwaniewnfoipwqenefowqiniosawENGRWORWIOPNHGRNIOOGINWGR");
 void main()
 {
-	if (!directory_exists(prefsdir)) directory_create(prefsdir);
+	if (!directory_create(prefsdir))
+	{
+		dlg("Could not create the game's data folder in AppData: " + prefsdir);
+		exit();
+	}
 	readprefs();
 	kb_init();
 	load_maps_bundle();
@@ -260,10 +267,7 @@ cheater.load(cpath);
 cheater.play_wait();
 exit();
 }
-if (!file_exists(prefsdir+"/settings.dat"))
-{
-dlg("Settings file not found, creating a new settings file...");
-}
+
 	p.volume_step = 2.0;
 	sp.volume_step = 2.0;
 	itempool.volume_step = 2.0;
@@ -1016,6 +1020,13 @@ return string_to_number(str);
 }
 void readprefs()
 {
+if (!file_exists(prefsdir+"/settings.dat"))
+{
+	// Persist defaults on first launch instead of waiting for the player to
+	// change an option; otherwise every launch reports a missing config file.
+	writeprefs();
+	return;
+}
 sd.load();
 if (sd.d.exists("menu_music_volume"))
 {
@@ -1119,7 +1130,7 @@ void writeprefs()
 }
 void save_location()
 {
-    savedata loc(prefsdir+"/location.dat","gipwjefiqoiqewiofeiofqwehjoiwmoiwaniewnfoipwqenefowqiniosawENGRWORWIOPNHGRNIOOGINWGR");
+    savedata loc(game_save_path,"gipwjefiqoiqewiofeiofqwehjoiwmoiwaniewnfoipwqenefowqiniosawENGRWORWIOPNHGRNIOOGINWGR");
     loc.add("mapname", mapname);
     loc.add("pos_x", int(me.x));
     loc.add("pos_y", int(me.y));
@@ -1127,6 +1138,7 @@ void save_location()
     loc.add("facing", facing);
     loc.add("level", level);
     loc.add("xp", xp);
+    loc.add("kills", kills);
     loc.add("resurrections", resurrections);
     loc.add("health", health);
     loc.add("maxhealth", maxhealth);
@@ -1134,6 +1146,7 @@ void save_location()
     loc.add("equipped_shield_id", (current_shield !is null ? current_shield.id : ""));
     loc.add("equipped_shield_durability", (current_shield !is null ? current_shield.durability : 0));
     loc.add("inventory_data", serialize_inventory());
+    loc.add("quick_inventory_item", quick_inventory_item);
     // death, exit, or return never rewinds it.
     loc.add("is_sitting", is_sitting ? 1 : 0);
     loc.add("discovered_maps", serialize_discovered_maps());
@@ -1141,13 +1154,13 @@ void save_location()
 }
 void clear_location()
 {
-    if (file_exists(prefsdir+"/location.dat"))
-        file_delete(prefsdir+"/location.dat");
+    if (file_exists(game_save_path))
+        file_delete(game_save_path);
 }
 void load_location(string &out saved_map, int &out lx, int &out ly, int &out lz, int &out lfacing)
 {
-    savedata loc(prefsdir+"/location.dat","gipwjefiqoiqewiofeiofqwehjoiwmoiwaniewnfoipwqenefowqiniosawENGRWORWIOPNHGRNIOOGINWGR");
-    loc.load();
+    savedata loc(game_save_path,"gipwjefiqoiqewiofeiofqwehjoiwmoiwaniewnfoipwqenefowqiniosawENGRWORWIOPNHGRNIOOGINWGR");
+    if (file_exists(game_save_path)) loc.load();
     if (loc.d.exists("mapname"))
     {
         saved_map = loc.read("mapname");
@@ -1159,6 +1172,7 @@ void load_location(string &out saved_map, int &out lx, int &out ly, int &out lz,
 		if (level < 0) level = 0;
         xprequired = get_xp_required(level);
         xp = loc.readn("xp");
+        if (loc.d.exists("kills")) kills = loc.readn("kills");
         resurrections = loc.readn("resurrections");
         maxhealth = 1000 * (1.0 + (resurrections * 0.3));
         if (loc.d.exists("maxhealth")) maxhealth = loc.readn("maxhealth");
@@ -1171,6 +1185,17 @@ void load_location(string &out saved_map, int &out lx, int &out ly, int &out lz,
         if (loc.d.exists("inventory_data"))
         {
             deserialize_inventory(loc.read("inventory_data"));
+        }
+        if (loc.d.exists("quick_inventory_item"))
+        {
+            quick_inventory_item = loc.read("quick_inventory_item");
+            if (get_item_count(quick_inventory_item) <= 0) quick_inventory_item = "";
+        }
+        if (loc.d.exists("current_weapon"))
+        {
+            string saved_weapon_id = loc.read("current_weapon");
+            if (saved_weapon_id != "" && get_item_count(saved_weapon_id) > 0)
+                equip_weapon(saved_weapon_id, true);
         }
         if (loc.d.exists("equipped_shield_id"))
         {
@@ -1200,6 +1225,7 @@ void load_location(string &out saved_map, int &out lx, int &out ly, int &out lz,
         lx = 1; ly = 0; lz = 0; lfacing = 0;
         level = 1;
         xp = 0;
+        kills = 0;
         resurrections = 0;
         maxhealth = 1000;
         health = maxhealth;
@@ -1207,6 +1233,13 @@ void load_location(string &out saved_map, int &out lx, int &out ly, int &out lz,
         current_weapon_id = "";
         walktime = 160;
         remove_all_equipment();
+        quick_inventory_item = "";
+        mapname = saved_map;
+        me.x = lx;
+        me.y = ly;
+        me.z = lz;
+        facing = lfacing;
+        save_location();
     }
 }
 void tempreset_internal(bool save_state, const string&in target_map = "")
