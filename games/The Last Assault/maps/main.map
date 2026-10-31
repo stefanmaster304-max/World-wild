@@ -1,0 +1,18 @@
+name:main
+bounds:0:250:0:250:0:40
+platform:0:250:0:250:0:0:concrete2
+source:0:250:0:150:0:250:citybirds.ogg
+zone:0:250:0:100:0:250:Concrete
+platform:0:250:101:140:0:0:grass2
+zone:0:300:101:140:0:250:Grass
+platform:50:70:110:130:0:0:mud
+platform:55:65:115:125:0:0:swimming
+platform:50:55:109:124:20:20:bridge
+staircase:50:55:109:109:0:20:metal
+zone:50:55:109:109:0:20:Stairs to bridge
+zone:50:55:110:124:20:40:Bridge
+zone:50:70:110:130:0:250:A gently flowing river
+source:50:70:110:130:0:10:river.ogg
+platform:0:250:151:230:0:0:swamp
+source:0:250:151:230:0:250:swamp.ogg
+zone:0:250:151:230:0:250:A swamp

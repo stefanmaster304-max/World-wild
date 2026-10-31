@@ -1,16 +1,16 @@
 void dlg(string message)
 {
-speak(message);
+game_speak(message);
 while(true)
 {
 if (key_pressed(KEY_LEFT) or key_pressed(KEY_RIGHT) or key_pressed(KEY_UP) or key_pressed(KEY_DOWN))
 {
-speak(message);
+game_speak(message);
 }
 if (key_pressed(KEY_C))
 {
 clipboard_copy_text(message);
-speak("Copied");
+game_speak("Copied");
 }
 if (key_pressed(KEY_RETURN) or key_pressed(KEY_ESCAPE))
 {

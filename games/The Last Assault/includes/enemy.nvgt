@@ -50,7 +50,7 @@ xp+=random(10,30);
 enemies.remove_at(i);
 break;
 }
-if (me.x>enemies[i].x-enemies[i].wrange and me.x<enemies[i].x+enemies[i].wrange and me.y==enemies[i].y and enemies[i].shoottimer.elapsed>=enemies[i].wtime)
+if (get_safe_zone_at(me.x,me.y,me.z)=="" and get_safe_zone_at(enemies[i].x,enemies[i].y,enemies[i].z)=="" and me.x>enemies[i].x-enemies[i].wrange and me.x<enemies[i].x+enemies[i].wrange and me.y==enemies[i].y and enemies[i].shoottimer.elapsed>=enemies[i].wtime)
 {
 enemies[i].shoottimer.restart();
 p.play_3d(game_audio_path(enemies[i].w+".ogg"),me.x,me.y,me.z,enemies[i].x,enemies[i].y,enemies[i].z,false);
@@ -60,7 +60,7 @@ health-=enemies[i].wdamage;
 if (enemies[i].etimer.elapsed>=enemies[i].emovetime)
 {
 enemies[i].etimer.restart();
-p.play_3d(game_audio_path(get_tile_at(enemies[i].x,enemies[i].y,enemies[i].z)+"step"+random(1,5)+".ogg"),me.x,me.y,me.z,enemies[i].x,enemies[i].y,enemies[i].z,false);
+p.play_3d(game_audio_path(get_platform_at(enemies[i].x,enemies[i].y,enemies[i].z)+"step"+random(1,5)+".ogg"),me.x,me.y,me.z,enemies[i].x,enemies[i].y,enemies[i].z,false);
 if (enemies[i].x<me.x)
 {
 enemies[i].x++;
@@ -90,7 +90,7 @@ enemies[i].y=me.y;
 if (espawntimer.elapsed>=10000 and enemies.length()<5)
 {
 espawntimer.restart();
-spawn_enemy(random(0,maxx),random(0,maxy),0);
+spawn_enemy(random(map_min_x,map_max_x),random(map_min_y,map_max_y),map_min_z);
 }
 }
 void spawn_enemy(int ex, int ey, int ez)

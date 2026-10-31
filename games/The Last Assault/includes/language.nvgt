@@ -1,0 +1,526 @@
+settings game_config;
+string game_language = "en";
+bool menu_wrap_enabled = true;
+timer player_save_timer;
+
+string tr(const string &in source)
+{
+	if(game_language=="en") return source;
+	if(game_language=="pt")
+	{
+		if(source=="Play") return "Jogar"; if(source=="Settings") return "Configurações";
+		if(source=="Documentation") return "Documentação"; if(source=="Exit") return "Sair";
+		if(source=="Main menu") return "Menu principal"; if(source=="Select a map") return "Selecionar mapa";
+		if(source=="View README file") return "Ver arquivo README"; if(source=="View changelog file") return "Ver arquivo de alterações";
+		if(source=="Game language") return "Idioma do jogo"; if(source=="Menu wrapping") return "Navegação circular nos menus";
+		if(source=="Enabled") return "Ativada"; if(source=="Disabled") return "Desativada";
+		if(source=="Close") return "Fechar"; if(source=="Current location: ") return "Localização atual: ";
+		if(source=="Area unknown") return "Área desconhecida";
+		if(source=="Weapons cannot be used in a safe zone.") return "Não é possível usar armas em uma zona segura.";
+		if(source=="Settings saved.") return "Configurações salvas.";
+		if(source=="Back") return "Voltar"; if(source=="Map construction menu") return "Menu de construção do mapa";
+		if(source=="Create new map") return "Criar novo mapa"; if(source=="Edit current map lines") return "Editar linhas do mapa atual";
+		if(source=="Delete current map") return "Excluir mapa atual"; if(source=="Add platform") return "Adicionar plataforma";
+		if(source=="Add zone") return "Adicionar zona"; if(source=="Add safe zone") return "Adicionar zona segura";
+		if(source=="Add travel point") return "Adicionar ponto de viagem"; if(source=="Add positional sound source") return "Adicionar fonte sonora posicional";
+		if(source=="Add area ambient sound") return "Adicionar som ambiente de área"; if(source=="Add staircase") return "Adicionar escada";
+		if(source=="Close") return "Fechar"; if(source=="Add") return "Adicionar"; if(source=="Cancel") return "Cancelar";
+		if(source=="Zone name") return "Nome da zona"; if(source=="Minimum X") return "X mínimo"; if(source=="Maximum X") return "X máximo";
+		if(source=="Minimum Y") return "Y mínimo"; if(source=="Maximum Y") return "Y máximo";
+		if(source=="Minimum Z") return "Z mínimo"; if(source=="Maximum Z") return "Z máximo";
+		if(source=="Sound category") return "Categoria de som"; if(source=="Music") return "Música"; if(source=="Sources") return "Fontes sonoras";
+		if(source=="Map music") return "Música do mapa"; if(source=="Environmental sources") return "Fontes ambientais";
+		if(source=="Sound volume") return "Volume do som"; if(source=="Sound pitch") return "Tonalidade do som";
+		if(source=="Current location: ") return "Localização atual: ";
+		if(source=="Map ") return "Mapa "; if(source=="Traveling to ") return "Viajando para ";
+		if(source=="Map music volume: ") return "Volume da música do mapa: "; if(source=="Master volume: ") return "Volume geral: ";
+		if(source=="No clips") return "Sem carregadores"; if(source=="Success") return "Sucesso";
+		if(source=="This weapon doesn't take ammo.") return "Esta arma não usa munição.";
+		if(source=="Your weapon still has ammo in it! Don't waste ammo!") return "Sua arma ainda tem munição! Não desperdice munição!";
+		if(source=="You are level ") return "Você está no nível "; if(source=="You have survived for ") return "Você sobreviveu por ";
+		if(source=="There is no travel point here.") return "Não há ponto de viagem aqui.";
+		if(source=="The map could not be saved.") return "Não foi possível salvar o mapa.";
+		if(source=="The map could not be written to the maps folder.") return "Não foi possível gravar o mapa na pasta de mapas.";
+		if(source=="The map file could not be deleted.") return "Não foi possível excluir o arquivo do mapa.";
+		if(source=="The map is no longer valid.") return "O mapa não é mais válido.";
+		if(source=="The new map could not be loaded.") return "Não foi possível carregar o novo mapa.";
+		if(source=="The destination map does not exist.") return "O mapa de destino não existe.";
+		if(source=="Invalid coordinates.") return "Coordenadas inválidas.";
+		if(source=="Invalid travel point coordinates.") return "Coordenadas inválidas para o ponto de viagem.";
+		if(source=="Choose or enter a value first.") return "Escolha ou informe um valor primeiro.";
+		if(source=="Enter a valid map name that is not already in use.") return "Informe um nome válido para o mapa que ainda não esteja em uso.";
+		if(source=="Map name and bounds are protected.") return "O nome e os limites do mapa estão protegidos.";
+		if(source=="Map name and bounds cannot be edited here.") return "O nome e os limites do mapa não podem ser editados aqui.";
+		if(source=="Select a map line first.") return "Selecione primeiro uma linha do mapa.";
+		if(source=="Select one floor platform by pressing Space on it.") return "Selecione uma plataforma de piso pressionando Espaço nela.";
+		if(source=="You already selected a platform.") return "Você já selecionou uma plataforma.";
+		if(source=="You already selected an item.") return "Você já selecionou um item.";
+		if(source=="This record is not valid for this map.") return "Este registro não é válido para este mapa.";
+		if(source=="The map coordinates are invalid. Minimum values must not exceed maximum values.") return "As coordenadas do mapa são inválidas. Os valores mínimos não podem exceder os máximos.";
+		if(source=="The selected area must fit inside the current map bounds.") return "A área selecionada deve caber nos limites do mapa atual.";
+		if(source=="The destination coordinates must fit inside the target map bounds.") return "As coordenadas de destino devem caber nos limites do mapa de destino.";
+		if(source=="Destination minimum coordinates must not exceed their maximum values.") return "As coordenadas mínimas de destino não podem exceder os valores máximos.";
+		if(source=="The map change could not be saved and loaded.") return "Não foi possível salvar e carregar a alteração do mapa.";
+		if(source=="The travel point could not be saved and loaded.") return "Não foi possível salvar e carregar o ponto de viagem.";
+		if(source=="Add line") return "Adicionar linha"; if(source=="Add line to map") return "Adicionar linha ao mapa";
+		if(source=="Line content") return "Conteúdo da linha"; if(source=="Copy selected line") return "Copiar linha selecionada";
+		if(source=="Paste line") return "Colar linha"; if(source=="Copy all map lines") return "Copiar todas as linhas do mapa";
+		if(source=="Rename map") return "Renomear mapa"; if(source=="Save map name") return "Salvar nome do mapa";
+		if(source=="Create a new map") return "Criar um novo mapa"; if(source=="Create map") return "Criar mapa";
+		if(source=="Floor platform") return "Plataforma de piso"; if(source=="Environmental sound source") return "Fonte de som ambiente";
+		if(source=="Destination map") return "Mapa de destino";
+		if(source=="Destination maximum X") return "X máximo de destino"; if(source=="Destination maximum Y") return "Y máximo de destino"; if(source=="Destination maximum Z") return "Z máximo de destino";
+		if(source=="Destination minimum X") return "X mínimo de destino"; if(source=="Destination minimum Y") return "Y mínimo de destino"; if(source=="Destination minimum Z") return "Z mínimo de destino";
+		if(source=="Edit map line") return "Editar linha do mapa"; if(source=="Map loading error") return "Erro ao carregar o mapa";
+		if(source=="Map name") return "Nome do mapa"; if(source=="The destination map ") return "O mapa de destino ";
+		if(source==" could not be loaded.") return " não pôde ser carregado."; if(source==" created.") return " foi criado.";
+		if(source=="The selected map could not be loaded.") return "Não foi possível carregar o mapa selecionado.";
+		if(source=="There are no valid map files in the maps folder.") return "Não há arquivos de mapa válidos na pasta maps.";
+		if(source=="Use the arrow keys to scroll. Press Enter or Escape to close.") return "Use as setas para percorrer o texto. Pressione Enter ou Escape para fechar.";
+		if(source=="Delete selected line") return "Excluir linha selecionada"; if(source=="Edit selected line") return "Editar linha selecionada";
+		if(source=="Save line") return "Salvar linha"; if(source=="Map records") return "Registros do mapa"; if(source=="Map record") return "Registro do mapa";
+		if(source=="sound source") return "fonte sonora"; if(source=="ambient sound") return "som ambiente"; if(source=="safe zone") return "zona segura";
+		if(source=="staircase") return "escada"; if(source=="platform") return "plataforma"; if(source=="zone") return "zona";
+		if(source=="Add ") return "Adicionar "; if(source=="Line added.") return "Linha adicionada.";
+		if(source=="Line updated.") return "Linha atualizada."; if(source=="Line removed.") return "Linha removida.";
+		if(source=="No line selected.") return "Nenhuma linha selecionada."; if(source=="Line copied to clipboard.") return "Linha copiada para a área de transferência.";
+		if(source=="Line pasted from clipboard.") return "Linha colada da área de transferência."; if(source=="Clipboard is empty.") return "A área de transferência está vazia.";
+		if(source=="All map data copied to clipboard.") return "Todos os dados do mapa foram copiados para a área de transferência.";
+		if(source=="hp") return "pontos de vida";
+		if(source=="menu music volume could not be set") return "não foi possível ajustar o volume da música do menu";
+		if(source=="Não foi possível ativar o HRTF global do Steam Audio.") return "Não foi possível ativar o HRTF global do Steam Audio.";
+		if(source=="How much xp do you want?") return "Quanto de experiência você quer?";
+		if(source=="enter what item you want to give yourself.") return "Digite o item que deseja receber.";
+		if(source=="Enter how many to give yourself") return "Digite quantos deseja receber";
+		if(source=="Yes") return "Sim"; if(source=="No") return "Não"; if(source=="Copied") return "Copiado";
+		if(source=="Beep for capital letters") return "Bipe para letras maiúsculas"; if(source=="Say �cap� in front of the capital letters") return "Diga cap antes das letras maiúsculas";
+		if(source=="Treat capital letters no different.") return "Tratar letras maiúsculas normalmente."; if(source=="Cap ") return "Maiúscula ";
+		if(source=="Blank" || source=="blank") return "Em branco"; if(source=="space") return "espaço";
+		if(source=="Cancel.") return "Cancelado."; if(source=="character repeat off") return "Repetição de caracteres desativada";
+		if(source=="character repeat on") return "Repetição de caracteres ativada"; if(source=="empty") return "vazio";
+		if(source=="text copied") return "texto copiado"; if(source=="text pasted") return "texto colado";
+		if(source=="music volume: ") return "volume da música: "; if(source=="error") return "erro"; if(source=="Áudio espacial") return "Áudio espacial";
+		if(source=="English") return "Inglês"; if(source=="Portuguese") return "Português";
+		if(source=="Spanish") return "Espanhol"; if(source=="Turkish") return "Turco"; if(source=="Vietnamese") return "Vietnamita";
+	}
+	else if(game_language=="es")
+	{
+		if(source=="Play") return "Jugar"; if(source=="Settings") return "Configuración";
+		if(source=="Documentation") return "Documentación"; if(source=="Exit") return "Salir";
+		if(source=="Main menu") return "Menú principal"; if(source=="Select a map") return "Seleccionar mapa";
+		if(source=="View README file") return "Ver archivo README"; if(source=="View changelog file") return "Ver registro de cambios";
+		if(source=="Game language") return "Idioma del juego"; if(source=="Menu wrapping") return "Navegación circular en menús";
+		if(source=="Enabled") return "Activada"; if(source=="Disabled") return "Desactivada"; if(source=="Close") return "Cerrar";
+		if(source=="Current location: ") return "Ubicación actual: "; if(source=="Area unknown") return "Área desconocida";
+		if(source=="Weapons cannot be used in a safe zone.") return "No se pueden usar armas en una zona segura.";
+		if(source=="Settings saved.") return "Configuración guardada.";
+		if(source=="Back") return "Volver"; if(source=="Map construction menu") return "Menú de construcción del mapa";
+		if(source=="Create new map") return "Crear mapa nuevo"; if(source=="Edit current map lines") return "Editar líneas del mapa actual";
+		if(source=="Delete current map") return "Eliminar mapa actual"; if(source=="Add platform") return "Añadir plataforma";
+		if(source=="Add zone") return "Añadir zona"; if(source=="Add safe zone") return "Añadir zona segura";
+		if(source=="Add travel point") return "Añadir punto de viaje"; if(source=="Add positional sound source") return "Añadir fuente de sonido posicional";
+		if(source=="Add area ambient sound") return "Añadir sonido ambiental de área"; if(source=="Add staircase") return "Añadir escalera";
+		if(source=="Close") return "Cerrar"; if(source=="Add") return "Añadir"; if(source=="Cancel") return "Cancelar";
+		if(source=="Zone name") return "Nombre de la zona"; if(source=="Minimum X") return "X mínimo"; if(source=="Maximum X") return "X máximo";
+		if(source=="Minimum Y") return "Y mínimo"; if(source=="Maximum Y") return "Y máximo";
+		if(source=="Minimum Z") return "Z mínimo"; if(source=="Maximum Z") return "Z máximo";
+		if(source=="Sound category") return "Categoría de sonido"; if(source=="Music") return "Música"; if(source=="Sources") return "Fuentes";
+		if(source=="Map music") return "Música del mapa"; if(source=="Environmental sources") return "Fuentes ambientales";
+		if(source=="Sound volume") return "Volumen del sonido"; if(source=="Sound pitch") return "Tono del sonido";
+		if(source=="Map ") return "Mapa "; if(source=="Traveling to ") return "Viajando a ";
+		if(source=="Map music volume: ") return "Volumen de la música del mapa: "; if(source=="Master volume: ") return "Volumen general: ";
+		if(source=="No clips") return "No quedan cargadores"; if(source=="Success") return "Éxito";
+		if(source=="This weapon doesn't take ammo.") return "Esta arma no usa munición.";
+		if(source=="Your weapon still has ammo in it! Don't waste ammo!") return "¡Tu arma todavía tiene munición! No la desperdicies.";
+		if(source=="You are level ") return "Estás en el nivel "; if(source=="You have survived for ") return "Has sobrevivido durante ";
+		if(source=="There is no travel point here.") return "No hay ningún punto de viaje aquí.";
+		if(source=="Invalid coordinates.") return "Coordenadas no válidas."; if(source=="Invalid travel point coordinates.") return "Coordenadas del punto de viaje no válidas.";
+		if(source=="Choose or enter a value first.") return "Elige o introduce un valor primero.";
+		if(source=="Enter a valid map name that is not already in use.") return "Introduce un nombre de mapa válido que no esté en uso.";
+		if(source=="Map name and bounds are protected.") return "El nombre y los límites del mapa están protegidos.";
+		if(source=="Map name and bounds cannot be edited here.") return "El nombre y los límites del mapa no se pueden editar aquí.";
+		if(source=="Select a map line first.") return "Selecciona primero una línea del mapa.";
+		if(source=="Select one floor platform by pressing Space on it.") return "Selecciona una plataforma de suelo pulsando Espacio sobre ella.";
+		if(source=="You already selected a platform.") return "Ya has seleccionado una plataforma.";
+		if(source=="You already selected an item.") return "Ya has seleccionado un elemento.";
+		if(source=="This record is not valid for this map.") return "Este registro no es válido para este mapa.";
+		if(source=="The map could not be saved.") return "No se pudo guardar el mapa.";
+		if(source=="The map could not be written to the maps folder.") return "No se pudo guardar el mapa en la carpeta de mapas.";
+		if(source=="The map file could not be deleted.") return "No se pudo eliminar el archivo del mapa.";
+		if(source=="The map is no longer valid.") return "El mapa ya no es válido.";
+		if(source=="The new map could not be loaded.") return "No se pudo cargar el mapa nuevo.";
+		if(source=="The destination map does not exist.") return "El mapa de destino no existe.";
+		if(source=="The map coordinates are invalid. Minimum values must not exceed maximum values.") return "Las coordenadas del mapa no son válidas. Los mínimos no pueden superar los máximos.";
+		if(source=="The selected area must fit inside the current map bounds.") return "El área seleccionada debe caber dentro de los límites del mapa actual.";
+		if(source=="The destination coordinates must fit inside the target map bounds.") return "Las coordenadas de destino deben caber dentro de los límites del mapa de destino.";
+		if(source=="Destination minimum coordinates must not exceed their maximum values.") return "Los mínimos de destino no pueden superar los máximos.";
+		if(source=="The map change could not be saved and loaded.") return "No se pudo guardar y cargar el cambio del mapa.";
+		if(source=="The travel point could not be saved and loaded.") return "No se pudo guardar y cargar el punto de viaje.";
+		if(source=="Add line") return "Añadir línea"; if(source=="Add line to map") return "Añadir línea al mapa";
+		if(source=="Line content") return "Contenido de la línea"; if(source=="Copy selected line") return "Copiar línea seleccionada";
+		if(source=="Paste line") return "Pegar línea"; if(source=="Copy all map lines") return "Copiar todas las líneas del mapa";
+		if(source=="Rename map") return "Cambiar nombre del mapa"; if(source=="Save map name") return "Guardar nombre del mapa";
+		if(source=="Create a new map") return "Crear un mapa nuevo"; if(source=="Create map") return "Crear mapa";
+		if(source=="Floor platform") return "Plataforma del suelo"; if(source=="Environmental sound source") return "Fuente de sonido ambiental";
+		if(source=="Destination map") return "Mapa de destino";
+		if(source=="Destination maximum X") return "X máximo de destino"; if(source=="Destination maximum Y") return "Y máximo de destino"; if(source=="Destination maximum Z") return "Z máximo de destino";
+		if(source=="Destination minimum X") return "X mínimo de destino"; if(source=="Destination minimum Y") return "Y mínimo de destino"; if(source=="Destination minimum Z") return "Z mínimo de destino";
+		if(source=="Edit map line") return "Editar línea del mapa"; if(source=="Map loading error") return "Error al cargar el mapa";
+		if(source=="Map name") return "Nombre del mapa"; if(source=="The destination map ") return "El mapa de destino ";
+		if(source==" could not be loaded.") return " no se pudo cargar."; if(source==" created.") return " se creó.";
+		if(source=="The selected map could not be loaded.") return "No se pudo cargar el mapa seleccionado.";
+		if(source=="There are no valid map files in the maps folder.") return "No hay archivos de mapa válidos en la carpeta maps.";
+		if(source=="Use the arrow keys to scroll. Press Enter or Escape to close.") return "Usa las flechas para desplazarte por el texto. Pulsa Enter o Escape para cerrar.";
+		if(source=="Delete selected line") return "Eliminar línea seleccionada"; if(source=="Edit selected line") return "Editar línea seleccionada";
+		if(source=="Save line") return "Guardar línea"; if(source=="Map records") return "Registros del mapa"; if(source=="Map record") return "Registro del mapa";
+		if(source=="sound source") return "fuente de sonido"; if(source=="ambient sound") return "sonido ambiental"; if(source=="safe zone") return "zona segura";
+		if(source=="staircase") return "escalera"; if(source=="platform") return "plataforma"; if(source=="zone") return "zona";
+		if(source=="Add ") return "Añadir "; if(source=="Line added.") return "Línea añadida.";
+		if(source=="Line updated.") return "Línea actualizada."; if(source=="Line removed.") return "Línea eliminada.";
+		if(source=="No line selected.") return "No hay ninguna línea seleccionada."; if(source=="Line copied to clipboard.") return "Línea copiada al portapapeles.";
+		if(source=="Line pasted from clipboard.") return "Línea pegada desde el portapapeles."; if(source=="Clipboard is empty.") return "El portapapeles está vacío.";
+		if(source=="All map data copied to clipboard.") return "Todos los datos del mapa se copiaron al portapapeles.";
+		if(source=="hp") return "puntos de salud";
+		if(source=="menu music volume could not be set") return "no se pudo ajustar el volumen de la música del menú";
+		if(source=="Não foi possível ativar o HRTF global do Steam Audio.") return "No se pudo activar el HRTF global de Steam Audio.";
+		if(source=="How much xp do you want?") return "¿Cuánta experiencia quieres?";
+		if(source=="enter what item you want to give yourself.") return "Escribe qué objeto quieres darte.";
+		if(source=="Enter how many to give yourself") return "Escribe cuántos quieres darte";
+		if(source=="Yes") return "Sí"; if(source=="No") return "No"; if(source=="Copied") return "Copiado";
+		if(source=="Beep for capital letters") return "Pitido para las mayúsculas"; if(source=="Say �cap� in front of the capital letters") return "Di cap antes de las letras mayúsculas";
+		if(source=="Treat capital letters no different.") return "Tratar las mayúsculas normalmente."; if(source=="Cap ") return "Mayúscula ";
+		if(source=="Blank" || source=="blank") return "En blanco"; if(source=="space") return "espacio";
+		if(source=="Cancel.") return "Cancelado."; if(source=="character repeat off") return "Repetición de caracteres desactivada";
+		if(source=="character repeat on") return "Repetición de caracteres activada"; if(source=="empty") return "vacío";
+		if(source=="text copied") return "texto copiado"; if(source=="text pasted") return "texto pegado";
+		if(source=="music volume: ") return "volumen de la música: "; if(source=="error") return "error"; if(source=="Áudio espacial") return "Audio espacial";
+		if(source=="English") return "Inglés"; if(source=="Portuguese") return "Portugués";
+		if(source=="Spanish") return "Español"; if(source=="Turkish") return "Turco"; if(source=="Vietnamese") return "Vietnamita";
+	}
+	else if(game_language=="tr")
+	{
+		if(source=="Play") return "Oyna"; if(source=="Settings") return "Ayarlar";
+		if(source=="Documentation") return "Belgeler"; if(source=="Exit") return "Çıkış";
+		if(source=="Main menu") return "Ana menü"; if(source=="Select a map") return "Harita seç";
+		if(source=="View README file") return "README dosyasını görüntüle"; if(source=="View changelog file") return "Değişiklik günlüğünü görüntüle";
+		if(source=="Game language") return "Oyun dili"; if(source=="Menu wrapping") return "Menüde başa sarma";
+		if(source=="Enabled") return "Açık"; if(source=="Disabled") return "Kapalı"; if(source=="Close") return "Kapat";
+		if(source=="Current location: ") return "Mevcut konum: "; if(source=="Area unknown") return "Bilinmeyen bölge";
+		if(source=="Weapons cannot be used in a safe zone.") return "Güvenli bölgede silah kullanılamaz.";
+		if(source=="Settings saved.") return "Ayarlar kaydedildi.";
+		if(source=="Back") return "Geri"; if(source=="Map construction menu") return "Harita oluşturma menüsü";
+		if(source=="Create new map") return "Yeni harita oluştur"; if(source=="Edit current map lines") return "Geçerli harita satırlarını düzenle";
+		if(source=="Delete current map") return "Geçerli haritayı sil"; if(source=="Add platform") return "Platform ekle";
+		if(source=="Add zone") return "Bölge ekle"; if(source=="Add safe zone") return "Güvenli bölge ekle";
+		if(source=="Add travel point") return "Seyahat noktası ekle"; if(source=="Add positional sound source") return "Konumsal ses kaynağı ekle";
+		if(source=="Add area ambient sound") return "Alan ortam sesi ekle"; if(source=="Add staircase") return "Merdiven ekle";
+		if(source=="Close") return "Kapat"; if(source=="Add") return "Ekle"; if(source=="Cancel") return "İptal";
+		if(source=="Zone name") return "Bölge adı"; if(source=="Minimum X") return "En düşük X"; if(source=="Maximum X") return "En yüksek X";
+		if(source=="Minimum Y") return "En düşük Y"; if(source=="Maximum Y") return "En yüksek Y";
+		if(source=="Minimum Z") return "En düşük Z"; if(source=="Maximum Z") return "En yüksek Z";
+		if(source=="Sound category") return "Ses kategorisi"; if(source=="Music") return "Müzik"; if(source=="Sources") return "Ses kaynakları";
+		if(source=="Map music") return "Harita müziği"; if(source=="Environmental sources") return "Çevresel kaynaklar";
+		if(source=="Sound volume") return "Ses düzeyi"; if(source=="Sound pitch") return "Ses perdesi";
+		if(source=="Back") return "Geri dön"; if(source=="Add line") return "Satır ekle"; if(source=="Add line to map") return "Haritaya satır ekle";
+		if(source=="Line content") return "Satır içeriği"; if(source=="Copy selected line") return "Seçili satırı kopyala";
+		if(source=="Paste line") return "Satırı yapıştır"; if(source=="Copy all map lines") return "Tüm harita satırlarını kopyala";
+		if(source=="Rename map") return "Haritayı yeniden adlandır"; if(source=="Save map name") return "Harita adını kaydet";
+		if(source=="Create a new map") return "Yeni bir harita oluştur"; if(source=="Create map") return "Harita oluştur";
+		if(source=="Floor platform") return "Zemin platformu"; if(source=="Environmental sound source") return "Ortam sesi kaynağı";
+		if(source=="Map ") return "Harita "; if(source=="Traveling to ") return "Şuraya gidiliyor: ";
+		if(source=="Map music volume: ") return "Harita müziği seviyesi: "; if(source=="Master volume: ") return "Ana ses seviyesi: ";
+		if(source=="No clips") return "Şarjör yok"; if(source=="Success") return "Başarılı";
+		if(source=="This weapon doesn't take ammo.") return "Bu silah mühimmat kullanmıyor.";
+		if(source=="There is no travel point here.") return "Burada seyahat noktası yok.";
+		if(source=="Invalid coordinates.") return "Geçersiz koordinatlar."; if(source=="Choose or enter a value first.") return "Önce bir değer seçin veya girin.";
+		if(source=="You already selected a platform.") return "Zaten bir platform seçtiniz."; if(source=="You already selected an item.") return "Zaten bir öğe seçtiniz.";
+		if(source=="This record is not valid for this map.") return "Bu kayıt bu harita için geçerli değil.";
+		if(source=="The map could not be saved.") return "Harita kaydedilemedi."; if(source=="The destination map does not exist.") return "Hedef harita bulunamadı.";
+		if(source=="Destination maximum X") return "Hedef en yüksek X"; if(source=="Destination maximum Y") return "Hedef en yüksek Y"; if(source=="Destination maximum Z") return "Hedef en yüksek Z";
+		if(source=="Destination minimum X") return "Hedef en düşük X"; if(source=="Destination minimum Y") return "Hedef en düşük Y"; if(source=="Destination minimum Z") return "Hedef en düşük Z";
+		if(source=="Edit map line") return "Harita satırını düzenle"; if(source=="Map loading error") return "Harita yükleme hatası";
+		if(source=="Map name") return "Harita adı"; if(source=="The destination map ") return "Hedef harita ";
+		if(source==" could not be loaded.") return " yüklenemedi."; if(source==" created.") return " oluşturuldu.";
+		if(source=="The selected map could not be loaded.") return "Seçilen harita yüklenemedi.";
+		if(source=="There are no valid map files in the maps folder.") return "Haritalar klasöründe geçerli harita dosyası yok.";
+		if(source=="Destination map") return "Hedef harita";
+		if(source=="Destination minimum coordinates must not exceed their maximum values.") return "Hedef minimum koordinatları maksimum değerleri aşamaz.";
+		if(source=="Enter a valid map name that is not already in use.") return "Kullanılmayan geçerli bir harita adı girin.";
+		if(source=="Invalid travel point coordinates.") return "Seyahat noktası koordinatları geçersiz.";
+		if(source=="Map name and bounds are protected.") return "Harita adı ve sınırları korumalıdır.";
+		if(source=="Map name and bounds cannot be edited here.") return "Harita adı ve sınırları burada düzenlenemez.";
+		if(source=="Select a map line first.") return "Önce bir harita satırı seçin.";
+		if(source=="Select one floor platform by pressing Space on it.") return "Üzerinde Space tuşuna basarak bir zemin platformu seçin.";
+		if(source=="The destination coordinates must fit inside the target map bounds.") return "Hedef koordinatlar harita sınırları içinde olmalıdır.";
+		if(source=="The map change could not be saved and loaded.") return "Harita değişikliği kaydedilip yüklenemedi.";
+		if(source=="The map coordinates are invalid. Minimum values must not exceed maximum values.") return "Harita koordinatları geçersiz. Minimum değerler maksimumları aşamaz.";
+		if(source=="The map could not be written to the maps folder.") return "Harita maps klasörüne yazılamadı.";
+		if(source=="The map file could not be deleted.") return "Harita dosyası silinemedi.";
+		if(source=="The map is no longer valid.") return "Harita artık geçerli değil.";
+		if(source=="The new map could not be loaded.") return "Yeni harita yüklenemedi.";
+		if(source=="The selected area must fit inside the current map bounds.") return "Seçilen alan geçerli harita sınırlarında olmalıdır.";
+		if(source=="The travel point could not be saved and loaded.") return "Seyahat noktası kaydedilip yüklenemedi.";
+		if(source=="You are level ") return "Seviyeniz "; if(source=="You have survived for ") return "Hayatta kalma süreniz ";
+		if(source=="Your weapon still has ammo in it! Don't waste ammo!") return "Silahınızda hâlâ mermi var! Mermileri boşa harcamayın!";
+		if(source=="Áudio espacial") return "Uzamsal ses";
+		if(source=="Yes") return "Evet"; if(source=="No") return "Hayır"; if(source=="Copied") return "Kopyalandı";
+		if(source=="Beep for capital letters") return "Büyük harflerde bip sesi"; if(source=="Say �cap� in front of the capital letters") return "Büyük harflerden önce cap söyle";
+		if(source=="Treat capital letters no different.") return "Büyük harfleri normal kabul et."; if(source=="Cap ") return "Büyük harf ";
+		if(source=="Blank" || source=="blank") return "Boş"; if(source=="space") return "boşluk";
+		if(source=="Cancel.") return "İptal."; if(source=="character repeat off") return "Karakter tekrarı kapalı";
+		if(source=="character repeat on") return "Karakter tekrarı açık"; if(source=="empty") return "boş";
+		if(source=="text copied") return "metin kopyalandı"; if(source=="text pasted") return "metin yapıştırıldı";
+		if(source=="music volume: ") return "müzik sesi: "; if(source=="error") return "hata";
+		if(source=="Use the arrow keys to scroll. Press Enter or Escape to close.") return "Metinde gezinmek için ok tuşlarını kullanın. Kapatmak için Enter veya Escape tuşuna basın.";
+		if(source=="Delete selected line") return "Seçili satırı sil"; if(source=="Edit selected line") return "Seçili satırı düzenle";
+		if(source=="Save line") return "Satırı kaydet"; if(source=="Map records") return "Harita kayıtları"; if(source=="Map record") return "Harita kaydı";
+		if(source=="sound source") return "ses kaynağı"; if(source=="ambient sound") return "ortam sesi"; if(source=="safe zone") return "güvenli bölge";
+		if(source=="staircase") return "merdiven"; if(source=="platform") return "platform"; if(source=="zone") return "bölge";
+		if(source=="Add ") return "Ekle: "; if(source=="Line added.") return "Satır eklendi.";
+		if(source=="Line updated.") return "Satır güncellendi."; if(source=="Line removed.") return "Satır silindi.";
+		if(source=="No line selected.") return "Satır seçilmedi."; if(source=="Line copied to clipboard.") return "Satır panoya kopyalandı.";
+		if(source=="Line pasted from clipboard.") return "Satır panodan yapıştırıldı."; if(source=="Clipboard is empty.") return "Pano boş.";
+		if(source=="All map data copied to clipboard.") return "Tüm harita verileri panoya kopyalandı.";
+		if(source=="hp") return "can puanı";
+		if(source=="menu music volume could not be set") return "menü müziğinin ses düzeyi ayarlanamadı";
+		if(source=="Não foi possível ativar o HRTF global do Steam Audio.") return "Steam Audio genel HRTF etkinleştirilemedi.";
+		if(source=="How much xp do you want?") return "Ne kadar deneyim puanı istiyorsunuz?";
+		if(source=="enter what item you want to give yourself.") return "Kendinize vermek istediğiniz eşyayı yazın.";
+		if(source=="Enter how many to give yourself") return "Kaç tane istediğinizi yazın";
+		if(source=="English") return "İngilizce"; if(source=="Portuguese") return "Portekizce";
+		if(source=="Spanish") return "İspanyolca"; if(source=="Turkish") return "Türkçe"; if(source=="Vietnamese") return "Vietnamca";
+	}
+	else if(game_language=="vi")
+	{
+		if(source=="Play") return "Chơi"; if(source=="Settings") return "Cài đặt";
+		if(source=="Documentation") return "Tài liệu"; if(source=="Exit") return "Thoát";
+		if(source=="Main menu") return "Menu chính"; if(source=="Select a map") return "Chọn bản đồ";
+		if(source=="View README file") return "Xem tệp README"; if(source=="View changelog file") return "Xem nhật ký thay đổi";
+		if(source=="Game language") return "Ngôn ngữ trò chơi"; if(source=="Menu wrapping") return "Lặp vòng trong menu";
+		if(source=="Enabled") return "Bật"; if(source=="Disabled") return "Tắt"; if(source=="Close") return "Đóng";
+		if(source=="Current location: ") return "Vị trí hiện tại: "; if(source=="Area unknown") return "Khu vực chưa xác định";
+		if(source=="Weapons cannot be used in a safe zone.") return "Không thể sử dụng vũ khí trong vùng an toàn.";
+		if(source=="Settings saved.") return "Đã lưu cài đặt.";
+		if(source=="Back") return "Quay lại"; if(source=="Map construction menu") return "Menu xây dựng bản đồ";
+		if(source=="Create new map") return "Tạo bản đồ mới"; if(source=="Edit current map lines") return "Sửa các dòng bản đồ hiện tại";
+		if(source=="Delete current map") return "Xóa bản đồ hiện tại"; if(source=="Add platform") return "Thêm bề mặt";
+		if(source=="Add zone") return "Thêm khu vực"; if(source=="Add safe zone") return "Thêm vùng an toàn";
+		if(source=="Add travel point") return "Thêm điểm di chuyển"; if(source=="Add positional sound source") return "Thêm nguồn âm thanh định vị";
+		if(source=="Add area ambient sound") return "Thêm âm thanh môi trường trong khu vực"; if(source=="Add staircase") return "Thêm cầu thang";
+		if(source=="Close") return "Đóng"; if(source=="Add") return "Thêm"; if(source=="Cancel") return "Hủy";
+		if(source=="Zone name") return "Tên khu vực"; if(source=="Minimum X") return "X tối thiểu"; if(source=="Maximum X") return "X tối đa";
+		if(source=="Minimum Y") return "Y tối thiểu"; if(source=="Maximum Y") return "Y tối đa";
+		if(source=="Minimum Z") return "Z tối thiểu"; if(source=="Maximum Z") return "Z tối đa";
+		if(source=="Sound category") return "Loại âm thanh"; if(source=="Music") return "Nhạc"; if(source=="Sources") return "Nguồn âm thanh";
+		if(source=="Map music") return "Nhạc bản đồ"; if(source=="Environmental sources") return "Âm thanh môi trường";
+		if(source=="Sound volume") return "Âm lượng"; if(source=="Sound pitch") return "Cao độ";
+		if(source=="Back") return "Quay lại"; if(source=="Add line") return "Thêm dòng"; if(source=="Add line to map") return "Thêm dòng vào bản đồ";
+		if(source=="Line content") return "Nội dung dòng"; if(source=="Copy selected line") return "Sao chép dòng đã chọn";
+		if(source=="Paste line") return "Dán dòng"; if(source=="Copy all map lines") return "Sao chép tất cả dòng bản đồ";
+		if(source=="Rename map") return "Đổi tên bản đồ"; if(source=="Save map name") return "Lưu tên bản đồ";
+		if(source=="Create a new map") return "Tạo bản đồ mới"; if(source=="Create map") return "Tạo bản đồ";
+		if(source=="Floor platform") return "Bề mặt nền"; if(source=="Environmental sound source") return "Nguồn âm thanh môi trường";
+		if(source=="Map ") return "Bản đồ "; if(source=="Traveling to ") return "Đang di chuyển đến ";
+		if(source=="Map music volume: ") return "Âm lượng nhạc bản đồ: "; if(source=="Master volume: ") return "Âm lượng tổng: ";
+		if(source=="No clips") return "Hết băng đạn"; if(source=="Success") return "Thành công";
+		if(source=="This weapon doesn't take ammo.") return "Vũ khí này không dùng đạn.";
+		if(source=="There is no travel point here.") return "Không có điểm di chuyển ở đây.";
+		if(source=="Invalid coordinates.") return "Tọa độ không hợp lệ."; if(source=="Choose or enter a value first.") return "Hãy chọn hoặc nhập giá trị trước.";
+		if(source=="You already selected a platform.") return "Bạn đã chọn bề mặt rồi."; if(source=="You already selected an item.") return "Bạn đã chọn mục này rồi.";
+		if(source=="This record is not valid for this map.") return "Dữ liệu này không hợp lệ với bản đồ.";
+		if(source=="The map could not be saved.") return "Không thể lưu bản đồ."; if(source=="The destination map does not exist.") return "Bản đồ đích không tồn tại.";
+		if(source=="Destination maximum X") return "X tối đa của đích"; if(source=="Destination maximum Y") return "Y tối đa của đích"; if(source=="Destination maximum Z") return "Z tối đa của đích";
+		if(source=="Destination minimum X") return "X tối thiểu của đích"; if(source=="Destination minimum Y") return "Y tối thiểu của đích"; if(source=="Destination minimum Z") return "Z tối thiểu của đích";
+		if(source=="Edit map line") return "Sửa dòng bản đồ"; if(source=="Map loading error") return "Lỗi tải bản đồ";
+		if(source=="Map name") return "Tên bản đồ"; if(source=="The destination map ") return "Bản đồ đích ";
+		if(source==" could not be loaded.") return " không thể tải."; if(source==" created.") return " đã được tạo.";
+		if(source=="The selected map could not be loaded.") return "Không thể tải bản đồ đã chọn.";
+		if(source=="There are no valid map files in the maps folder.") return "Không có tệp bản đồ hợp lệ trong thư mục maps.";
+		if(source=="Destination map") return "Bản đồ đích";
+		if(source=="Destination minimum coordinates must not exceed their maximum values.") return "Tọa độ tối thiểu không được lớn hơn tọa độ tối đa.";
+		if(source=="Enter a valid map name that is not already in use.") return "Hãy nhập tên bản đồ hợp lệ chưa được sử dụng.";
+		if(source=="Invalid travel point coordinates.") return "Tọa độ điểm di chuyển không hợp lệ.";
+		if(source=="Map name and bounds are protected.") return "Tên và giới hạn bản đồ được bảo vệ.";
+		if(source=="Map name and bounds cannot be edited here.") return "Không thể sửa tên và giới hạn bản đồ tại đây.";
+		if(source=="Select a map line first.") return "Hãy chọn một dòng bản đồ trước.";
+		if(source=="Select one floor platform by pressing Space on it.") return "Nhấn Space trên một bề mặt để chọn làm sàn.";
+		if(source=="The destination coordinates must fit inside the target map bounds.") return "Tọa độ đích phải nằm trong giới hạn bản đồ.";
+		if(source=="The map change could not be saved and loaded.") return "Không thể lưu và tải thay đổi bản đồ.";
+		if(source=="The map coordinates are invalid. Minimum values must not exceed maximum values.") return "Tọa độ bản đồ không hợp lệ. Giá trị tối thiểu không được vượt quá tối đa.";
+		if(source=="The map could not be written to the maps folder.") return "Không thể ghi bản đồ vào thư mục maps.";
+		if(source=="The map file could not be deleted.") return "Không thể xóa tệp bản đồ.";
+		if(source=="The map is no longer valid.") return "Bản đồ không còn hợp lệ.";
+		if(source=="The new map could not be loaded.") return "Không thể tải bản đồ mới.";
+		if(source=="The selected area must fit inside the current map bounds.") return "Khu vực đã chọn phải nằm trong giới hạn bản đồ hiện tại.";
+		if(source=="The travel point could not be saved and loaded.") return "Không thể lưu và tải điểm di chuyển.";
+		if(source=="You are level ") return "Bạn đang ở cấp "; if(source=="You have survived for ") return "Bạn đã sống sót trong ";
+		if(source=="Your weapon still has ammo in it! Don't waste ammo!") return "Vũ khí vẫn còn đạn! Đừng lãng phí đạn!";
+		if(source=="Áudio espacial") return "Âm thanh không gian";
+		if(source=="Yes") return "Có"; if(source=="No") return "Không"; if(source=="Copied") return "Đã sao chép";
+		if(source=="Beep for capital letters") return "Phát tiếng bíp cho chữ hoa"; if(source=="Say �cap� in front of the capital letters") return "Đọc cap trước chữ hoa";
+		if(source=="Treat capital letters no different.") return "Đọc chữ hoa như bình thường."; if(source=="Cap ") return "Chữ hoa ";
+		if(source=="Blank" || source=="blank") return "Trống"; if(source=="space") return "dấu cách";
+		if(source=="Cancel.") return "Đã hủy."; if(source=="character repeat off") return "Đã tắt lặp ký tự";
+		if(source=="character repeat on") return "Đã bật lặp ký tự"; if(source=="empty") return "trống";
+		if(source=="text copied") return "đã sao chép văn bản"; if(source=="text pasted") return "đã dán văn bản";
+		if(source=="music volume: ") return "âm lượng nhạc: "; if(source=="error") return "lỗi";
+		if(source=="Use the arrow keys to scroll. Press Enter or Escape to close.") return "Dùng phím mũi tên để đọc nội dung. Nhấn Enter hoặc Escape để đóng.";
+		if(source=="Delete selected line") return "Xóa dòng đã chọn"; if(source=="Edit selected line") return "Sửa dòng đã chọn";
+		if(source=="Save line") return "Lưu dòng"; if(source=="Map records") return "Các dòng bản đồ"; if(source=="Map record") return "Dòng bản đồ";
+		if(source=="sound source") return "nguồn âm thanh"; if(source=="ambient sound") return "âm thanh môi trường"; if(source=="safe zone") return "vùng an toàn";
+		if(source=="staircase") return "cầu thang"; if(source=="platform") return "bề mặt"; if(source=="zone") return "khu vực";
+		if(source=="Add ") return "Thêm "; if(source=="Line added.") return "Đã thêm dòng.";
+		if(source=="Line updated.") return "Đã cập nhật dòng."; if(source=="Line removed.") return "Đã xóa dòng.";
+		if(source=="No line selected.") return "Chưa chọn dòng nào."; if(source=="Line copied to clipboard.") return "Đã sao chép dòng vào bộ nhớ tạm.";
+		if(source=="Line pasted from clipboard.") return "Đã dán dòng từ bộ nhớ tạm."; if(source=="Clipboard is empty.") return "Bộ nhớ tạm trống.";
+		if(source=="All map data copied to clipboard.") return "Đã sao chép toàn bộ dữ liệu bản đồ vào bộ nhớ tạm.";
+		if(source=="hp") return "điểm máu";
+		if(source=="menu music volume could not be set") return "không thể điều chỉnh âm lượng nhạc menu";
+		if(source=="Não foi possível ativar o HRTF global do Steam Audio.") return "Không thể bật HRTF toàn cục của Steam Audio.";
+		if(source=="How much xp do you want?") return "Bạn muốn bao nhiêu điểm kinh nghiệm?";
+		if(source=="enter what item you want to give yourself.") return "Nhập vật phẩm bạn muốn tự nhận.";
+		if(source=="Enter how many to give yourself") return "Nhập số lượng bạn muốn nhận";
+		if(source=="English") return "Tiếng Anh"; if(source=="Portuguese") return "Tiếng Bồ Đào Nha";
+		if(source=="Spanish") return "Tiếng Tây Ban Nha"; if(source=="Turkish") return "Tiếng Thổ Nhĩ Kỳ"; if(source=="Vietnamese") return "Tiếng Việt";
+	}
+	return source;
+}
+
+string tr_menu_position(int position, int count)
+{
+	if(game_language=="pt" || game_language=="es") return ". "+position+" de "+count;
+	if(game_language=="tr") return ". "+position+" / "+count;
+	if(game_language=="vi") return ". "+position+" trên "+count;
+	return ". "+position+" of "+count;
+}
+
+string tr_percent(int value)
+{
+	if(game_language=="pt") return value+" por cento";
+	if(game_language=="es") return value+" por ciento";
+	if(game_language=="tr") return "yüzde "+value;
+	if(game_language=="vi") return value+" phần trăm";
+	return value+" percent";
+}
+
+string tr_ammunition_status(int ammo_count, int clip_count)
+{
+	if(game_language=="pt") return ammo_count+" munições carregadas, "+clip_count+" carregadores restantes.";
+	if(game_language=="es") return ammo_count+" balas cargadas, quedan "+clip_count+" cargadores.";
+	if(game_language=="tr") return ammo_count+" mermi yüklü, "+clip_count+" şarjör kaldı.";
+	if(game_language=="vi") return "Đã nạp "+ammo_count+" viên đạn, còn "+clip_count+" băng đạn.";
+	return ammo_count+" ammo loaded, "+clip_count+" clips left.";
+}
+
+string tr_level_status(int current_level, double current_xp, double xp_needed, int next_level)
+{
+	if(game_language=="pt") return "Você está no nível "+current_level+" com "+current_xp+" de experiência. Precisa de mais "+xp_needed+" de experiência para chegar ao nível "+next_level+".";
+	if(game_language=="es") return "Estás en el nivel "+current_level+" con "+current_xp+" de experiencia. Necesitas "+xp_needed+" más para llegar al nivel "+next_level+".";
+	if(game_language=="tr") return current_level+". seviyedesiniz ve "+current_xp+" deneyiminiz var. "+next_level+". seviyeye ulaşmak için "+xp_needed+" deneyim daha gerekli.";
+	if(game_language=="vi") return "Bạn đang ở cấp "+current_level+" với "+current_xp+" điểm kinh nghiệm. Cần thêm "+xp_needed+" điểm để đạt cấp "+next_level+".";
+	return "You are level "+current_level+" with "+current_xp+" experience. You need "+xp_needed+" experience to get to level "+next_level+".";
+}
+
+string tr_enemy_count(uint enemy_total)
+{
+	if(game_language=="pt") return enemy_total+" inimigos no mapa.";
+	if(game_language=="es") return enemy_total+" enemigos en el mapa.";
+	if(game_language=="tr") return "Haritada "+enemy_total+" düşman var.";
+	if(game_language=="vi") return "Có "+enemy_total+" kẻ địch trên bản đồ.";
+	return enemy_total+" enemies are on the map.";
+}
+
+string tr_weapon_name(const string&in weapon_id)
+{
+	if(weapon_id=="fists")
+	{
+		if(game_language=="pt") return "Punhos"; if(game_language=="es") return "Puños";
+		if(game_language=="tr") return "Yumruklar"; if(game_language=="vi") return "Nắm đấm";
+	}
+	if(weapon_id=="handgun")
+	{
+		if(game_language=="pt") return "Pistola"; if(game_language=="es") return "Pistola";
+		if(game_language=="tr") return "Tabanca"; if(game_language=="vi") return "Súng ngắn";
+	}
+	if(weapon_id=="machinegun")
+	{
+		if(game_language=="pt") return "Metralhadora"; if(game_language=="es") return "Ametralladora";
+		if(game_language=="tr") return "Makineli tüfek"; if(game_language=="vi") return "Súng máy";
+	}
+	return weapon_id;
+}
+
+string tr_selected_floor(const string&in floor_name)
+{
+	if(game_language=="pt") return floor_name+" selecionado como piso do mapa.";
+	if(game_language=="es") return floor_name+" seleccionada como suelo del mapa.";
+	if(game_language=="tr") return floor_name+" harita zemini olarak seçildi.";
+	if(game_language=="vi") return "Đã chọn "+floor_name+" làm nền bản đồ.";
+	return floor_name+" selected as the map floor.";
+}
+
+string tr_selected_item(const string&in item_name)
+{
+	if(game_language=="pt") return item_name+" selecionado.";
+	if(game_language=="es") return item_name+" seleccionado.";
+	if(game_language=="tr") return item_name+" seçildi.";
+	if(game_language=="vi") return "Đã chọn "+item_name+".";
+	return item_name+" selected.";
+}
+
+string tr_inventory_item(const string&in item_id)
+{
+	if(item_id=="handgun ammo")
+	{
+		if(game_language=="pt") return "munição de pistola"; if(game_language=="es") return "munición de pistola";
+		if(game_language=="tr") return "tabanca mermisi"; if(game_language=="vi") return "đạn súng ngắn";
+	}
+	if(item_id=="handgun clip")
+	{
+		if(game_language=="pt") return "carregador de pistola"; if(game_language=="es") return "cargador de pistola";
+		if(game_language=="tr") return "tabanca şarjörü"; if(game_language=="vi") return "băng đạn súng ngắn";
+	}
+	if(item_id=="medkit")
+	{
+		if(game_language=="pt") return "kit médico"; if(game_language=="es") return "botiquín";
+		if(game_language=="tr") return "ilk yardım çantası"; if(game_language=="vi") return "bộ sơ cứu";
+	}
+	if(item_id=="Energy potion" || item_id=="Energy_potion")
+	{
+		if(game_language=="pt") return "poção de energia"; if(game_language=="es") return "poción de energía";
+		if(game_language=="tr") return "enerji iksiri"; if(game_language=="vi") return "thuốc năng lượng";
+	}
+	return item_id;
+}
+
+string tr_inventory_status(int amount, const string&in item_id, int position, int total)
+{
+	string item_name=tr_inventory_item(item_id);
+	if(amount<=1) return item_name+tr_menu_position(position,total);
+	if(game_language=="pt") return amount+" "+item_name+tr_menu_position(position,total);
+	if(game_language=="es") return amount+" "+item_name+tr_menu_position(position,total);
+	if(game_language=="tr") return amount+" "+item_name+tr_menu_position(position,total);
+	if(game_language=="vi") return amount+" "+item_name+tr_menu_position(position,total);
+	return amount+" "+item_name+tr_menu_position(position,total);
+}
+
+void initialize_game_storage()
+{
+	game_config.setup("StefanGames", "The Last Assault", false);
+	if(game_config.exists("language")) game_language=game_config.read_string("language");
+	if(game_language!="en" && game_language!="pt" && game_language!="es" && game_language!="tr" && game_language!="vi") game_language="en";
+	if(game_config.exists("menu_wrap")) menu_wrap_enabled=game_config.read_number("menu_wrap")!=0;
+	if(!game_config.exists("level"))
+	{
+		game_config.write_number("level",1); game_config.write_number("xp",0);
+		game_config.write_number("health",100); game_config.write_number("map_music_gain",1.0);
+		game_config.write_number("master_volume_gain",1.0);
+	}
+}
+
+void save_player_properties()
+{
+	game_config.write_number("level",level); game_config.write_number("xp",xp);
+	game_config.write_number("health",health); game_config.write_string("map",mapname);
+	game_config.write_number("x",me.x); game_config.write_number("y",me.y); game_config.write_number("z",me.z);
+}

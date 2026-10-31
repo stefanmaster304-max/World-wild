@@ -37,30 +37,15 @@ invpos=inv.get_size()-1;
 }
 if (inv.get_size()==0)
 {
-speak("empty");
+game_speak("empty");
 }
 else
 {
 int a;
 inv.get(inv.get_keys()[invpos],a);
-string item=string_replace(inv.get_keys()[invpos],"_"," ",true);
-if (a==1)
-speak(item+", "+(invpos+1)+" of "+inv.get_keys().length());
-else
-if (string_contains(item,"ammo",1)>-1) speak(a+" "+item+", "+(invpos+1)+" of "+inv.get_keys().length());
-else speak(a+" "+item+"s, "+(invpos+1)+" of "+inv.get_keys().length());
+	string item=string_replace(inv.get_keys()[invpos],"_"," ",true);
+	game_speak(tr_inventory_status(a,item,invpos+1,inv.get_keys().length()));
 }
-}
-int count_total_items()
-{
-int amount=0;
-for (uint i=0; i<inv.get_keys().length(); i++)
-{
-int a;
-inv.get(inv.get_keys()[i],a);
-amount+=a;
-}
-return amount;
 }
 void use(string item)
 {
@@ -100,10 +85,6 @@ amount+=a;
 }
 return amount;
 }
-double convert_to_pan(double m1, double m2)
-{
-return (m1*100/m2)-50;
-}
 void invstuff()
 {
 if (usetimer.elapsed>=130)
@@ -111,6 +92,6 @@ if (usetimer.elapsed>=130)
 usetimer.restart();
 if (inv.get_keys().length()>0 and invpos<inv.get_size())
 use(inv.get_keys()[invpos]);
-else speak("empty");
+else game_speak("empty");
 }
 }

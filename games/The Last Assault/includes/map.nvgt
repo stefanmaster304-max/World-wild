@@ -1,147 +1,308 @@
-string[] map, zones;
-bool playwall;
+#include "zone.nvgt"
+#include "safe_zone.nvgt"
+
+const int MAP_FLAG_PLATFORM = 1;
 const int Left=1;
 const int Right=2;
 const int Backward=3;
 const int Forward=4;
 const int Up=5;
 const int Down=6;
-void draw_map(string name)
-{
-// Recria os dados do mapa ao entrar nele. Isso evita que uma nova partida
-// reutilize áreas, fontes sonoras ou escadas deixadas por uma partida anterior.
-map.resize(0);
-zones.resize(0);
-destroy_all_staircases();
-killsrcs();
-playwall=false;
-currentloc="";
+coordinate_map map_index;
+string mapname = "";
+string[] current_map_lines;
+int map_min_x, map_max_x, map_min_y, map_max_y, map_min_z, map_max_z;
+int map_area_priority = 0;
+bool playwall = false;
 
-if (name=="main")
+class map_travel_point
 {
-maxx=250;
-maxy=250;
-spawn_platform(0,250,0,250,0,0,"concrete2");
-spawn_source(0,250,0,150,0,250,"citybirds.ogg");
-spawn_zone(0,250,0,100,0,250,"Concrete");
-spawn_platform(0,250,101,140,0,0,"grass2");
-spawn_zone(0,300,101,140,0,250,"Grass");
-spawn_platform(50,70,110,130,0,0,"mud");
-spawn_platform(55,65,115,125,0,0,"swimming");
-spawn_platform(50,55,109,124,20,20,"bridge");
-spawn_staircase(50,55,109,109,0,20,"metal");
-spawn_zone(50,55,109,109,0,20,"Stairs to bridge");
-spawn_zone(50,55,110,124,20,40,"Bridge");
-spawn_zone(50,70,110,130,0,250,"A gently flowing river");
-spawn_source(50,70,110,130,0,10,"river.ogg");
-spawn_platform(0,250,151,230,0,0,"swamp");
-spawn_source(0,250,151,230,0,250,"swamp.ogg");
-spawn_zone(0,250,151,230,0,250,"A swamp");
+	int minx, maxx, miny, maxy, minz, maxz;
+	int dest_minx,dest_maxx,dest_miny,dest_maxy,dest_minz,dest_maxz;
+	string destination;
+	map_travel_point(int x1,int x2,int y1,int y2,int z1,int z2,int dx1,int dx2,int dy1,int dy2,int dz1,int dz2,const string&in target)
+	{
+		minx=x1; maxx=x2; miny=y1; maxy=y2; minz=z1; maxz=z2;
+		dest_minx=(dx1<=dx2) ? dx1 : dx2; dest_maxx=(dx1<=dx2) ? dx2 : dx1;
+		dest_miny=(dy1<=dy2) ? dy1 : dy2; dest_maxy=(dy1<=dy2) ? dy2 : dy1;
+		dest_minz=(dz1<=dz2) ? dz1 : dz2; dest_maxz=(dz1<=dz2) ? dz2 : dz1;
+		destination=target;
+	}
+	bool contains(int x, int y, int z) const
+	{
+		bool z_inside=(minz==maxz) ? (z>=minz-1 && z<=maxz+3) : (z>=minz-1 && z<=maxz+6);
+		return x>=minx && x<=maxx && y>=miny && y<=maxy && z_inside;
+	}
+	void get_destination_coords(int player_x,int player_y,int&out x,int&out y,int&out z) const
+	{
+		if(dest_minx==dest_maxx || maxx==minx) x=dest_minx;
+		else
+		{
+			double ratio=double(player_x-minx)/double(maxx-minx);
+			if(ratio<0.0) ratio=0.0;
+			if(ratio>1.0) ratio=1.0;
+			x=dest_minx+int(round(ratio*double(dest_maxx-dest_minx),0));
+		}
+		if(dest_miny==dest_maxy || maxy==miny) y=dest_miny;
+		else
+		{
+			double ratio=double(player_y-miny)/double(maxy-miny);
+			if(ratio<0.0) ratio=0.0;
+			if(ratio>1.0) ratio=1.0;
+			y=dest_miny+int(round(ratio*double(dest_maxy-dest_miny),0));
+		}
+		z=dest_minz;
+	}
 }
-mapname=name;
-}
-void spawn_platform(int minx, int maxx, int miny, int maxy, int minz, int maxz, string type)
+
+map_travel_point@[] map_travel_points;
+
+void clear_map_data()
 {
-map.insert_last(minx+":"+maxx+":"+miny+":"+maxy+":"+minz+":"+maxz+":"+type);
+	map_index.reset();
+	map_area_priority=0;
+	map_travel_points.resize(0);
+	current_map_lines.resize(0);
+	mapname="";
+	clear_map_zones();
+	clear_map_safe_zones();
+	destroy_all_staircases();
+	killsrcs();
+	playwall=false;
+	currentloc="";
 }
-void spawn_zone(int mx, int mx2, int my, int my2, int mz, int mz2, string zonetype)
+
+void spawn_platform(int minx, int maxx, int miny, int maxy, int minz, int maxz, const string&in type)
 {
-zones.insert_last(mx+":"+mx2+":"+my+":"+my2+":"+mz+":"+mz2+":"+zonetype);
+	map_index.add_area(minx, maxx, miny, maxy, minz, maxz, 0.0, null, type, "", "", map_area_priority++, MAP_FLAG_PLATFORM);
 }
+
+void spawn_zone(int minx, int maxx, int miny, int maxy, int minz, int maxz, const string&in label)
+{
+	add_map_zone(minx, maxx, miny, maxy, minz, maxz, label);
+}
+
+void spawn_safe_zone(int minx, int maxx, int miny, int maxy, int minz, int maxz, const string&in label="Safe zone")
+{
+	add_map_safe_zone(minx, maxx, miny, maxy, minz, maxz, label);
+}
+
+void add_map_travel_point(int minx,int maxx,int miny,int maxy,int minz,int maxz,const string&in destination,int dx1,int dx2,int dy1,int dy2,int dz1,int dz2)
+{
+	map_travel_point point(minx,maxx,miny,maxy,minz,maxz,dx1,dx2,dy1,dy2,dz1,dz2,destination);
+	map_travel_points.insert_last(point);
+}
+
+map_travel_point@ get_travel_point_at(int x, int y, int z)
+{
+	for(uint i=0;i<map_travel_points.length();i++)
+		if(map_travel_points[i].contains(x,y,z)) return map_travel_points[i];
+	return null;
+}
+
+string map_file_path(const string&in name)
+{
+	return "maps/" + name + ".map";
+}
+
+bool valid_map_name(const string&in name)
+{
+	if (name.trim_whitespace()=="") return false;
+	for (uint i=0; i<name.length(); i++)
+	{
+		string c=name.substr(i,1);
+		if (!(c>="a" && c<="z") && !(c>="A" && c<="Z") && !(c>="0" && c<="9") && c!=" " && c!="_" && c!="-") return false;
+	}
+	return true;
+}
+
+bool map_exists(const string&in name)
+{
+	return valid_map_name(name) && file_exists(map_file_path(name));
+}
+
+string[] available_map_names()
+{
+	string[] names;
+	string[]@ files=find_files("maps/*.map");
+	if (files is null) return names;
+	for (uint i=0; i<files.length(); i++)
+	{
+		string filename=string_replace(files[i], "\\", "/", true);
+		int slash=filename.find_last("/");
+		if (slash>=0) filename=filename.substr(slash+1);
+		if (filename.length()<=4 || filename.substr(filename.length()-4)!=".map") continue;
+		string name=filename.substr(0,filename.length()-4);
+		if (valid_map_name(name)) names.insert_last(name);
+	}
+	return names;
+}
+
+bool save_map_lines(const string&in name, string[]&in lines)
+{
+	if (!valid_map_name(name)) return false;
+	if (!directory_exists("maps") && !directory_create("maps")) return false;
+	file output;
+	if (!output.open(map_file_path(name), "wb")) return false;
+	for (uint i=0; i<lines.length(); i++) output.write(lines[i] + "\n");
+	output.close();
+	return true;
+}
+
+string get_platform_at(int x, int y, int z)
+{
+	coordinate_map_area@ area=map_index.get_area(x, y, z, -1, 0.0, null, MAP_FLAG_PLATFORM);
+	if (@area is null) return "";
+	return area.data1;
+}
+
 void playstep()
 {
-if (string_contains(gmt(), "wall",1)>-1)
-{
-if (playwall==false)
-{
-p.play_stationary(game_audio_path(gmt()+".ogg"),false);
-playwall=true;
+	string tile=get_platform_at(me.x, me.y, me.z);
+	if (tile=="") return;
+	if (string_contains(tile, "wall", 1)>-1)
+	{
+		if (!playwall) p.play_stationary(game_audio_path(tile+".ogg"), false);
+		playwall=true;
+		bounce();
+		return;
+	}
+	p.play_stationary(game_audio_path(tile+"step"+random(1,5)+".ogg"), false);
+	playwall=false;
 }
-bounce();
-}
-else
-{
-p.play_stationary(game_audio_path(""+gmt()+"step"+random(1,5)+".ogg"),false);
-playwall=false;
-}
-}
-string gmt()
-{
-return get_tile_at(me.x,me.y, me.z);
-}
-string get_tile_at(int x, int y, int z)
-{
-string final;
-for(uint i=0; i<map.length(); i++)
-{
-string[] parsed=string_split(map[i], ":", false);
-if (parsed.length()>=7)
-{
-int minx=string_to_number(parsed[0]);
-int maxx=string_to_number(parsed[1]);
-int miny=string_to_number(parsed[2]);
-int maxy=string_to_number(parsed[3]);
-int minz=string_to_number(parsed[4]);
-int maxz=string_to_number(parsed[5]);
-if (minx>x)
-{
-continue;
-}
-if (miny>y)
-{
-continue;
-}
-if (minx<=x and maxx>=x and miny<=y and maxy>=y and minz<=z and maxz>=z)
-{
-final=parsed[6];
-}
-}
-}
-return final;
-}
-string get_zone_at(int x, int y, int z)
-{
-string final;
-if (zones.length()>=100000 or zones.length()<=0 or zones.length()==0)
-return "";
-for(uint i=zones.length()-1; i>=0; i--)
-{
-if (i>=zones.length())
-return "";
-string[] parsed=string_split(zones[i], ":", false);
-if(parsed.length()>=7)
-{
-int minx=string_to_number(parsed[0]);
-int maxx=string_to_number(parsed[1]);
-int miny=string_to_number(parsed[2]);
-int maxy=string_to_number(parsed[3]);
-int minz=string_to_number(parsed[4]);
-int maxz=string_to_number(parsed[5]);
-if(minx<=x and maxx>=x and miny<=y and maxy>=y and minz<=z and maxz>=z)
-{
-final=parsed[6];
-return final;
-}
-}
-}
-return final;
-}
+
 void bounce()
 {
-if (facing==Left)
-{
-me.x+=1;
+	if (facing==Left) me.x++;
+	else if (facing==Right) me.x--;
+	else if (facing==Forward) me.y--;
+	else if (facing==Backward) me.y++;
 }
-else if (facing==Right)
+
+bool load_map(const string&in name)
 {
-me.x-=1;
+	if (!valid_map_name(name) || !file_exists(map_file_path(name))) return false;
+	file input;
+	if (!input.open(map_file_path(name), "rb")) return false;
+	string content=input.read();
+	input.close();
+	content=string_replace(content, "\r", "", true);
+	string[] lines=string_split(content, "\n", false);
+	if (lines.length()==0) return false;
+
+	clear_map_data();
+	mapname=name;
+	location_announced=false;
+	currentloc="";
+	map_min_x=0; map_min_y=0; map_min_z=0;
+	map_max_x=0; map_max_y=0; map_max_z=0;
+	bool has_bounds=false;
+	int loaded_records=0;
+
+	for (uint i=0; i<lines.length(); i++)
+	{
+		string line=lines[i].trim_whitespace();
+		if (line=="" || string_left(line,1)=="#" || string_left(line,1)==";") continue;
+		current_map_lines.insert_last(line);
+		string[] fields=string_split(line, ":", false);
+		if (fields.length()==0) continue;
+		string command=string_to_lower_case(fields[0].trim_whitespace());
+		if (command=="name") continue;
+		if (command=="bounds" && fields.length()>=7)
+		{
+			map_min_x=string_to_number(fields[1]); map_max_x=string_to_number(fields[2]);
+			map_min_y=string_to_number(fields[3]); map_max_y=string_to_number(fields[4]);
+			map_min_z=string_to_number(fields[5]); map_max_z=string_to_number(fields[6]);
+			maxx=map_max_x; maxy=map_max_y; has_bounds=true;
+			continue;
+		}
+		if (command=="platform" && fields.length()>=8)
+		{
+			spawn_platform(string_to_number(fields[1]),string_to_number(fields[2]),string_to_number(fields[3]),string_to_number(fields[4]),string_to_number(fields[5]),string_to_number(fields[6]),fields[7]);
+			loaded_records++;
+		}
+		else if (command=="zone" && fields.length()>=8)
+		{
+			spawn_zone(string_to_number(fields[1]),string_to_number(fields[2]),string_to_number(fields[3]),string_to_number(fields[4]),string_to_number(fields[5]),string_to_number(fields[6]),fields[7]);
+			loaded_records++;
+		}
+		else if (command=="safezone" && fields.length()>=7)
+		{
+			string label=(fields.length()>=8) ? fields[7] : "Safe zone";
+			spawn_safe_zone(string_to_number(fields[1]),string_to_number(fields[2]),string_to_number(fields[3]),string_to_number(fields[4]),string_to_number(fields[5]),string_to_number(fields[6]),label);
+			loaded_records++;
+		}
+		else if (command=="staircase" && fields.length()>=8)
+		{
+			spawn_staircase(string_to_number(fields[1]),string_to_number(fields[2]),string_to_number(fields[3]),string_to_number(fields[4]),string_to_number(fields[5]),string_to_number(fields[6]),fields[7]);
+			loaded_records++;
+		}
+		else if ((command=="source" || command=="src") && fields.length()>=8)
+		{
+			bool legacy_tagged=fields.length()>=9 && (fields[7]=="music" || fields[7]=="sources");
+			bool standard_tagged=fields.length()>=11 && (fields[10]=="music" || fields[10]=="sources");
+			string audio_file=legacy_tagged ? fields[8] : fields[7];
+			float audio_gain=legacy_tagged ? float(string_to_number(fields[9])) : (fields.length()>=9 ? float(string_to_number(fields[8])) : 1.0);
+			float audio_pitch=legacy_tagged ? float(string_to_number(fields[10])) : (fields.length()>=10 ? float(string_to_number(fields[9])) : 100.0);
+			bool is_music=legacy_tagged ? fields[7]=="music" : (standard_tagged && fields[10]=="music");
+			spawn_source(string_to_number(fields[1]),string_to_number(fields[2]),string_to_number(fields[3]),string_to_number(fields[4]),string_to_number(fields[5]),string_to_number(fields[6]),game_audio_path(audio_file),audio_gain,audio_pitch,is_music);
+			loaded_records++;
+		}
+		else if ((command=="ambient" || command=="ambience") && fields.length()>=8)
+		{
+			bool legacy_tagged=fields.length()>=9 && (fields[7]=="music" || fields[7]=="sources");
+			bool standard_tagged=fields.length()>=11 && (fields[10]=="music" || fields[10]=="sources");
+			string audio_file=legacy_tagged ? fields[8] : fields[7];
+			float audio_gain=legacy_tagged ? float(string_to_number(fields[9])) : (fields.length()>=9 ? float(string_to_number(fields[8])) : 1.0);
+			float audio_pitch=legacy_tagged ? float(string_to_number(fields[10])) : (fields.length()>=10 ? float(string_to_number(fields[9])) : 100.0);
+			bool is_music=legacy_tagged ? fields[7]=="music" : (standard_tagged && fields[10]=="music");
+			spawn_ambient_source(string_to_number(fields[1]),string_to_number(fields[2]),string_to_number(fields[3]),string_to_number(fields[4]),string_to_number(fields[5]),string_to_number(fields[6]),game_audio_path(audio_file),audio_gain,audio_pitch,is_music);
+			loaded_records++;
+		}
+		else if (command=="travelpoint" && fields.length()>=11)
+		{
+			if(fields.length()>=14)
+				add_map_travel_point(string_to_number(fields[1]),string_to_number(fields[2]),string_to_number(fields[3]),string_to_number(fields[4]),string_to_number(fields[5]),string_to_number(fields[6]),fields[7],string_to_number(fields[8]),string_to_number(fields[9]),string_to_number(fields[10]),string_to_number(fields[11]),string_to_number(fields[12]),string_to_number(fields[13]));
+			else
+				add_map_travel_point(string_to_number(fields[1]),string_to_number(fields[2]),string_to_number(fields[3]),string_to_number(fields[4]),string_to_number(fields[5]),string_to_number(fields[6]),fields[7],string_to_number(fields[8]),string_to_number(fields[8]),string_to_number(fields[9]),string_to_number(fields[9]),string_to_number(fields[10]),string_to_number(fields[10]));
+			loaded_records++;
+		}
+	}
+	if (!has_bounds || loaded_records==0)
+	{
+		clear_map_data();
+		return false;
+	}
+	return true;
 }
-else if (facing==Forward)
+
+bool travel_at_player()
 {
-me.y-=1;
+	if (!altisdown() || !key_pressed(KEY_RETURN)) return false;
+	map_travel_point@ target=get_travel_point_at(me.x,me.y,me.z);
+	if (@target is null)
+	{
+		game_speak("There is no travel point here.");
+		return true;
+	}
+	string destination=target.destination;
+	int destination_x,destination_y,destination_z;
+	target.get_destination_coords(me.x,me.y,destination_x,destination_y,destination_z);
+	if (!load_map(destination))
+	{
+		game_speak(tr("The destination map ")+destination+tr(" could not be loaded."));
+		return true;
+	}
+	me.x=destination_x;
+	me.y=destination_y;
+	me.z=destination_z;
+	currentloc="";
+	game_speak(tr("Traveling to ")+mapname+".");
+	return true;
 }
-else if (facing==Backward)
+
+void map_audio_update()
 {
-me.y+=1;
-}
+	sp.update_listener_3d(me.x, me.y, me.z);
+	update_map_audio(me.x, me.y, me.z);
 }

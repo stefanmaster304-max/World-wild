@@ -1,72 +1,144 @@
 dynamic_menu_pro m;
+
 void setupmenu(bool music=false)
 {
-m.reset(false);
-m.enable_up_and_down=true;
-m.enable_home_and_end=true;
-m.enable_first_letter_navigation=true;
-if (music==true)
+	m.reset(false);
+	m.wrap=menu_wrap_enabled;
+	m.enable_up_and_down=true;
+	m.enable_home_and_end=true;
+	m.enable_first_letter_navigation=true;
+	if(music)
+	{
+		m.add_music(game_audio_path("menumusic.ogg"));
+		m.music_added=true;
+	}
+	else
+	{
+		m.add_music("");
+		m.music_added=false;
+	}
+}
+
+string read_documentation(const string&in path)
 {
-m.add_music(game_audio_path("menumusic.ogg"));
-m.music_added=true;
+	file document;
+	if(!document.open(path,"rb")) return "The file could not be opened: "+path;
+	string contents=document.read();
+	document.close();
+	return contents;
 }
-else
+
+void open_document(const string&in path, const string&in title)
 {
-m.add_music("");
-m.music_added=false;
+	string contents=read_documentation(path);
+	info_box(tr(title),tr("Use the arrow keys to scroll. Press Enter or Escape to close."),contents);
 }
+
+void documentation_menu()
+{
+	m.stop_music();
+	setupmenu(false);
+	m.add_item_tts("View README file","readme");
+	m.add_item_tts("View changelog file","changelog");
+	int result=m.run(tr("Documentation"),true);
+	string selection=m.get_item_name(result);
+	if(selection=="readme") open_document("README.md","README.md");
+	else if(selection=="changelog") open_document("CHANGELOG.md","CHANGELOG.md");
+	mainmenu();
 }
+
+void settings_menu()
+{
+	m.stop_music();
+	while(true)
+	{
+		setupmenu(false);
+		string wrap_label=tr("Menu wrapping")+": "+tr(menu_wrap_enabled ? "Enabled" : "Disabled");
+		string language_name=game_language=="pt" ? "Portuguese" : (game_language=="es" ? "Spanish" : (game_language=="tr" ? "Turkish" : (game_language=="vi" ? "Vietnamese" : "English")));
+		m.add_item_tts(tr("Game language")+": "+tr(language_name),"language");
+		m.add_item_tts(wrap_label,"wrap");
+		m.add_item_tts("Back","back");
+		int result=m.run(tr("Settings"),true);
+		string selection=m.get_item_name(result);
+		if(selection=="language")
+		{
+			setupmenu(false);
+			m.add_item_tts("English","en"); m.add_item_tts("Portuguese","pt");
+			m.add_item_tts("Spanish","es"); m.add_item_tts("Turkish","tr"); m.add_item_tts("Vietnamese","vi");
+			int language_result=m.run(tr("Game language"),true);
+			string language_id=m.get_item_name(language_result);
+			if(language_id=="en" || language_id=="pt" || language_id=="es" || language_id=="tr" || language_id=="vi")
+			{
+				game_language=language_id;
+				game_config.write_string("language",game_language);
+			}
+		}
+		else if(selection=="wrap")
+		{
+			menu_wrap_enabled=!menu_wrap_enabled;
+			game_config.write_number("menu_wrap",menu_wrap_enabled ? 1 : 0);
+		}
+		else return;
+	}
+}
+
 void mainmenu()
 {
-setupmenu(true);
-m.add_item_tts("Play","play");
-m.add_item_tts("Help","help");
-m.add_item_tts("Exit","exit");
-int mres=m.run("Main menu",true);
-string menuitem=m.get_item_name(mres);
-if (menuitem=="play")
-{
-m.fade_music(20);
-play("start");
-draw_map("main");
-game();
+	setupmenu(true);
+	m.add_item_tts("Play","play");
+	m.add_item_tts("Documentation","documentation");
+	m.add_item_tts("Settings","settings");
+	m.add_item_tts("Exit","exit");
+	int mres=m.run(tr("Main menu"),true);
+	string menuitem=m.get_item_name(mres);
+	if(menuitem=="play")
+	{
+		m.fade_music(20);
+		string[] maps=available_map_names();
+		if(maps.length()==0)
+		{
+			alert(tr("Map loading error"),tr("There are no valid map files in the maps folder."));
+			mainmenu(); return;
+		}
+		string selected_map=maps[0];
+		if(maps.length()>1)
+		{
+			setupmenu(false);
+			for(uint i=0;i<maps.length();i++) m.add_item_tts(maps[i],maps[i]);
+			int map_result=m.run(tr("Select a map"),true);
+			if(map_result<0) { mainmenu(); return; }
+			selected_map=m.get_item_name(map_result);
+		}
+		if(!load_map(selected_map))
+		{
+			alert(tr("Map loading error"),tr("The selected map could not be loaded."));
+			mainmenu(); return;
+		}
+		if(game_config.exists("map") && game_config.read_string("map")==selected_map)
+		{
+			if(game_config.exists("x")) me.x=game_config.read_number("x");
+			if(game_config.exists("y")) me.y=game_config.read_number("y");
+			if(game_config.exists("z")) me.z=game_config.read_number("z");
+		}
+		play("start");
+		game();
+	}
+	else if(menuitem=="documentation") documentation_menu();
+	else if(menuitem=="settings") { settings_menu(); mainmenu(); }
+	else
+	{
+		m.fade_music(20);
+		save_player_properties();
+		exit();
+	}
 }
-else if (menuitem=="help")
-{
-helpmenu();
-}
-else
-{
-m.fade_music(20);
-exit();
-}
-}
-void helpmenu()
-{
-m.reset(false);
-file f;
-f.open("README.md","rb");
-string[] stuff=string_split(f.read(),"\n",true);
-f.close();
-for(uint i=0; i<stuff.length(); i++)
-{
-m.add_item_tts(stuff[i],stuff[i],false);
-}
-int mres=m.run("The Last Assault. Use the arrow keys to read the help. Press Enter or Escape to return to the main menu.",true);
-mainmenu();
-}
+
+void helpmenu() { documentation_menu(); }
+
 int menuquestion(string q)
 {
-setupmenu(false);
-m.add_item_tts("Yes");
-m.add_item_tts("No");
-int mres=m.run(q,true);
-if (mres==1)
-{
-return 1;
-}
-else
-{
-return 2;
-}
+	setupmenu(false);
+	m.add_item_tts("Yes"); m.add_item_tts("No");
+	int result=m.run(tr(q),true);
+	return result==1 ? 1 : 2;
 }

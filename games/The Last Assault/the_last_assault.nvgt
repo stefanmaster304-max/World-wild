@@ -1,7 +1,10 @@
 #pragma asset "sounds"
+#pragma asset "maps"
 #pragma document "README.md"
 #pragma document "CHANGELOG.md"
 #include "bgt_compat.nvgt"
+#include "form.nvgt"
+#include "includes/language.nvgt"
 string game_audio_path(const string&in filename) {
     if (filename.find_first("sounds/") == 0) return filename;
     return "sounds/" + filename;
@@ -20,6 +23,7 @@ string game_audio_path(const string&in filename) {
 #include"includes/virtualizer.nvgt"
 #include"includes/inventory.nvgt"
 #include"includes/m_pro.nvgt"
+#include"includes/builder.nvgt"
 int x, y, z;
 int maxx, maxy;
 int weapon, damage, range, time, speed, ammo, maxammo, reloadtime;
@@ -42,11 +46,11 @@ int airtime=90;
 int medtime=350;
 int medpoints=0;
 string currentloc;
+bool location_announced=false;
 string gametime;
 double xp=0;
 double xprequired=100;
 string i, itemnum;
-string mapname;
 string weaponname;
 vector me;
 sound_pool p;
@@ -56,10 +60,11 @@ timer gametimer, movetimer, jumptimer, weapontimer, medtimer, reloadtimer;
 bool reloading=false;
 void main()
 {
+initialize_game_storage();
 // Steam Audio/Phonon HRTF: ativado globalmente em toda inicialização do jogo.
 set_sound_global_hrtf(true);
 if (!sound_global_hrtf)
-alert("Áudio espacial", "Não foi possível ativar o HRTF global do Steam Audio.");
+alert(tr("Áudio espacial"), tr("Não foi possível ativar o HRTF global do Steam Audio."));
 if (screen_reader_is_running(1)) install_keyhook();
 // Os efeitos são arquivos OGG soltos em sounds/; não há pacote BGT sounds.dat.
 show_game_window("The Last Assault 0.0.1");
@@ -69,7 +74,10 @@ mainmenu();
 void game()
 {
 inv.delete_all();
-health=random(250,1000);
+if(game_config.exists("health")) health=game_config.read_number("health");
+else health=random(250,1000);
+if(game_config.exists("level")) level=game_config.read_number("level");
+if(game_config.exists("xp")) xp=game_config.read_number("xp");
 give("handgun ammo",20);
 give("handgun clip",2);
 
@@ -78,31 +86,37 @@ while(true)
 bulletloop();
 staircasecheckloop();
 enemyloop();
-sourceloop();
+map_audio_update();
 bodyfallloop();
 checkloc();
 p.update_listener_3d(me.x,me.y,me.z);
 gametime=ms_to_readable_time(gametimer.elapsed);
 wait(5);
+if(player_save_timer.elapsed>=5000) { save_player_properties(); player_save_timer.restart(); }
+if (handle_game_volume_keys()) continue;
+if (altisdown() and key_pressed(KEY_B))
+{
+	if (map_builder_menu_live()==BUILDER_RETURN_TO_MENU)
+	{
+		reset();
+		mainmenu();
+		return;
+	}
+	continue;
+}
+if (travel_at_player()) continue;
 if (health<=20 and health>0)
 {
 bleading.play_looped();
 }
 if (key_pressed(KEY_B))
 {
-if (get_zone_at(me.x,me.y, me.z)!="")
-{
-string locate=get_zone_at(me.x,me.y, me.z);
-speak("Current location: "+locate+" of "+mapname);
-}
-else
-{
-speak("No location");
-}
+string player_zone=get_zone_at(me.x,me.y,me.z);
+game_speak(tr("Current location: ")+(player_zone!="" ? player_zone : tr("Area unknown")));
 }
 if (key_pressed(KEY_T))
 {
-speak("You have survived for "+gametime+".");
+	game_speak(tr("You have survived for ")+gametime+".");
 }
 if (medtimer.elapsed>=medtime and medpoints<300 and usingmedkit==true)
 {
@@ -133,11 +147,11 @@ if (key_pressed(KEY_A) and reloading==false)
 {
 if (!melee)
 {
-speak(get_weapon_ammo()+" ammo loaded, "+get_weapon_clips()+" clips left.");
+	game_speak(tr_ammunition_status(get_weapon_ammo(),get_weapon_clips()));
 }
 else
 {
-speak("This weapon doesn't take ammo.");
+game_speak("This weapon doesn't take ammo.");
 }
 }
 if (xp>=xprequired)
@@ -148,13 +162,17 @@ xprequired=(50*(level*(level*2)));
 }
 if (key_pressed(KEY_L))
 {
-speak("You are level "+level+" with "+xp+" experience. You need "+(xprequired-xp)+" experience to get to level "+(level+1)+".");
+	game_speak(tr_level_status(level,xp,xprequired-xp,level+1));
 }
 if (key_pressed(KEY_E))
 {
-speak(enemies.length()+" enemies are on the map.");
+	game_speak(tr_enemy_count(enemies.length()));
 }
-if (pressed_weapon_keys() and weapontimer.elapsed>=time and reloading==false)
+if (pressed_weapon_keys() and get_safe_zone_at(me.x,me.y,me.z)!="")
+{
+	game_speak("Weapons cannot be used in a safe zone.");
+}
+if (pressed_weapon_keys() and weapontimer.elapsed>=time and reloading==false and get_safe_zone_at(me.x,me.y,me.z)=="")
 {
 weapontimer.restart();
 if (melee==true)
@@ -176,7 +194,7 @@ play(weaponname+"empty");
 }
 }
 }
-if (held_weapon_keys() and weapontimer.elapsed>=time and reloading==false)
+if (held_weapon_keys() and weapontimer.elapsed>=time and reloading==false and get_safe_zone_at(me.x,me.y,me.z)=="")
 {
 if (weapon==3)
 {
@@ -201,7 +219,7 @@ reload();
 }
 else
 {
-speak("This weapon doesn't take ammo.");
+game_speak("This weapon doesn't take ammo.");
 }
 }
 if (reloadtimer.elapsed>=reloadtime and reloading==true)
@@ -210,14 +228,15 @@ reloading=false;
 }
 if (key_pressed(KEY_Z) and !SCRIPT_COMPILED)
 {
-xp+=stn(v.input("How much xp do you want?"));
+xp+=stn(v.input(tr("How much xp do you want?")));
 }
 if (key_pressed(KEY_H))
 {
-speak(health+" hp");
+game_speak(health+" "+tr("hp"));
 }
 if (health<=0)
 {
+save_player_properties();
 play("kill"+random(1,3));
 dlgplay("death.ogg",true,20);
 reset();
@@ -238,34 +257,34 @@ else
 }
 if (key_pressed(KEY_C))
 {
-speak(me.x+", "+me.y+", "+me.z);
+game_speak(me.x+", "+me.y+", "+me.z);
 }
 if (jumping==1)
 movetime=airtime;
 else
 movetime=walktime;
-if (key_down(KEY_LEFT) and movetimer.elapsed>=movetime and me.x>0)
+if (key_down(KEY_LEFT) and movetimer.elapsed>=movetime and me.x>map_min_x)
 {
 movetimer.restart();
 facing=Left;
 me.x--;
 playstep();
 }
-if (key_down(KEY_RIGHT) and movetimer.elapsed>=movetime and me.x<maxx)
+if (key_down(KEY_RIGHT) and movetimer.elapsed>=movetime and me.x<map_max_x)
 {
 movetimer.restart();
 facing=Right;
 me.x++;
 playstep();
 }
-if (key_down(KEY_DOWN) and movetimer.elapsed>=movetime and me.y>0)
+if (key_down(KEY_DOWN) and movetimer.elapsed>=movetime and me.y>map_min_y)
 {
 movetimer.restart();
 facing=Backward;
 me.y--;
 playstep();
 }
-if (key_down(KEY_UP) and movetimer.elapsed>=movetime and me.y<maxy)
+if (key_down(KEY_UP) and movetimer.elapsed>=movetime and me.y<map_max_y)
 {
 movetimer.restart();
 facing=Forward;
@@ -297,14 +316,6 @@ if (ascending==false and jumptimer.elapsed>=jumptime2 and atapex==false)
 jumptimer.restart();
 me.z-=1;
 checkforplatforms();
-/*
-if (me.z<=ty1)
-{
-me.z=ty1;
-p.play_stationary(game_audio_path(tile+"land.ogg"),false);
-jumping=0;
-}
-*/
 }
 if (ascending==true and jumptimer.elapsed>=jumptime)
 {
@@ -332,11 +343,10 @@ mainmenu();
 }
 void checkforplatforms()
 {
-if (gmt()!="")
+if (get_platform_at(me.x,me.y,me.z)!="")
 {
-p.play_stationary(game_audio_path(""+gmt()+"land.ogg"),false);
+p.play_stationary(game_audio_path(get_platform_at(me.x,me.y,me.z)+"land.ogg"),false);
 jumping=0;
-//falling=false;
 }
 }
 void play(string snd, bool loop=false)
@@ -345,41 +355,36 @@ p.play_stationary(game_audio_path(snd+".ogg"),loop);
 }
 void checkloc()
 {
-if (get_zone_at(me.x,me.y, me.z)!="")
+string locate=get_zone_at(me.x,me.y,me.z);
+if (locate!="")
 {
-string locate=get_zone_at(me.x,me.y, me.z);
 if (locate!=currentloc)
 {
-speak(locate);
+game_speak(tr("Current location: ")+locate);
 currentloc=locate;
 }
+location_announced=true;
 }
 else
 {
-if (currentloc!="")
+if (currentloc!="" || !location_announced)
 {
-speak("Uncharted area");
+game_speak(tr("Current location: ")+tr("Area unknown"));
 currentloc="";
 }
+location_announced=true;
 }
 }
 string get_location()
 {
-if (get_zone_at(me.x,me.y, me.z)!="")
-{
-string locate=get_zone_at(me.x,me.y, me.z);
-return locate+" of "+string_replace(mapname,"","",true);
-}
-else
-{
-return "uncharted area on "+string_replace(mapname,"","",true);
-}
+string locate=get_zone_at(me.x,me.y,me.z);
+return locate!="" ? locate : tr("Area unknown");
 }
 void draw_weapon(string name, int wdamage, int wrange, int wtime, int wspeed, int wmaxammo, bool wmelee, int wreloadtime, bool weaponscatter)
 {
-play(name+"draw");
 weaponname=name;
-speak(name);
+play(name+"draw");
+game_speak(tr_weapon_name(name));
 damage=wdamage;
 range=wrange;
 maxammo=wmaxammo;
@@ -429,16 +434,11 @@ return true;
 }
 return false;
 }
-int bool_to_int(bool b)
-{
-if (b==true) return 1;
-else return 0;
-}
 void reload()
 {
 if (get_weapon_ammo()>0)
 {
-speak("Your weapon still has ammo in it! Don't waste ammo!");
+game_speak("Your weapon still has ammo in it! Don't waste ammo!");
 }
 else
 {
@@ -452,7 +452,7 @@ give(weaponname+" ammo",maxammo);
 }
 else
 {
-speak("No clips");
+game_speak("No clips");
 }
 }
 }
@@ -470,7 +470,7 @@ xprequired=100;
 }
 void invchange()
 {
-i=v.input("enter what item you want to give yourself.");
+i=v.input(tr("enter what item you want to give yourself."));
 if (i=="")
 {
 return;
@@ -482,7 +482,7 @@ asknum();
 }
 void asknum()
 {
-itemnum=v.input("Enter how many to give yourself");
+itemnum=v.input(tr("Enter how many to give yourself"));
 if (itemnum=="")
 {
 return;
@@ -491,7 +491,7 @@ else
 {
 int givenum=string_to_number(itemnum);
 give(i,givenum);
-speak("Success");
+game_speak("Success");
 }
 }
 int stn(string thestring)

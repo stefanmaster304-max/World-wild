@@ -65,7 +65,7 @@ bulletcheck(i);
 }
 void bulletcheck(int b)
 {
-string surface=get_tile_at(bullets[b].x,bullets[b].y,0);
+string surface=get_platform_at(bullets[b].x,bullets[b].y,0);
 if (surface=="" or string_contains(surface,"wall",1)>-1)
 {
 if (melee==false) p.play_3d(game_audio_path("bulletrico"+random(1,3)+".ogg"),me.x,me.y,me.z,bullets[b].x,bullets[b].y,0,false);
@@ -80,7 +80,7 @@ return;
 }
 for (uint i=0; i<enemies.length(); i++)
 {
-if (enemies[i].x==bullets[b].x and enemies[i].y==bullets[b].y and me.z==enemies[i].z)
+if (enemies[i].x==bullets[b].x and enemies[i].y==bullets[b].y and me.z==enemies[i].z and get_safe_zone_at(enemies[i].x,enemies[i].y,enemies[i].z)=="")
 {
 enemies[i].hp-=bullets[b].damage;
 p.play_3d(game_audio_path(weaponname+"hit"+random(1,3)+".ogg"),me.x,me.y,me.z,enemies[i].x,enemies[i].y,enemies[i].z,false);

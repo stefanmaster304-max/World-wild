@@ -7,7 +7,7 @@ string input(string text, bool stuff=false)
 {
 int cursor;
 string message;
-speak(text);
+game_speak(text);
 cursor=0;
 string[] ms;
 get_characters();
@@ -19,7 +19,7 @@ if (key_down(KEY_LCONTROL) or key_down(KEY_RCONTROL))
 {
 if (key_pressed(KEY_V))
 {
-speak("text pasted");
+game_speak("text pasted");
 string cl=clipboard_read_text();
 for (uint i=0; i<cl.length(); i++)
 {
@@ -34,34 +34,34 @@ for (uint i=0; i<ms.length(); i++)
 {
 a+=ms[i];
 }
-speak("text copied");
+game_speak("text copied");
 clipboard_copy_text(a);
 }
 }
 if (key_pressed(KEY_F3)) {
 if (capmode==0) {
 capmode=1;
-speak("Beep for capital letters");
+game_speak("Beep for capital letters");
 }
 else if (capmode==1) {
 capmode=2;
-speak("Say �cap� in front of the capital letters");
+game_speak("Say �cap� in front of the capital letters");
 }
 else {
 capmode=0;
-speak("Treat capital letters no different.");
+game_speak("Treat capital letters no different.");
 }
 }
 if (key_pressed(KEY_F2))
 {
 if (charrepeat==1)
 {
-speak("character repeat off");
+game_speak("character repeat off");
 charrepeat=0;
 }
 else
 {
-speak("character repeat on");
+game_speak("character repeat on");
 charrepeat=1;
 }
 }
@@ -72,15 +72,15 @@ if (charrepeat==1 and char!=" ")
 if (string_is_upper_case(char)) {
 if (capmode==1) {
 capbeep.stop(); capbeep.play();
-speak(char);
+game_speak(char);
 }
 else if (capmode==2)
-speak("Cap "+char);
+game_speak("Cap "+char);
 else
-speak(char);
+game_speak(char);
 }
 else
-speak(char);
+game_speak(char);
 }
 ms.insert_at(cursor,char);
 cursor+=1;
@@ -89,20 +89,20 @@ if(key_pressed(KEY_BACK) and ms.length() > 0 and cursor>=1)
 {
 string char=ms[cursor-1];
 if (char==" ")
-speak("space");
+game_speak("space");
 else {
 if (string_is_upper_case(char)) {
 if (capmode==1) {
 capbeep.stop(); capbeep.play();
-speak(char);
+game_speak(char);
 }
 else if (capmode==2)
-speak("Cap "+char);
+game_speak("Cap "+char);
 else
-speak(char);
+game_speak(char);
 }
 else
-speak(char);
+game_speak(char);
 }
 ms.remove_at(cursor-1);
 cursor-=1;
@@ -111,20 +111,20 @@ if(key_pressed(KEY_DELETE) and ms.length() > 0 and cursor>0 and cursor<ms.length
 {
 string char=ms[cursor+1];
 if (char==" ")
-speak("space");
+game_speak("space");
 else {
 if (string_is_upper_case(char)) {
 if (capmode==1) {
 capbeep.stop(); capbeep.play();
-speak(char);
+game_speak(char);
 }
 else if (capmode==2)
-speak("Cap "+char);
+game_speak("Cap "+char);
 else
-speak(char);
+game_speak(char);
 }
 else
-speak(char);
+game_speak(char);
 }
 ms.remove_at(cursor+1);
 }
@@ -135,7 +135,7 @@ for (uint i=0; i<ms.length(); i++)
 {
 a+=ms[i];
 }
-speak(a);
+game_speak(a);
 }
 if(key_pressed(KEY_LEFT) and cursor>0)
 {
@@ -144,28 +144,28 @@ if(ms.length()>0)
 cursor-=1;
 if (cursor>=ms.length())
 {
-speak("Blank");
+game_speak("Blank");
 }
 else if (ms[cursor]==" ")
-speak("space");
+game_speak("space");
 else
 {
 if (string_is_upper_case(ms[cursor])) {
 if (capmode==1) {
 capbeep.stop(); capbeep.play();
-speak(ms[cursor]);
+game_speak(ms[cursor]);
 }
 else if (capmode==2)
-speak("Cap "+ms[cursor]);
+game_speak("Cap "+ms[cursor]);
 else
-speak(ms[cursor]);
+game_speak(ms[cursor]);
 }
 else
-speak(ms[cursor]);
+game_speak(ms[cursor]);
 }
 }
 else
-speak("blank");
+game_speak("blank");
 }
 if(key_pressed(KEY_RIGHT) and cursor<ms.length())
 {
@@ -173,27 +173,27 @@ if(ms.length() > 0)
 {
 cursor+=1;
 if (cursor>=ms.length())
-speak("Blank");
+game_speak("Blank");
 else if (ms[cursor]==" ")
-speak("space");
+game_speak("space");
 else
 {
 if (string_is_upper_case(ms[cursor])) {
 if (capmode==1) {
 capbeep.stop(); capbeep.play();
-speak(ms[cursor]);
+game_speak(ms[cursor]);
 }
 else if (capmode==2)
-speak("Cap "+ms[cursor]);
+game_speak("Cap "+ms[cursor]);
 else
-speak(ms[cursor]);
+game_speak(ms[cursor]);
 }
 else
-speak(ms[cursor]);
+game_speak(ms[cursor]);
 }
 }
 else
-speak("blank");
+game_speak("blank");
 }
 if(key_pressed(KEY_HOME))
 {
@@ -201,27 +201,27 @@ if(ms.length() > 0)
 {
 cursor=0;
 if (cursor>=ms.length())
-speak("Blank");
+game_speak("Blank");
 else if (ms[cursor]==" ")
-speak("space");
+game_speak("space");
 else
 {
 if (string_is_upper_case(ms[cursor])) {
 if (capmode==1) {
 capbeep.stop(); capbeep.play();
-speak(ms[cursor]);
+game_speak(ms[cursor]);
 }
 else if (capmode==2)
-speak("Cap "+ms[cursor]);
+game_speak("Cap "+ms[cursor]);
 else
-speak(ms[cursor]);
+game_speak(ms[cursor]);
 }
 else
-speak(ms[cursor]);
+game_speak(ms[cursor]);
 }
 }
 else
-speak("blank");
+game_speak("blank");
 }
 if(key_pressed(KEY_END))
 {
@@ -229,31 +229,31 @@ if(ms.length() > 0)
 {
 cursor=ms.length()-1;
 if (cursor>=ms.length())
-speak("Blank");
+game_speak("Blank");
 else if (ms[cursor]==" ")
-speak("space");
+game_speak("space");
 else
 {
 if (string_is_upper_case(ms[cursor])) {
 if (capmode==1) {
 capbeep.stop(); capbeep.play();
-speak(ms[cursor]);
+game_speak(ms[cursor]);
 }
 else if (capmode==2)
-speak("Cap "+ms[cursor]);
+game_speak("Cap "+ms[cursor]);
 else
-speak(ms[cursor]);
+game_speak(ms[cursor]);
 }
 else
-speak(ms[cursor]);
+game_speak(ms[cursor]);
 }
 }
 else
-speak("blank");
+game_speak("blank");
 }
 if(key_pressed(KEY_ESCAPE))
 {
-speak("Cancel.");
+game_speak("Cancel.");
 return "";
 }
 else if(key_pressed(KEY_RETURN))
@@ -268,7 +268,7 @@ return message;
 }
 else if (ms.length()==0)
 {
-speak("Cancel.");
+game_speak("Cancel.");
 return "";
 }
 }
